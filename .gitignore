@@ -1,0 +1,9 @@
+venv/
+cache/
+__pycache__/
+*.pyc
+.env
+config.toml
+page.*.pdf
+page.*.csv
+*.tmp
