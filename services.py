@@ -25,7 +25,7 @@ def render_page(doc: pymupdf.Document, page_num: int, dpi: int) -> bytes:
     return pix.tobytes(output="png")
 
 
-def build_settings(single_page_pdf: str, user_prompt: str | None = None) -> SettingsModel:
+def build_settings(single_page_pdf: str, user_prompt: str | None = None, output_dir: str | None = None) -> SettingsModel:
     translation_kwargs = {
         "lang_in": config.TRANSLATION_LANG_IN,
         "lang_out": config.TRANSLATION_LANG_OUT,
@@ -35,6 +35,8 @@ def build_settings(single_page_pdf: str, user_prompt: str | None = None) -> Sett
         translation_kwargs["custom_system_prompt"] = user_prompt.strip()
     if config.GLOSSARY_PATH.exists() and config.GLOSSARY_PATH.stat().st_size > 0:
         translation_kwargs["glossaries"] = str(config.GLOSSARY_PATH)
+    if output_dir is not None:
+        translation_kwargs["output"] = output_dir
     return SettingsModel(
         translation=Pdf2zhTranslationSettings(**translation_kwargs),
         pdf=Pdf2zhPDFSettings(
