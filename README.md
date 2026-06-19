@@ -85,40 +85,22 @@ python -m venv venv
 
 # 安装依赖
 pip install -r requirements.txt
+
+# 从模板创建配置文件
+cp config.example.toml config.toml
 ```
 
-**API Key 配置**：推荐通过环境变量设置，避免密钥泄露：
+### 配置模型 API Key
+
+编辑 `config.toml`，填入你的 DeepSeek API Key（从 [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) 获取）：
+
+也可通过环境变量设置（推荐，优先级更高）：
 
 ```powershell
 $env:DEEPSEEK_API_KEY = "sk-your-api-key"
 ```
 
-也可直接在 `config.toml` 中填写（不推荐提交到 git）。
-
-### 配置
-
-编辑 `config.toml`：
-
-```toml
-[pdf_reader]
-dpi = 200
-cache_dir = "cache"
-
-[deepseek]
-api_key = "sk-your-api-key"
-model = "deepseek-chat"
-base_url = "https://api.deepseek.com/v1"
-
-[translation]
-lang_in = "en"
-lang_out = "zh"
-qps = 4
-
-[server]
-host = "127.0.0.1"
-port = 5000
-debug = true
-```
+其余配置项（模型名称、base_url、语言对、端口等）均可在 `config.toml` 中修改，文件内含详细的中文注释。`config.toml` 已被 `.gitignore` 忽略，不会提交到 git。
 
 ### 术语表（可选）
 
