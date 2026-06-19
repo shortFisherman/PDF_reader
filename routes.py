@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import os
@@ -102,9 +103,8 @@ def translate_page(page: int):
             error_info: str | None = None
 
             def run_translation() -> None:
-                import asyncio
-
                 nonlocal error_info
+                loop: asyncio.AbstractEventLoop | None = None
                 try:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
@@ -118,6 +118,16 @@ def translate_page(page: int):
                 except Exception as e:
                     error_info = str(e)
                 finally:
+                    if loop is not None:
+                        try:
+                            pending = asyncio.all_tasks(loop)
+                            if pending:
+                                for task in pending:
+                                    task.cancel()
+                                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                        except Exception:
+                            pass
+                        loop.close()
                     event_queue.put({"type": "_done"})
 
             thread = threading.Thread(target=run_translation, daemon=True)
