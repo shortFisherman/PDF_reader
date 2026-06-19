@@ -4,6 +4,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
+import config
 from services import build_settings, render_page, sha256
 
 
@@ -59,3 +60,13 @@ def test_build_settings_with_output_dir():
 def test_build_settings_without_output_dir():
     settings = build_settings("dummy.pdf")
     assert getattr(settings.translation, "output", None) is None
+
+
+def test_config_provider_map_has_deepseek():
+    assert "deepseek" in config.PROVIDER_MAP
+    assert config.PROVIDER_MAP["deepseek"].__name__ == "DeepSeekSettings"
+
+
+def test_config_field_map_api_key_exists():
+    assert "DeepSeekSettings" in config.FIELD_MAP["api_key"]
+    assert config.FIELD_MAP["api_key"]["DeepSeekSettings"] == "deepseek_api_key"

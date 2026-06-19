@@ -38,3 +38,20 @@ def test_client():
     app.config['TESTING'] = True
     with app.test_client() as client:
         yield client
+
+
+import config
+
+
+@pytest.fixture
+def mock_config(monkeypatch):
+    monkeypatch.setattr(config, "MODEL_PROVIDER", "deepseek")
+    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
+    monkeypatch.setattr(config, "MODEL", "deepseek-v4-flash")
+    monkeypatch.setattr(config, "MODEL_BASE_URL", "https://api.deepseek.com/v1")
+    monkeypatch.setattr(config, "MODEL_THINKING_MODE", None)
+    monkeypatch.setattr(config, "MODEL_REASONING_EFFORT", None)
+    monkeypatch.setattr(config, "MODEL_ENABLE_JSON_MODE", None)
+    monkeypatch.setattr(config, "MODEL_TEMPERATURE", None)
+    monkeypatch.setattr(config, "MODEL_TIMEOUT", None)
+    yield
