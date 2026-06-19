@@ -5,6 +5,15 @@ let pageWidth = 0;
 let currentPage = 0;
 let isTranslating = false;
 let promptVisible = false;
+let statusTimer = null;
+
+const STAGE_LABELS = {
+    layout_analysis: '\u6b63\u5728\u5206\u6790\u7248\u9762\u2026',
+    translating: '\u6b63\u5728\u7ffb\u8bd1\u2026',
+    generating_pdf: '\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026',
+    generating_pdf_bilingual: '\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026',
+    finish: '\u7ffb\u8bd1\u5b8c\u6210'
+};
 
 const leftCol = document.getElementById('left-column');
 const rightCol = document.getElementById('right-column');
@@ -14,6 +23,7 @@ const promptInput = document.getElementById('prompt-input');
 const promptToggle = document.getElementById('prompt-toggle');
 const progressBar = document.getElementById('progress-bar');
 const progressFill = document.getElementById('progress-fill');
+const progressStatusText = document.getElementById('progress-status-text');
 const fileArea = document.getElementById('file-input-area');
 const appView = document.getElementById('app');
 const toolbar = document.getElementById('toolbar');
@@ -224,6 +234,12 @@ async function translateCurrentPage() {
     translateBtn.textContent = 'Translating...';
     progressBar.classList.add('active');
     progressFill.style.width = '0%';
+    progressStatusText.textContent = '';
+    progressStatusText.classList.remove('error', 'done');
+    if (statusTimer) {
+        clearTimeout(statusTimer);
+        statusTimer = null;
+    }
 
     const prompt = promptInput.value.trim() || null;
 
@@ -256,8 +272,29 @@ async function translateCurrentPage() {
                         const evt = JSON.parse(line.slice(6));
                         if (evt.type === 'progress') {
                             progressFill.style.width = `${evt.progress}%`;
+                            if (evt.stage) {
+                                let label = STAGE_LABELS[evt.stage] || evt.stage;
+                                if (evt.stage_current > 0 && evt.stage_total > 0) {
+                                    label += ` \u7b2c ${evt.stage_current}/${evt.stage_total} \u6bb5`;
+                                }
+                                progressStatusText.textContent = label;
+                                if (evt.stage === 'finish') {
+                                    progressStatusText.classList.add('done');
+                                    progressStatusText.classList.remove('error');
+                                } else {
+                                    progressStatusText.classList.remove('done', 'error');
+                                }
+                            }
                         } else if (evt.type === 'finish') {
                             progressFill.style.width = '100%';
+                            progressStatusText.textContent = STAGE_LABELS.finish;
+                            progressStatusText.classList.add('done');
+                            progressStatusText.classList.remove('error');
+                            statusTimer = setTimeout(() => {
+                                progressBar.classList.remove('active');
+                                progressStatusText.textContent = '';
+                                progressStatusText.classList.remove('done', 'error');
+                            }, 2000);
                         } else if (evt.type === 'error') {
                             throw new Error(evt.error);
                         }
@@ -280,12 +317,19 @@ async function translateCurrentPage() {
         loadTranslatedState();
 
     } catch (e) {
+        progressBar.classList.remove('active');
+        progressStatusText.textContent = e.message || '\u7ffb\u8bd1\u51fa\u9519';
+        progressStatusText.classList.add('error');
+        progressStatusText.classList.remove('done');
+        statusTimer = setTimeout(() => {
+            progressStatusText.textContent = '';
+            progressStatusText.classList.remove('error', 'done');
+        }, 3000);
         fileArea.classList.remove('hidden');
         fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">Translation error: ${e.message}</p>`);
     } finally {
         isTranslating = false;
         translateBtn.disabled = false;
         translateBtn.textContent = 'Translate';
-        progressBar.classList.remove('active');
     }
 }

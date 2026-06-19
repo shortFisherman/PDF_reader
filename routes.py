@@ -26,6 +26,14 @@ from services import build_settings, render_page, sha256
 
 bp = Blueprint("main", __name__)
 
+STAGE_LABELS = {
+    "layout_analysis": "\u6b63\u5728\u5206\u6790\u7248\u9762\u2026",
+    "translating": "\u6b63\u5728\u7ffb\u8bd1\u2026",
+    "generating_pdf": "\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026",
+    "generating_pdf_bilingual": "\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026",
+    "finish": "\u7ffb\u8bd1\u5b8c\u6210",
+}
+
 
 def error_response(msg: str, code: int) -> tuple:
     return jsonify({"error": msg}), code
@@ -146,12 +154,27 @@ def translate_page(page: int):
 
                 evt_type = evt.get("type", "")
                 if evt_type == "progress_start":
-                    yield f"data: {json.dumps({'type': 'progress', 'progress': 0, 'stage': evt.get('stage', '')})}\n\n"
+                    yield "data: " + json.dumps({
+                        "type": "progress", "progress": 0,
+                        "stage": evt.get("stage", ""),
+                        "stage_current": evt.get("stage_current", 0),
+                        "stage_total": evt.get("stage_total", 0),
+                    }) + "\n\n"
                 elif evt_type == "progress_update":
-                    yield f"data: {json.dumps({'type': 'progress', 'progress': evt.get('overall_progress', 0)})}\n\n"
+                    yield "data: " + json.dumps({
+                        "type": "progress",
+                        "progress": evt.get("overall_progress", 0),
+                        "stage": evt.get("stage", ""),
+                        "stage_current": evt.get("stage_current", 0),
+                        "stage_total": evt.get("stage_total", 0),
+                    }) + "\n\n"
                 elif evt_type == "finish":
                     translate_result = evt.get("translate_result")
-                    yield f"data: {json.dumps({'type': 'progress', 'progress': 95})}\n\n"
+                    yield "data: " + json.dumps({
+                        "type": "progress", "progress": 95,
+                        "stage": evt.get("stage", "generating_pdf"),
+                        "stage_current": 0, "stage_total": 0,
+                    }) + "\n\n"
                 elif evt_type == "error":
                     yield f"data: {json.dumps({'type': 'error', 'error': evt.get('error', 'unknown')})}\n\n"
                     return
@@ -178,6 +201,10 @@ def translate_page(page: int):
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
                 return
 
+            yield "data: " + json.dumps({
+                "type": "progress", "progress": 100,
+                "stage": "finish", "stage_current": 0, "stage_total": 0,
+            }) + "\n\n"
             yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
