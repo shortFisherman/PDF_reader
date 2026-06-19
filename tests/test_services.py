@@ -51,3 +51,11 @@ def test_build_settings_basic():
 def test_build_settings_with_prompt():
     settings = build_settings("dummy.pdf", "translate waveguide as 波导")
     assert settings.translation.custom_system_prompt == "translate waveguide as 波导"
+
+def test_build_settings_with_output_dir():
+    settings = build_settings("dummy.pdf", output_dir="/tmp/translate_output")
+    assert settings.translation.output == "/tmp/translate_output"
+
+def test_build_settings_without_output_dir():
+    settings = build_settings("dummy.pdf")
+    assert getattr(settings.translation, "output", None) is None
