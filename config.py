@@ -21,9 +21,10 @@ with open(CONFIG_PATH, "rb") as f:
 
 model_cfg = CONFIG["model"]
 MODEL_PROVIDER = model_cfg["provider"]
-MODEL_API_KEY = os.environ.get("MODEL_API_KEY", model_cfg["api_key"])
+_raw_api_key = os.environ.get("MODEL_API_KEY", model_cfg.get("api_key", ""))
+MODEL_API_KEY = (_raw_api_key or "").strip()
 MODEL = model_cfg["model"]
-MODEL_BASE_URL = model_cfg.get("base_url", "")
+MODEL_BASE_URL = model_cfg.get("base_url") or None
 
 MODEL_THINKING_MODE = model_cfg.get("thinking_mode")
 MODEL_REASONING_EFFORT = model_cfg.get("reasoning_effort")

@@ -45,14 +45,16 @@ def build_engine_kwargs(engine_cls):  # noqa: ANN001, ANN201
     for unified_name in ("api_key", "model", "base_url", "thinking_mode",
                          "reasoning_effort", "enable_json_mode",
                          "temperature", "timeout"):
+        config_attr_name = "MODEL" if unified_name == "model" else f"MODEL_{unified_name.upper()}"
+        value = getattr(config, config_attr_name, None)
+
         engine_field = config.FIELD_MAP.get(unified_name, {}).get(engine_name)
         if engine_field is None:
+            if value is not None and unified_name not in ("api_key", "model", "base_url"):
+                logger.warning("当前引擎不支持 %s，已忽略", unified_name)
             continue
         if engine_field not in engine_fields:
             continue
-
-        config_attr_name = "MODEL" if unified_name == "model" else f"MODEL_{unified_name.upper()}"
-        value = getattr(config, config_attr_name, None)
 
         if value is not None:
             kwargs[engine_field] = value

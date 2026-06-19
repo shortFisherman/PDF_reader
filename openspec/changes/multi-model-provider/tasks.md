@@ -6,7 +6,7 @@
 ## 2. 引擎路由实现
 
 - [x] 2.1 重写 `services.py` 中 `build_settings`：根据 provider 动态选择引擎类，通过字段映射表将统一配置字段映射到引擎实例化参数，不存在的字段静默跳过
-- [x] 2.2 确保 `DEEPSEEK_API_KEY` 环境变量兼容性：新增 `MODEL_API_KEY` 环境变量覆盖，同时保留 `DEEPSEEK_API_KEY` 作为 fallback
+- [x] 2.2 环境变量：使用 `MODEL_API_KEY` 环境变量覆盖，`DEEPSEEK_API_KEY` 不再支持（用户确认无需向后兼容）
 
 ## 3. 文档与模板
 
