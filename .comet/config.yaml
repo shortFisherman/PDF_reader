@@ -4,3 +4,4 @@ context_compression: off
 review_mode: off
 # auto_transition: true | false
 auto_transition: true
+build_command: venv/Scripts/python.exe -m pytest tests/ -v

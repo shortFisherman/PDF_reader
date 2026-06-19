@@ -1,3 +1,7 @@
+---
+archived-with: 2026-06-19-organize-translation-byproducts
+status: final
+---
 ﻿---
 change: organize-translation-byproducts
 design-doc: docs/superpowers/specs/2026-06-19-translation-output-isolation-design.md

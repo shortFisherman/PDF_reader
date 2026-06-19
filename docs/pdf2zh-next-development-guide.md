@@ -369,8 +369,7 @@ babeldoc.async_translate(config)
            _translate_wrapper 注入 token_usage:
            ├─ config.translator.token_count / prompt_token_count / completion_token_count
            ├─ config.term_extraction_translator 的同上
-           └─ event["token_usage"] = {"main": {...}, "term": {...}}
-```
+            └─ event["token_usage"] = {"main": {...}, "term": {...}}
 
 ---
 
