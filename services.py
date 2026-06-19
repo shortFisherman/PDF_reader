@@ -1,12 +1,15 @@
 import hashlib
+import logging
 
 import pymupdf
 from pdf2zh_next import SettingsModel
 from pdf2zh_next.config.model import PDFSettings as Pdf2zhPDFSettings
 from pdf2zh_next.config.model import TranslationSettings as Pdf2zhTranslationSettings
-from pdf2zh_next.config.translate_engine_model import DeepSeekSettings
+from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
 
 import config
+
+logger = logging.getLogger("pdf_reader")
 
 
 def sha256(filepath: str) -> str:
@@ -25,7 +28,48 @@ def render_page(doc: pymupdf.Document, page_num: int, dpi: int) -> bytes:
     return pix.tobytes(output="png")
 
 
+def resolve_engine(provider: str):
+    engine_cls = config.PROVIDER_MAP.get(provider)
+    if engine_cls is None:
+        logger.info("Provider '%s' not found, falling back to OpenAI Compatible", provider)
+        return OpenAICompatibleSettings
+    logger.info("Using engine: %s (%s)", engine_cls.__name__, config.MODEL)
+    return engine_cls
+
+
+def build_engine_kwargs(engine_cls):
+    engine_fields = engine_cls.model_fields
+    engine_name = engine_cls.__name__
+    kwargs = {}
+
+    for unified_name in ("api_key", "model", "base_url", "thinking_mode",
+                         "reasoning_effort", "enable_json_mode",
+                         "temperature", "timeout"):
+        engine_field = config.FIELD_MAP.get(unified_name, {}).get(engine_name)
+        if engine_field is None:
+            continue
+        if engine_field not in engine_fields:
+            continue
+
+        config_attr_name = "MODEL" if unified_name == "model" else f"MODEL_{unified_name.upper()}"
+        value = getattr(config, config_attr_name, None)
+
+        if value is not None:
+            kwargs[engine_field] = value
+        elif unified_name in ("api_key", "model"):
+            raise RuntimeError(f"model.{unified_name} 未配置")
+        elif unified_name == "base_url":
+            pass
+        else:
+            logger.warning("当前引擎不支持 %s，已忽略", unified_name)
+
+    return kwargs
+
+
 def build_settings(single_page_pdf: str, user_prompt: str | None = None, output_dir: str | None = None) -> SettingsModel:
+    engine_cls = resolve_engine(config.MODEL_PROVIDER)
+    engine_kwargs = build_engine_kwargs(engine_cls)
+
     translation_kwargs = {
         "lang_in": config.TRANSLATION_LANG_IN,
         "lang_out": config.TRANSLATION_LANG_OUT,
@@ -37,6 +81,7 @@ def build_settings(single_page_pdf: str, user_prompt: str | None = None, output_
         translation_kwargs["glossaries"] = str(config.GLOSSARY_PATH)
     if output_dir is not None:
         translation_kwargs["output"] = output_dir
+
     return SettingsModel(
         translation=Pdf2zhTranslationSettings(**translation_kwargs),
         pdf=Pdf2zhPDFSettings(
@@ -45,9 +90,5 @@ def build_settings(single_page_pdf: str, user_prompt: str | None = None, output_
             only_include_translated_page=True,
             watermark_output_mode="no_watermark",
         ),
-        translate_engine_settings=DeepSeekSettings(
-            deepseek_api_key=config.DEEPSEEK_API_KEY,
-            deepseek_model=config.DEEPSEEK_MODEL,
-            deepseek_base_url=config.DEEPSEEK_BASE_URL,
-        ),
+        translate_engine_settings=engine_cls(**engine_kwargs),
     )
