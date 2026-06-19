@@ -153,6 +153,11 @@ def translate_page(page: int):
                     break
 
                 evt_type = evt.get("type", "")
+                # BabelDOC event contract (from do_translate_async_stream):
+                #   progress_start:   stage, overall_progress, stage_current, stage_total
+                #   progress_update:  stage, overall_progress, stage_current, stage_total
+                #   progress_end:     stage, overall_progress
+                #   finish:           translate_result, token_usage
                 if evt_type == "progress_start":
                     yield "data: " + json.dumps({
                         "type": "progress", "progress": 0,
