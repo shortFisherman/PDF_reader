@@ -1,0 +1,14 @@
+{
+  "change": "translation-status-display",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "3B84E6AEFEABE6F7954390927DC8ECF161E9D60E89E0EF4BB6B9D571786A7924",
+  "files": [
+    { "path": "openspec/changes/translation-status-display/design.md", "sha256": "7384F60E595046E37A6B3D3ED591B522BC66AC35148736647FA503C9158A5E52" },
+    { "path": "openspec/changes/translation-status-display/proposal.md", "sha256": "C7565169246DCBA5B014C36CD90EAE0119FA71014C3F8922C776D7DBAEED62DE" },
+    { "path": "openspec/changes/translation-status-display/specs/page-translation/spec.md", "sha256": "6B5EBDE9A97D64ACA0BAB304B1752AAB76F7C2A8AB4D6BB174C1C95FCEA4DB45" },
+    { "path": "openspec/changes/translation-status-display/tasks.md", "sha256": "40667B029A212A82570E0052CF9D5B404BFEFF5DE697A33D5595A66F959A5163" }
+  ]
+}
