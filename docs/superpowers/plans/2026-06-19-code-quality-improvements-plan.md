@@ -2,6 +2,8 @@
 change: code-quality-improvements
 design-doc: docs/superpowers/specs/2026-06-19-code-quality-improvements-design.md
 base-ref: b5ffe2aa3cefc363bcc5426c6d5d624f8532654f
+status: archived
+archived-with: openspec/changes/archive/2026-06-19-code-quality-improvements
 ---
 
 # Code Quality Improvements — Implementation Plan

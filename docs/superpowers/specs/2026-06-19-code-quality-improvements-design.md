@@ -2,6 +2,8 @@
 comet_change: code-quality-improvements
 role: technical-design
 canonical_spec: openspec
+status: archived
+archived-with: openspec/changes/archive/2026-06-19-code-quality-improvements
 ---
 
 # Code Quality Improvements — Technical Design
