@@ -1,0 +1,14 @@
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = ["E", "F", "I", "UP", "ANN"]
+ignore = ["ANN101", "ANN102", "ANN401"]
+
+[lint.per-file-ignores]
+"app.py" = ["ANN201"]
+"routes.py" = ["ANN201", "ANN001", "ANN202"]
+"tests/*.py" = ["ANN001", "ANN201"]
+"tests/conftest.py" = ["ANN001", "ANN201"]
+"state.py" = ["ANN001"]
+"config.py" = ["ANN201"]

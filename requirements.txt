@@ -1,3 +1,4 @@
 flask>=3.1.0
 pymupdf>=1.25.0
 pdf2zh-next>=2.9.0
+pytest>=8.0.0

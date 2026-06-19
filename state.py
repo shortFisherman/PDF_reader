@@ -1,0 +1,113 @@
+import os
+import shutil
+import threading
+from pathlib import Path
+
+import pymupdf
+
+
+class AppState:
+    def __init__(self, cache_dir: Path) -> None:
+        self._lock = threading.Lock()
+        self._cache_dir = cache_dir
+        self._left_doc: pymupdf.Document | None = None
+        self._right_doc: pymupdf.Document | None = None
+        self._right_pdf_path: str | None = None
+        self._pdf_path: str | None = None
+        self._pdf_hash: str | None = None
+        self._page_count: int = 0
+        self._page_height: float = 0.0
+        self._page_width: float = 0.0
+        self._translated_pages: set[int] = set()
+
+    @property
+    def pdf_path(self) -> str | None:
+        return self._pdf_path
+
+    @property
+    def pdf_hash(self) -> str | None:
+        return self._pdf_hash
+
+    @property
+    def left_doc(self) -> pymupdf.Document | None:
+        return self._left_doc
+
+    @property
+    def right_doc(self) -> pymupdf.Document | None:
+        return self._right_doc
+
+    @property
+    def page_count(self) -> int:
+        return self._page_count
+
+    @property
+    def page_height(self) -> float:
+        return self._page_height
+
+    @property
+    def page_width(self) -> float:
+        return self._page_width
+
+    @property
+    def translated_pages(self) -> frozenset[int]:
+        return frozenset(self._translated_pages)
+
+    def open_pdf(self, pdf_path: str, sha256_func) -> dict:
+        with self._lock:
+            self._close_docs()
+            pdf_hash = sha256_func(pdf_path)
+            cache_subdir = self._cache_dir / pdf_hash
+            cache_subdir.mkdir(parents=True, exist_ok=True)
+            right_pdf_path = cache_subdir / "right.pdf"
+            if not right_pdf_path.exists():
+                shutil.copy2(pdf_path, right_pdf_path)
+            self._left_doc = pymupdf.open(pdf_path)
+            self._right_doc = pymupdf.open(str(right_pdf_path))
+            self._pdf_path = pdf_path
+            self._pdf_hash = pdf_hash
+            self._right_pdf_path = str(right_pdf_path)
+            self._page_count = self._left_doc.page_count
+            sample_page = self._left_doc[0]
+            self._page_height = sample_page.rect.height
+            self._page_width = sample_page.rect.width
+            return {
+                "page_count": self._page_count,
+                "page_height": self._page_height,
+                "page_width": self._page_width,
+                "hash": pdf_hash,
+            }
+
+    def get_doc(self, side: str) -> pymupdf.Document | None:
+        with self._lock:
+            return self._left_doc if side == "left" else self._right_doc
+
+    def render_page(self, side: str, page_num: int, render_func, dpi: int) -> bytes:
+        doc = self.get_doc(side)
+        if doc is None:
+            raise ValueError("no document opened")
+        return render_func(doc, page_num, dpi)
+
+    def replace_page(self, translated_pdf_path: str, page_num: int) -> None:
+        with self._lock:
+            src_doc = pymupdf.open(translated_pdf_path)
+            self._right_doc.delete_page(page_num)
+            self._right_doc.insert_pdf(src_doc, start_at=page_num)
+            tmp_save = self._right_pdf_path + ".tmp"
+            self._right_doc.save(tmp_save)
+            src_doc.close()
+            self._right_doc.close()
+            os.replace(tmp_save, self._right_pdf_path)
+            self._right_doc = pymupdf.open(self._right_pdf_path)
+            self._translated_pages.add(page_num)
+
+    def is_doc_open(self) -> bool:
+        return self._left_doc is not None
+
+    def _close_docs(self) -> None:
+        if self._left_doc:
+            self._left_doc.close()
+            self._left_doc = None
+        if self._right_doc:
+            self._right_doc.close()
+            self._right_doc = None
+        self._translated_pages.clear()
