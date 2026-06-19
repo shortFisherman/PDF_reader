@@ -1,5 +1,5 @@
 workflow: full
-phase: build
+phase: verify
 design_doc: docs/superpowers/specs/2026-06-19-code-quality-improvements-design.md
 plan: docs/superpowers/plans/2026-06-19-code-quality-improvements-plan.md
 base_ref: b5ffe2aa3cefc363bcc5426c6d5d624f8532654f
