@@ -1,9 +1,11 @@
+import shutil
 import tempfile
 from pathlib import Path
 
 import pymupdf
 import pytest
 
+import config
 from app import create_app
 from state import AppState
 
@@ -19,7 +21,6 @@ def sample_pdf():
     doc.save(str(pdf_path))
     doc.close()
     yield pdf_path
-    import shutil
     shutil.rmtree(tmpdir, ignore_errors=True)
 
 @pytest.fixture
@@ -38,9 +39,6 @@ def test_client():
     app.config['TESTING'] = True
     with app.test_client() as client:
         yield client
-
-
-import config
 
 
 @pytest.fixture

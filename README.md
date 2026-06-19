@@ -90,17 +90,46 @@ pip install -r requirements.txt
 cp config.example.toml config.toml
 ```
 
-### 配置模型 API Key
+### 配置模型
 
-编辑 `config.toml`，填入你的 DeepSeek API Key（从 [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys) 获取）：
+编辑 `config.toml` 的 `[model]` 段：
 
-也可通过环境变量设置（推荐，优先级更高）：
-
-```powershell
-$env:DEEPSEEK_API_KEY = "sk-your-api-key"
+```toml
+[model]
+provider = "deepseek"                          # 供应商
+api_key  = "sk-your-api-key"                   # API Key
+model    = "deepseek-v4-flash"                 # 模型名
+base_url = "https://api.deepseek.com/v1"       # 可选
 ```
 
-其余配置项（模型名称、base_url、语言对、端口等）均可在 `config.toml` 中修改，文件内含详细的中文注释。`config.toml` 已被 `.gitignore` 忽略，不会提交到 git。
+也可通过环境变量设置 `MODEL_API_KEY`（推荐，优先级更高）：
+
+```powershell
+$env:MODEL_API_KEY = "sk-your-api-key"
+```
+
+#### 切换供应商
+
+将 `provider` 改为其他值即可，示例：
+
+```toml
+# 使用智谱
+provider = "zhipu"
+api_key  = "your-zhipu-key"
+model    = "glm-4-flash"
+
+# 使用 OpenAI 兼容接口（如本地 Ollama）
+provider = "openai_compatible"
+api_key  = "ollama"
+model    = "qwen2.5:7b"
+base_url = "http://localhost:11434/v1"
+```
+
+支持 10 个内置引擎 + OpenAI 通用兼容接口，详见 `config.example.toml` 中的完整表格。
+
+> **迁移提示：** 旧版 `[deepseek]` 配置段已废弃，请改为 `[model]`。旧环境变量 `DEEPSEEK_API_KEY` 不再支持，请改用 `MODEL_API_KEY`。
+
+其余配置项（语言对、端口等）均可在 `config.toml` 中修改，文件内含详细的中文注释。
 
 ### 术语表（可选）
 

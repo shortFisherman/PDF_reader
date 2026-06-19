@@ -74,15 +74,17 @@ def test_config_field_map_api_key_exists():
 
 def test_resolve_engine_deepseek(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_PROVIDER", "deepseek")
-    from services import resolve_engine
     from pdf2zh_next.config.translate_engine_model import DeepSeekSettings
+
+    from services import resolve_engine
     assert resolve_engine("deepseek") is DeepSeekSettings
 
 
 def test_resolve_engine_unknown_fallback(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_PROVIDER", "nonexistent")
-    from services import resolve_engine
     from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
+
+    from services import resolve_engine
     assert resolve_engine("nonexistent") is OpenAICompatibleSettings
 
 
@@ -90,8 +92,9 @@ def test_build_engine_kwargs_deepseek(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test")
     monkeypatch.setattr(config, "MODEL", "deepseek-chat")
     monkeypatch.setattr(config, "MODEL_BASE_URL", "https://api.deepseek.com/v1")
-    from services import build_engine_kwargs
     from pdf2zh_next.config.translate_engine_model import DeepSeekSettings
+
+    from services import build_engine_kwargs
     kwargs = build_engine_kwargs(DeepSeekSettings)
     assert kwargs["deepseek_api_key"] == "sk-test"
     assert kwargs["deepseek_model"] == "deepseek-chat"
@@ -99,8 +102,9 @@ def test_build_engine_kwargs_deepseek(mock_config, monkeypatch):
 
 def test_build_engine_kwargs_zhipu_ignores_thinking_mode(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_THINKING_MODE", "enabled")
-    from services import build_engine_kwargs
     from pdf2zh_next.config.translate_engine_model import ZhipuSettings
+
+    from services import build_engine_kwargs
     kwargs = build_engine_kwargs(ZhipuSettings)
     assert "zhipu_thinking_mode" not in kwargs
 
@@ -108,8 +112,9 @@ def test_build_engine_kwargs_zhipu_ignores_thinking_mode(mock_config, monkeypatc
 def test_build_engine_kwargs_missing_api_key_raises(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_API_KEY", None)
     monkeypatch.setattr(config, "MODEL", "some-model")
-    from services import build_engine_kwargs
     from pdf2zh_next.config.translate_engine_model import DeepSeekSettings
+
+    from services import build_engine_kwargs
     with pytest.raises(RuntimeError, match="未配置"):
         build_engine_kwargs(DeepSeekSettings)
 

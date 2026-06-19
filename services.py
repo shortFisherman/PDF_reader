@@ -28,7 +28,7 @@ def render_page(doc: pymupdf.Document, page_num: int, dpi: int) -> bytes:
     return pix.tobytes(output="png")
 
 
-def resolve_engine(provider: str):
+def resolve_engine(provider: str):  # noqa: ANN201
     engine_cls = config.PROVIDER_MAP.get(provider)
     if engine_cls is None:
         logger.info("Provider '%s' not found, falling back to OpenAI Compatible", provider)
@@ -37,7 +37,7 @@ def resolve_engine(provider: str):
     return engine_cls
 
 
-def build_engine_kwargs(engine_cls):
+def build_engine_kwargs(engine_cls):  # noqa: ANN001, ANN201
     engine_fields = engine_cls.model_fields
     engine_name = engine_cls.__name__
     kwargs = {}
@@ -66,7 +66,11 @@ def build_engine_kwargs(engine_cls):
     return kwargs
 
 
-def build_settings(single_page_pdf: str, user_prompt: str | None = None, output_dir: str | None = None) -> SettingsModel:
+def build_settings(
+    single_page_pdf: str,
+    user_prompt: str | None = None,
+    output_dir: str | None = None,
+) -> SettingsModel:
     engine_cls = resolve_engine(config.MODEL_PROVIDER)
     engine_kwargs = build_engine_kwargs(engine_cls)
 

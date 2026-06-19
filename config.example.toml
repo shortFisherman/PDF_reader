@@ -7,11 +7,30 @@
 #   3. config.toml 已被 .gitignore 忽略，不会提交到 git
 #
 # API Key 配置方式（二选一）：
-#   方式 A（推荐）：设置环境变量 DEEPSEEK_API_KEY
-#       PowerShell:  $env:DEEPSEEK_API_KEY = "sk-你的密钥"
-#       CMD:          set DEEPSEEK_API_KEY=sk-你的密钥
+#   方式 A（推荐）：设置环境变量 MODEL_API_KEY
+#       PowerShell:  $env:MODEL_API_KEY = "sk-你的密钥"
+#       CMD:          set MODEL_API_KEY=sk-你的密钥
 #   方式 B：直接在下方的 api_key 字段填写
 #       ⚠️ 注意不要将含真实 API Key 的 config.toml 提交到 git
+#
+# 支持的 provider 及高级参数：
+#   ┌────────────────────┬──────────────────────────────────────────┐
+#   │ provider           │ 支持的高级参数                           │
+#   ├────────────────────┼──────────────────────────────────────────┤
+#   │ deepseek           │ thinking_mode, reasoning_effort          │
+#   │ zhipu              │ enable_json_mode                         │
+#   │ siliconflow        │ enable_json_mode                         │
+#   │ aliyun             │ temperature, timeout, enable_json_mode   │
+#   │ gemini             │ enable_json_mode                         │
+#   │ groq               │ enable_json_mode                         │
+#   │ grok               │ enable_json_mode                         │
+#   │ modelscope         │ enable_json_mode                         │
+#   │ openai             │ temperature, timeout, reasoning_effort,  │
+#   │                    │ enable_json_mode                         │
+#   │ openai_compatible  │ temperature, timeout, reasoning_effort,  │
+#   │                    │ enable_json_mode                         │
+#   └────────────────────┴──────────────────────────────────────────┘
+#   未列出的 provider 名自动走 openai_compatible 兜底（OpenAI 兼容接口）
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -26,21 +45,31 @@ cache_dir = "cache"
 # -----------------------------------------------------------------------------
 # 模型配置（翻译服务使用的 LLM 模型）
 # -----------------------------------------------------------------------------
-[deepseek]
-# DeepSeek API Key
-#   - 从 https://platform.deepseek.com/api_keys 获取
-#   - 也可通过环境变量 DEEPSEEK_API_KEY 设置（优先级更高）
+[model]
+# 模型供应商（必填）
+#   可选值：deepseek / zhipu / siliconflow / aliyun / gemini / groq / grok
+#          modelscope / openai / openai_compatible
+provider = "deepseek"
+
+# API Key（必填）
+#   - 也可通过环境变量 MODEL_API_KEY 设置（优先级更高）
 api_key = "sk-your-api-key-here"
 
-# 模型名称
-#   - 可选模型：deepseek-chat, deepseek-v4-flash, deepseek-reasoner 等
-#   - 查看完整列表：https://platform.deepseek.com/api-docs
+# 模型名称（必填）
 model = "deepseek-v4-flash"
 
-# API 基础地址
-#   - 官方地址：https://api.deepseek.com/v1
-#   - 如使用代理 / 兼容接口，可改为自定义地址
+# API 基础地址（可选，留空则使用引擎内置默认值）
+#   - 仅 siliconflow / aliyun / openai / openai_compatible 支持自定义
 base_url = "https://api.deepseek.com/v1"
+
+# -----------------------------------------------------------------------------
+# 高级参数（全部可选，仅部分引擎支持，不支持的自动忽略并输出 warning）
+# -----------------------------------------------------------------------------
+# thinking_mode = "enabled"     # deepseek 专用：思考模式（enabled / disabled）
+# reasoning_effort = "high"     # deepseek / openai / openai_compatible
+# enable_json_mode = false      # 强制 JSON 输出模式
+# temperature = "0.7"           # openai / aliyun / openai_compatible
+# timeout = "500"               # openai / aliyun / openai_compatible（秒）
 
 # -----------------------------------------------------------------------------
 # 翻译设置
