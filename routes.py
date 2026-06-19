@@ -97,6 +97,7 @@ def translate_page(page: int):
     user_prompt = (data.get("prompt") or "").strip() or None
 
     tmpdir = tempfile.mkdtemp()
+    output_dir = tempfile.mkdtemp(dir=str(config.CACHE_DIR))
     tmpdir_path = Path(tmpdir)
     single_page_pdf = tmpdir_path / "page.pdf"
     single_doc = pymupdf.open()
@@ -106,7 +107,7 @@ def translate_page(page: int):
 
     def generate():
         try:
-            settings = build_settings(str(single_page_pdf), user_prompt)
+            settings = build_settings(str(single_page_pdf), user_prompt, output_dir=output_dir)
             event_queue: queue.Queue = queue.Queue()
             error_info: str | None = None
 
@@ -213,6 +214,7 @@ def translate_page(page: int):
             yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+            shutil.rmtree(output_dir, ignore_errors=True)
 
     return Response(
         stream_with_context(generate()),
