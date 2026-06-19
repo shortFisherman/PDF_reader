@@ -37,7 +37,7 @@ base-ref: a555b0aee33923f7b879b7b8aa7e23ee89dc4bf8
 - Produces: `config.PROVIDER_MAP: dict[str, type[BaseModel]]`
 - Produces: `config.FIELD_MAP: dict[str, dict[str, str]]`
 
-- [ ] **Step 1: 在 conftest.py 中新增 mock_config fixture**
+- [x] **Step 1: 在 conftest.py 中新增 mock_config fixture**
 
 ```python
 # 在 tests/conftest.py 末尾追加
@@ -58,12 +58,12 @@ def mock_config(monkeypatch):
     yield
 ```
 
-- [ ] **Step 2: 验证 mock_config fixture 生效**
+- [x] **Step 2: 验证 mock_config fixture 生效**
 
 Run: `pytest tests/test_services.py::test_build_settings_basic -v --setup-show`
 Expected: 测试失败或通过取决于 config.py 当前状态（此步骤仅确认 fixture 存在）
 
-- [ ] **Step 3: 更新 config.toml — `[deepseek]` → `[model]`**
+- [x] **Step 3: 更新 config.toml — `[deepseek]` → `[model]`**
 
 ```toml
 [pdf_reader]
@@ -87,7 +87,7 @@ port = 5000
 debug = true
 ```
 
-- [ ] **Step 4: 重写 config.py — 新增 PROVIDER_MAP、FIELD_MAP、统一配置常量**
+- [x] **Step 4: 重写 config.py — 新增 PROVIDER_MAP、FIELD_MAP、统一配置常量**
 
 ```python
 import logging
@@ -215,7 +215,7 @@ TRANSLATION_LANG_IN = CONFIG["translation"]["lang_in"]
 TRANSLATION_LANG_OUT = CONFIG["translation"]["lang_out"]
 ```
 
-- [ ] **Step 5: 添加 `import config` 到 test_services.py 顶部导入**
+- [x] **Step 5: 添加 `import config` 到 test_services.py 顶部导入**
 
 在 `tests/test_services.py` 顶部的 `from services import build_settings, render_page, sha256` 后增加一行：
 
@@ -223,7 +223,7 @@ TRANSLATION_LANG_OUT = CONFIG["translation"]["lang_out"]
 import config
 ```
 
-- [ ] **Step 6: 编写 config 层测试 — 验证新常量存在且有值**
+- [x] **Step 6: 编写 config 层测试 — 验证新常量存在且有值**
 
 在 `tests/test_services.py` 末尾追加：
 
@@ -252,12 +252,12 @@ def test_config_raises_on_missing_api_key():
             os.environ.pop("MODEL_API_KEY", None)
 ```
 
-- [ ] **Step 7: 运行现有测试确认回归范围**
+- [x] **Step 7: 运行现有测试确认回归范围**
 
 Run: `pytest tests/ -v`
 Expected: 现有 `test_build_settings_*` 测试失败（services.py 仍引用 `config.DEEPSEEK_API_KEY` 等旧常量），新增 config 测试通过。
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add config.toml config.py tests/conftest.py tests/test_services.py
@@ -277,7 +277,7 @@ git commit -m "feat(config): add multi-model provider routing and field mapping"
 - Produces: `build_engine_kwargs(engine_cls: type[BaseModel]) -> dict`
 - Modifies: `build_settings(single_page_pdf, user_prompt, output_dir) -> SettingsModel`（调用上述函数替代硬编码）
 
-- [ ] **Step 1: 编写 resolve_engine 和 build_engine_kwargs 的测试**
+- [x] **Step 1: 编写 resolve_engine 和 build_engine_kwargs 的测试**
 
 在 `tests/test_services.py` 末尾追加：
 
@@ -321,12 +321,12 @@ def test_build_engine_kwargs_missing_api_key_raises(mock_config, monkeypatch):
         build_engine_kwargs(DeepSeekSettings)
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `pytest tests/test_services.py -v -k "resolve_engine or build_engine_kwargs"`
 Expected: 全部 FAIL（`resolve_engine` 和 `build_engine_kwargs` 尚未定义）
 
-- [ ] **Step 3: 在 services.py 中实现 resolve_engine 和 build_engine_kwargs**
+- [x] **Step 3: 在 services.py 中实现 resolve_engine 和 build_engine_kwargs**
 
 将 `services.py` 完整重写为：
 
@@ -426,12 +426,12 @@ def build_settings(single_page_pdf: str, user_prompt: str | None = None, output_
     )
 ```
 
-- [ ] **Step 4: 运行新增测试确认通过**
+- [x] **Step 4: 运行新增测试确认通过**
 
 Run: `pytest tests/test_services.py -v -k "resolve_engine or build_engine_kwargs"`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services.py tests/test_services.py
@@ -451,7 +451,7 @@ git commit -m "feat(services): add multi-model engine routing and field mapping"
 - Consumes: `config.PROVIDER_MAP`, `config.FIELD_MAP`, 所有 `config.MODEL_*` 常量
 - Consumes: `tests/conftest.py::mock_config` fixture
 
-- [ ] **Step 1: 更新现有 test_build_settings_* 测试适配 mock_config**
+- [x] **Step 1: 更新现有 test_build_settings_* 测试适配 mock_config**
 
 将 `tests/test_services.py` 中现有 4 个 `test_build_settings_*` 测试的签名添加 `mock_config` 参数。找到并替换：
 
@@ -477,12 +477,12 @@ def test_build_settings_without_output_dir(mock_config):
 
 注意：`test_sha256_consistent`、`test_sha256_different`、`test_render_page_*` 不需要 mock_config，保持不变。
 
-- [ ] **Step 2: 运行更新后的现有测试确认通过**
+- [x] **Step 2: 运行更新后的现有测试确认通过**
 
 Run: `pytest tests/test_services.py -v -k "test_build_settings_basic or test_build_settings_with_prompt or test_build_settings_with_output_dir or test_build_settings_without_output_dir"`
 Expected: PASS（4 个测试均通过）
 
-- [ ] **Step 3: 新增 test_build_settings_deepseek_with_thinking 测试**
+- [x] **Step 3: 新增 test_build_settings_deepseek_with_thinking 测试**
 
 在 `tests/test_services.py` 末尾追加：
 
@@ -503,7 +503,7 @@ def test_build_settings_deepseek_with_thinking(mock_config, monkeypatch):
     assert engine.deepseek_reasoning_effort == "high"
 ```
 
-- [ ] **Step 4: 新增 test_build_settings_unknown_provider 测试**
+- [x] **Step 4: 新增 test_build_settings_unknown_provider 测试**
 
 ```python
 def test_build_settings_unknown_provider(mock_config, monkeypatch):
@@ -522,7 +522,7 @@ def test_build_settings_unknown_provider(mock_config, monkeypatch):
     assert engine.openai_compatible_base_url == "https://custom.api/v1"
 ```
 
-- [ ] **Step 5: 新增 test_build_settings_unsupported_field_ignored 测试**
+- [x] **Step 5: 新增 test_build_settings_unsupported_field_ignored 测试**
 
 ```python
 def test_build_settings_unsupported_field_ignored(mock_config, monkeypatch):
@@ -541,7 +541,7 @@ def test_build_settings_unsupported_field_ignored(mock_config, monkeypatch):
     assert not hasattr(engine, "zhipu_temperature")
 ```
 
-- [ ] **Step 6: 新增 test_build_settings_missing_api_key_raises 测试**
+- [x] **Step 6: 新增 test_build_settings_missing_api_key_raises 测试**
 
 ```python
 def test_build_settings_missing_api_key_raises(mock_config, monkeypatch):
@@ -550,12 +550,12 @@ def test_build_settings_missing_api_key_raises(mock_config, monkeypatch):
         build_settings("dummy.pdf")
 ```
 
-- [ ] **Step 7: 运行全部测试**
+- [x] **Step 7: 运行全部测试**
 
 Run: `pytest tests/test_services.py -v`
 Expected: 全部 20 个测试 PASS（8 个原有 + 3 配置测试 + 5 路由测试 + 4 provider 测试）
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add tests/test_services.py tests/conftest.py
@@ -573,7 +573,7 @@ git commit -m "test: update build_settings tests for multi-model provider"
 **Interfaces:**
 - 无代码接口，纯文档变更
 
-- [ ] **Step 1: 更新 config.example.toml**
+- [x] **Step 1: 更新 config.example.toml**
 
 将 `config.example.toml` 完整替换为：
 
@@ -674,7 +674,7 @@ port = 5000
 debug = true
 ```
 
-- [ ] **Step 2: 更新 README.md 配置章节**
+- [x] **Step 2: 更新 README.md 配置章节**
 
 将 README.md 的第 93-103 行（"### 配置模型 API Key" 部分）替换为：
 
@@ -721,19 +721,19 @@ base_url = "http://localhost:11434/v1"
 其余配置项（语言对、端口等）均可在 `config.toml` 中修改，文件内含详细的中文注释。
 ```
 
-- [ ] **Step 3: 运行 ruff check 确认零 lint 错误**
+- [x] **Step 3: 运行 ruff check 确认零 lint 错误**
 
 ```bash
 pip install ruff; if ($?) { ruff check }
 ```
 Expected: 无输出（零错误）
 
-- [ ] **Step 4: 运行全部测试确认**
+- [x] **Step 4: 运行全部测试确认**
 
 Run: `pytest tests/ -v`
 Expected: 全部 20 个测试 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add config.example.toml README.md
