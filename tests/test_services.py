@@ -43,21 +43,21 @@ def test_render_page_out_of_range(sample_pdf):
         render_page(doc, 999, 72)
     doc.close()
 
-def test_build_settings_basic():
+def test_build_settings_basic(mock_config):
     settings = build_settings("dummy.pdf")
     assert settings.translation.lang_in == "en"
     assert settings.translation.lang_out == "zh"
     assert settings.translation.ignore_cache is True
 
-def test_build_settings_with_prompt():
+def test_build_settings_with_prompt(mock_config):
     settings = build_settings("dummy.pdf", "translate waveguide as 波导")
     assert settings.translation.custom_system_prompt == "translate waveguide as 波导"
 
-def test_build_settings_with_output_dir():
+def test_build_settings_with_output_dir(mock_config):
     settings = build_settings("dummy.pdf", output_dir="/tmp/translate_output")
     assert settings.translation.output == "/tmp/translate_output"
 
-def test_build_settings_without_output_dir():
+def test_build_settings_without_output_dir(mock_config):
     settings = build_settings("dummy.pdf")
     assert getattr(settings.translation, "output", None) is None
 
@@ -112,3 +112,57 @@ def test_build_engine_kwargs_missing_api_key_raises(mock_config, monkeypatch):
     from pdf2zh_next.config.translate_engine_model import DeepSeekSettings
     with pytest.raises(RuntimeError, match="未配置"):
         build_engine_kwargs(DeepSeekSettings)
+
+
+def test_build_settings_deepseek_with_thinking(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "MODEL_PROVIDER", "deepseek")
+    monkeypatch.setattr(config, "MODEL_THINKING_MODE", "enabled")
+    monkeypatch.setattr(config, "MODEL_REASONING_EFFORT", "high")
+    from pdf2zh_next.config.translate_engine_model import DeepSeekSettings
+
+    settings = build_settings("dummy.pdf")
+    engine = settings.translate_engine_settings
+
+    assert isinstance(engine, DeepSeekSettings)
+    assert engine.deepseek_api_key == "sk-test-key"
+    assert engine.deepseek_model == "deepseek-v4-flash"
+    assert engine.deepseek_thinking_mode == "enabled"
+    assert engine.deepseek_reasoning_effort == "high"
+
+
+def test_build_settings_unknown_provider(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "MODEL_PROVIDER", "some_custom_gateway")
+    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-custom")
+    monkeypatch.setattr(config, "MODEL", "custom-model")
+    monkeypatch.setattr(config, "MODEL_BASE_URL", "https://custom.api/v1")
+    from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
+
+    settings = build_settings("dummy.pdf")
+    engine = settings.translate_engine_settings
+
+    assert isinstance(engine, OpenAICompatibleSettings)
+    assert engine.openai_compatible_api_key == "sk-custom"
+    assert engine.openai_compatible_model == "custom-model"
+    assert engine.openai_compatible_base_url == "https://custom.api/v1"
+
+
+def test_build_settings_unsupported_field_ignored(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "MODEL_PROVIDER", "zhipu")
+    monkeypatch.setattr(config, "MODEL_THINKING_MODE", "enabled")
+    monkeypatch.setattr(config, "MODEL_TEMPERATURE", "0.5")
+    from pdf2zh_next.config.translate_engine_model import ZhipuSettings
+
+    settings = build_settings("dummy.pdf")
+    engine = settings.translate_engine_settings
+
+    assert isinstance(engine, ZhipuSettings)
+    assert engine.zhipu_api_key == "sk-test-key"
+    assert engine.zhipu_model == "deepseek-v4-flash"
+    assert not hasattr(engine, "zhipu_thinking_mode")
+    assert not hasattr(engine, "zhipu_temperature")
+
+
+def test_build_settings_missing_api_key_raises(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "MODEL_API_KEY", None)
+    with pytest.raises(RuntimeError, match="未配置"):
+        build_settings("dummy.pdf")
