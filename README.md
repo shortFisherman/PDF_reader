@@ -21,7 +21,7 @@
 | Python 3.12 + Flask | 后端 HTTP 服务 |
 | pymupdf (MuPDF) | PDF 页面渲染为 PNG（200 DPI） |
 | pdf2zh-next v2.9.0 | 翻译引擎（基于 BabelDOC v0.6.2） |
-| DeepSeek API | LLM 翻译服务 |
+| 多模型 LLM API | 翻译服务（支持 DeepSeek / 智谱 / 硅基流动 / OpenAI 等 10 引擎） |
 | HTML/CSS/JS（原生） | 前端，无框架 |
 | IntersectionObserver | 图片懒加载 |
 | pytest | 后端单元测试 |
@@ -71,7 +71,7 @@ PDF_reader/
 
 - Windows 10+
 - Python 3.12+
-- DeepSeek API Key
+- 模型供应商 API Key（DeepSeek / 智谱 / OpenAI 等）
 
 ### 安装
 
