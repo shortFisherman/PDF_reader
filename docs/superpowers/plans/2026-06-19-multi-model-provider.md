@@ -2,6 +2,7 @@
 change: multi-model-provider
 design-doc: docs/superpowers/specs/2026-06-19-multi-model-provider-design.md
 base-ref: a555b0aee33923f7b879b7b8aa7e23ee89dc4bf8
+archived-with: 2026-06-19-multi-model-provider
 ---
 
 # 多模型供应商支持 — 实施计划
@@ -23,6 +24,7 @@ base-ref: a555b0aee33923f7b879b7b8aa7e23ee89dc4bf8
 - 引擎不支持的字段静默跳过（warning 日志）
 - `ruff check` 零错误、`pytest tests/ -v` 全部通过
 
+archived-with: 2026-06-19-multi-model-provider
 ---
 
 ### Task 1: 配置层重构 — config.toml + config.py
@@ -264,6 +266,7 @@ git add config.toml config.py tests/conftest.py tests/test_services.py
 git commit -m "feat(config): add multi-model provider routing and field mapping"
 ```
 
+archived-with: 2026-06-19-multi-model-provider
 ---
 
 ### Task 2: 引擎路由实现 — services.py
@@ -438,6 +441,7 @@ git add services.py tests/test_services.py
 git commit -m "feat(services): add multi-model engine routing and field mapping"
 ```
 
+archived-with: 2026-06-19-multi-model-provider
 ---
 
 ### Task 3: 测试套件 — 更新现有测试 + 新增 provider 测试
@@ -562,6 +566,7 @@ git add tests/test_services.py tests/conftest.py
 git commit -m "test: update build_settings tests for multi-model provider"
 ```
 
+archived-with: 2026-06-19-multi-model-provider
 ---
 
 ### Task 4: 文档与模板 — config.example.toml + README.md
