@@ -13,23 +13,27 @@
 #   方式 B：直接在下方的 api_key 字段填写
 #       ⚠️ 注意不要将含真实 API Key 的 config.toml 提交到 git
 #
-# 支持的 provider 及高级参数：
-#   ┌────────────────────┬──────────────────────────────────────────┐
-#   │ provider           │ 支持的高级参数                           │
-#   ├────────────────────┼──────────────────────────────────────────┤
-#   │ deepseek           │ thinking_mode, reasoning_effort          │
-#   │ zhipu              │ enable_json_mode                         │
-#   │ siliconflow        │ enable_json_mode                         │
-#   │ aliyun             │ temperature, timeout, enable_json_mode   │
-#   │ gemini             │ enable_json_mode                         │
-#   │ groq               │ enable_json_mode                         │
-#   │ grok               │ enable_json_mode                         │
-#   │ modelscope         │ enable_json_mode                         │
-#   │ openai             │ temperature, timeout, reasoning_effort,  │
-#   │                    │ enable_json_mode                         │
-#   │ openai_compatible  │ temperature, timeout, reasoning_effort,  │
-#   │                    │ enable_json_mode                         │
-#   └────────────────────┴──────────────────────────────────────────┘
+# 支持的 provider 及高级参数（不支持的参数自动忽略）：
+#   ┌────────────────────┬──────────────────────────────────────────────┐
+#   │ provider           │ 高级参数（可选值）                            │
+#   ├────────────────────┼──────────────────────────────────────────────┤
+#   │ deepseek           │ thinking_mode(enabled/disabled),             │
+#   │                    │ reasoning_effort(high/max)                   │
+#   │ zhipu              │ enable_json_mode(true/false)                 │
+#   │ siliconflow        │ enable_json_mode(true/false)                 │
+#   │ aliyun             │ temperature(0~2), timeout(秒数),              │
+#   │                    │ enable_json_mode(true/false)                 │
+#   │ gemini             │ enable_json_mode(true/false)                 │
+#   │ groq               │ enable_json_mode(true/false)                 │
+#   │ grok               │ enable_json_mode(true/false)                 │
+#   │ modelscope         │ enable_json_mode(true/false)                 │
+#   │ openai             │ temperature(0~2), timeout(秒数),              │
+#   │                    │ reasoning_effort(high/max),                  │
+#   │                    │ enable_json_mode(true/false)                 │
+#   │ openai_compatible  │ temperature(0~2), timeout(秒数),              │
+#   │                    │ reasoning_effort(high/max),                  │
+#   │                    │ enable_json_mode(true/false)                 │
+#   └────────────────────┴──────────────────────────────────────────────┘
 #   未列出的 provider 名自动走 openai_compatible 兜底（OpenAI 兼容接口）
 # =============================================================================
 
@@ -60,16 +64,35 @@ model = "deepseek-v4-flash"
 
 # API 基础地址（可选，留空则使用引擎内置默认值）
 #   - 仅 siliconflow / aliyun / openai / openai_compatible 支持自定义
+#   - 其余引擎（deepseek / zhipu / gemini 等）使用内置官方地址
 base_url = "https://api.deepseek.com/v1"
 
 # -----------------------------------------------------------------------------
-# 高级参数（全部可选，仅部分引擎支持，不支持的自动忽略并输出 warning）
+# 高级参数（全部可选）
 # -----------------------------------------------------------------------------
-# thinking_mode = "enabled"     # deepseek 专用：思考模式（enabled / disabled）
-# reasoning_effort = "high"     # deepseek / openai / openai_compatible
-# enable_json_mode = false      # 强制 JSON 输出模式
-# temperature = "0.7"           # openai / aliyun / openai_compatible
-# timeout = "500"               # openai / aliyun / openai_compatible（秒）
+# 仅在对应引擎支持时生效，不支持的引擎自动忽略并输出 warning
+#
+# thinking_mode = "enabled"
+#   引擎: deepseek
+#   可选值: "enabled"（开启深度思考）/ "disabled"（关闭）
+#
+# reasoning_effort = "high"
+#   引擎: deepseek / openai / openai_compatible
+#   可选值: "high"（高推理深度）/ "max"（最大推理深度）
+#   前置: deepseek 引擎需同时设置 thinking_mode = "enabled"
+#
+# enable_json_mode = true
+#   引擎: deepseek / zhipu / siliconflow / gemini / groq / grok /
+#         modelscope / openai / aliyun / openai_compatible
+#   可选值: true（强制 JSON 输出）/ false（关闭）
+#
+# temperature = "0.7"
+#   引擎: openai / aliyun / openai_compatible
+#   可选值: 0~2 之间的浮点数（控制输出随机性）
+#
+# timeout = "500"
+#   引擎: openai / aliyun / openai_compatible
+#   可选值: 正整数（请求超时秒数）
 
 # -----------------------------------------------------------------------------
 # 翻译设置
