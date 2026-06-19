@@ -24,26 +24,43 @@
 | DeepSeek API | LLM 翻译服务 |
 | HTML/CSS/JS（原生） | 前端，无框架 |
 | IntersectionObserver | 图片懒加载 |
+| pytest | 后端单元测试 |
+| ruff | Python 代码 lint + 格式化 |
 
 ## 项目结构
 
 ```
 PDF_reader/
-├── app.py                  # Flask 后端主程序
-├── config.toml             # 配置文件（API key、模型、DPI）
+├── app.py                  # Flask 入口，创建 app + 注册路由
+├── config.py               # 配置加载（环境变量 / config.toml）
+├── state.py                # AppState 类（线程安全状态管理）
+├── services.py             # 纯函数（SHA256、PNG 渲染、设置构建）
+├── routes.py               # Flask 路由注册（Blueprint）
+├── config.toml             # 配置文件（模型、DPI、服务器）
 ├── glossary.csv            # 术语表（source,target）
-├── requirements.txt        # Python 依赖
+├── requirements.txt        # Python 运行时 + 开发依赖
+├── requirements.lock       # 精确版本锁定
+├── ruff.toml               # Python lint 配置
 ├── templates/
 │   └── index.html          # 双栏阅读器前端页面
 ├── static/
+│   ├── app.js              # 前端逻辑
 │   └── style.css           # 样式
+├── tests/                  # pytest 单元测试
+│   ├── conftest.py
+│   ├── test_services.py
+│   ├── test_state.py
+│   └── test_routes.py
 ├── cache/                  # 翻译缓存目录
 │   └── <sha256>/           # 按 PDF 哈希隔离
 │       └── right.pdf       # 译文持久化文件
 ├── venv/                   # Python 虚拟环境
-├── openspec/               # 项目规范文档
-│   ├── specs/              # 6 个 capability 规格
+├── openspec/               # 项目 OpenSpec 规范
+│   ├── specs/              # 7 个 capability 规格
 │   └── changes/archive/    # 已归档的变更
+├── docs/superpowers/       # Superpowers 设计文档与计划
+├── .comet/                 # Comet 工作流配置
+├── .codegraph/             # CodeGraph 代码索引
 ├── .gitignore
 └── README.md
 ```
@@ -67,8 +84,16 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 
 # 安装依赖
-pip install flask pymupdf pdf2zh-next
+pip install -r requirements.txt
 ```
+
+**API Key 配置**：推荐通过环境变量设置，避免密钥泄露：
+
+```powershell
+$env:DEEPSEEK_API_KEY = "sk-your-api-key"
+```
+
+也可直接在 `config.toml` 中填写（不推荐提交到 git）。
 
 ### 配置
 
@@ -82,6 +107,7 @@ cache_dir = "cache"
 [deepseek]
 api_key = "sk-your-api-key"
 model = "deepseek-chat"
+base_url = "https://api.deepseek.com/v1"
 
 [translation]
 lang_in = "en"
@@ -149,9 +175,16 @@ python app.py
 - 右栏独立滚动不影响左栏
 - IntersectionObserver 5 页缓冲区，离屏图片自动卸载
 
+## 开发
+
+- `ruff check` — Python lint
+- `pytest tests/ -v` — 运行测试
+- `pip freeze > requirements.lock` — 更新版本锁定
+
 ## 相关文档
 
-- `openspec/specs/` — 6 个 capability 的详细规格
+- `openspec/specs/` — 7 个 capability 的详细规格
+- `docs/superpowers/` — 设计文档与实施计划
 - `pdf2zh-internals-report.md` — pdf2zh v1 源码分析
 - `babeldoc-vs-pdf2zh-next-report.md` — BabelDOC 与 pdf2zh-next 对比
 
@@ -162,3 +195,4 @@ python app.py
 | 6月16日 | 与 Hermes 讨论方案，发现 pdf2zh |
 | 6月17日 | 深度研究 pdf2zh v1 源码，确定双栏阅读器方案 |
 | 6月18日 | 与 OpenCode 重新评估：放弃 v1，选用 pdf2zh-next + BabelDOC。完成 proposal → design → specs → tasks → implement → verify → archive 全流程 |
+| 6月19日 | 代码审查 + Comet 全流程重构：app.py 拆为 5 模块、AppState 线程安全、16 个 pytest 测试、ruff lint 零错误、前端错误处理 |
