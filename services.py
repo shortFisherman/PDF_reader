@@ -81,6 +81,7 @@ def build_settings(
         "lang_in": config.TRANSLATION_LANG_IN,
         "lang_out": config.TRANSLATION_LANG_OUT,
         "ignore_cache": True,
+        "save_auto_extracted_glossary": True,
     }
     if user_prompt and user_prompt.strip():
         translation_kwargs["custom_system_prompt"] = user_prompt.strip()
