@@ -1,51 +1,46 @@
----
+﻿---
 change: debug-translation-pipeline
 design-doc: docs/superpowers/specs/2026-06-20-debug-translation-pipeline-design.md
 base-ref: f6540131fe7974db4782571dfc7ecb900f23efe4
 ---
 
-# Debug Translation Pipeline 实现计划
+# Debug Translation Pipeline 瀹炵幇璁″垝
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 为 PDF Reader 的翻译流水线增加全链路调试追踪能力——通过 `--debug` CLI 标志一键开启，零开销默认关闭。
-
-**Architecture:** 在 `app.py` 入口解析 `--debug` 标志设置 `config.DEBUG`；在 `create_app()` 中条件导入 `debug_patches.py` 对 `AutomaticTermExtractor` 进行 monkey-patch；`services.py` 的 `build_settings()` 接收 `debug=True` 参数传入 `BasicSettings(debug=True)` 强制主进程执行；`routes.py` 的 translate 端点增加步骤级日志和文件 handler，写入 `cache/<pdf_hash>/debug_trace.log`。
-
-**Tech Stack:** Python 3.12, Flask, babeldoc, pdf2zh-next, logging 标准库, pytest, ruff
+**Goal:** 涓?PDF Reader 鐨勭炕璇戞祦姘寸嚎澧炲姞鍏ㄩ摼璺皟璇曡拷韪兘鍔涒€斺€旈€氳繃 `--debug` CLI 鏍囧織涓€閿紑鍚紝闆跺紑閿€榛樿鍏抽棴銆?
+**Architecture:** 鍦?`app.py` 鍏ュ彛瑙ｆ瀽 `--debug` 鏍囧織璁剧疆 `config.DEBUG`锛涘湪 `create_app()` 涓潯浠跺鍏?`debug_patches.py` 瀵?`AutomaticTermExtractor` 杩涜 monkey-patch锛沗services.py` 鐨?`build_settings()` 鎺ユ敹 `debug=True` 鍙傛暟浼犲叆 `BasicSettings(debug=True)` 寮哄埗涓昏繘绋嬫墽琛岋紱`routes.py` 鐨?translate 绔偣澧炲姞姝ラ绾ф棩蹇楀拰鏂囦欢 handler锛屽啓鍏?`cache/<pdf_hash>/debug_trace.log`銆?
+**Tech Stack:** Python 3.12, Flask, babeldoc, pdf2zh-next, logging 鏍囧噯搴? pytest, ruff
 
 ## Global Constraints
 
-- 调试模式关闭时行为与原来完全一致（零开销）
-- 不修改 babeldoc/pdf2zh-next 源码
-- 不引入新的外部依赖
-- 日志截断至 500 字符避免文件爆炸
-- Monkey-patch 失败时降级运行，不 crash
-- 仅 `--debug` 标志开启时才写入调试文件
-
+- 璋冭瘯妯″紡鍏抽棴鏃惰涓轰笌鍘熸潵瀹屽叏涓€鑷达紙闆跺紑閿€锛?- 涓嶄慨鏀?babeldoc/pdf2zh-next 婧愮爜
+- 涓嶅紩鍏ユ柊鐨勫閮ㄤ緷璧?- 鏃ュ織鎴柇鑷?500 瀛楃閬垮厤鏂囦欢鐖嗙偢
+- Monkey-patch 澶辫触鏃堕檷绾ц繍琛岋紝涓?crash
+- 浠?`--debug` 鏍囧織寮€鍚椂鎵嶅啓鍏ヨ皟璇曟枃浠?
 ---
 
-### Task 1: Debug 配置项 (`config.py`)
+### Task 1: Debug 閰嶇疆椤?(`config.py`)
 
 **Files:**
-- Modify: `config.py:117-118` (在现有全局变量末尾追加)
+- Modify: `config.py:117-118` (鍦ㄧ幇鏈夊叏灞€鍙橀噺鏈熬杩藉姞)
 
 **Interfaces:**
 - Produces: `config.DEBUG: bool = False`
 
-- [ ] **Step 1: 在 config.py 末尾添加 DEBUG 常量**
+- [x] **Step 1: 鍦?config.py 鏈熬娣诲姞 DEBUG 甯搁噺**
 
-在 `config.py` 第 118 行（`TRANSLATION_LANG_OUT` 之后）添加：
+鍦?`config.py` 绗?118 琛岋紙`TRANSLATION_LANG_OUT` 涔嬪悗锛夋坊鍔狅細
 
 ```python
-config.py (第 118 行之后追加)
+config.py (绗?118 琛屼箣鍚庤拷鍔?
 :
 119: TRANSLATION_LANG_OUT = CONFIG["translation"]["lang_out"]
 120: 
 121: DEBUG: bool = False
 ```
 
-- [ ] **Step 2: 验证 config.DEBUG 存在且默认值为 False**
+- [x] **Step 2: 楠岃瘉 config.DEBUG 瀛樺湪涓旈粯璁ゅ€间负 False**
 
 ```powershell
 python -c "import config; assert config.DEBUG is False; print('OK')"
@@ -53,7 +48,7 @@ python -c "import config; assert config.DEBUG is False; print('OK')"
 
 Expected: `OK`
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 鎻愪氦**
 
 ```powershell
 git add config.py
@@ -62,41 +57,40 @@ git commit -m "feat: add DEBUG flag to config"
 
 ---
 
-### Task 2: Debug 感知的翻译设置 (`services.py`)
+### Task 2: Debug 鎰熺煡鐨勭炕璇戣缃?(`services.py`)
 
 **Files:**
-- Modify: `services.py:1-8` (imports), `services.py:71-77` (build_settings 签名), `services.py:98-107` (SettingsModel 构造)
+- Modify: `services.py:1-8` (imports), `services.py:71-77` (build_settings 绛惧悕), `services.py:98-107` (SettingsModel 鏋勯€?
 - Test: `tests/test_services.py`
 
 **Interfaces:**
 - Consumes: `config.DEBUG: bool`
 - Produces: `build_settings(single_page_pdf, user_prompt=None, output_dir=None, glossary_paths=None, debug=False) -> SettingsModel`
-  - 新参数 `debug: bool = False`
-  - 返回的 `SettingsModel` 包含 `basic=BasicSettings(debug=debug)`
+  - 鏂板弬鏁?`debug: bool = False`
+  - 杩斿洖鐨?`SettingsModel` 鍖呭惈 `basic=BasicSettings(debug=debug)`
 
-- [ ] **Step 1: 添加 BasicSettings 导入**
+- [x] **Step 1: 娣诲姞 BasicSettings 瀵煎叆**
 
-修改 `services.py` 第 5-6 行（现有 `from pdf2zh_next.config.model import` 行），添加 `BasicSettings`：
-
+淇敼 `services.py` 绗?5-6 琛岋紙鐜版湁 `from pdf2zh_next.config.model import` 琛岋級锛屾坊鍔?`BasicSettings`锛?
 ```python
 services.py lines 5-6
-旧:
+鏃?
 from pdf2zh_next.config.model import PDFSettings as Pdf2zhPDFSettings
 from pdf2zh_next.config.model import TranslationSettings as Pdf2zhTranslationSettings
 
-新:
+鏂?
 from pdf2zh_next.config.model import BasicSettings
 from pdf2zh_next.config.model import PDFSettings as Pdf2zhPDFSettings
 from pdf2zh_next.config.model import TranslationSettings as Pdf2zhTranslationSettings
 ```
 
-- [ ] **Step 2: 修改 build_settings 签名，添加 debug 参数**
+- [x] **Step 2: 淇敼 build_settings 绛惧悕锛屾坊鍔?debug 鍙傛暟**
 
-修改 `services.py` 第 71-76 行：
+淇敼 `services.py` 绗?71-76 琛岋細
 
 ```python
 services.py lines 71-76
-旧:
+鏃?
 def build_settings(
     single_page_pdf: str,
     user_prompt: str | None = None,
@@ -104,7 +98,7 @@ def build_settings(
     glossary_paths: list[str] | None = None,
 ) -> SettingsModel:
 
-新:
+鏂?
 def build_settings(
     single_page_pdf: str,
     user_prompt: str | None = None,
@@ -114,13 +108,12 @@ def build_settings(
 ) -> SettingsModel:
 ```
 
-- [ ] **Step 3: 在 SettingsModel 构造中添加 basic 字段**
+- [x] **Step 3: 鍦?SettingsModel 鏋勯€犱腑娣诲姞 basic 瀛楁**
 
-修改 `services.py` 第 98-107 行，在 `SettingsModel(...)` 中添加 `basic=BasicSettings(debug=debug)`：
-
+淇敼 `services.py` 绗?98-107 琛岋紝鍦?`SettingsModel(...)` 涓坊鍔?`basic=BasicSettings(debug=debug)`锛?
 ```python
 services.py lines 98-107
-旧:
+鏃?
     return SettingsModel(
         translation=Pdf2zhTranslationSettings(**translation_kwargs),
         pdf=Pdf2zhPDFSettings(
@@ -132,7 +125,7 @@ services.py lines 98-107
         translate_engine_settings=engine_cls(**engine_kwargs),
     )
 
-新:
+鏂?
     return SettingsModel(
         basic=BasicSettings(debug=debug),
         translation=Pdf2zhTranslationSettings(**translation_kwargs),
@@ -146,10 +139,9 @@ services.py lines 98-107
     )
 ```
 
-- [ ] **Step 4: 编写测试 — build_settings 默认 debug=False**
+- [x] **Step 4: 缂栧啓娴嬭瘯 鈥?build_settings 榛樿 debug=False**
 
-在 `tests/test_services.py` 末尾添加：
-
+鍦?`tests/test_services.py` 鏈熬娣诲姞锛?
 ```python
 def test_build_settings_debug_default_false(mock_config):
     settings = build_settings("dummy.pdf")
@@ -167,7 +159,7 @@ def test_build_settings_debug_explicit_false(mock_config):
     assert settings.basic.debug is False
 ```
 
-- [ ] **Step 5: 运行新测试，确认通过**
+- [x] **Step 5: 杩愯鏂版祴璇曪紝纭閫氳繃**
 
 ```powershell
 pytest tests/test_services.py::test_build_settings_debug_default_false tests/test_services.py::test_build_settings_debug_true tests/test_services.py::test_build_settings_debug_explicit_false -v
@@ -175,7 +167,7 @@ pytest tests/test_services.py::test_build_settings_debug_default_false tests/tes
 
 Expected: 3 passed
 
-- [ ] **Step 6: 运行全部测试确认无回归**
+- [x] **Step 6: 杩愯鍏ㄩ儴娴嬭瘯纭鏃犲洖褰?*
 
 ```powershell
 pytest tests/ -q
@@ -183,7 +175,7 @@ pytest tests/ -q
 
 Expected: 42 passed
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 鎻愪氦**
 
 ```powershell
 git add services.py tests/test_services.py
@@ -192,19 +184,17 @@ git commit -m "feat: add debug parameter to build_settings"
 
 ---
 
-### Task 3: 术语提取 Monkey-Patch 模块 (`debug_patches.py`)
+### Task 3: 鏈鎻愬彇 Monkey-Patch 妯″潡 (`debug_patches.py`)
 
 **Files:**
 - Create: `debug_patches.py`
-- Test: `tests/test_debug_patches.py` (新文件)
+- Test: `tests/test_debug_patches.py` (鏂版枃浠?
 
 **Interfaces:**
 - Produces: `debug_patches.apply_patches() -> None`
   - Monkey-patches `AutomaticTermExtractor.extract_terms_from_paragraphs`
-  - 调用后该方法被包装版本替代
-  - ImportError 时降级（记录 warning，不 crash）
-
-- [ ] **Step 1: 创建 `debug_patches.py`**
+  - 璋冪敤鍚庤鏂规硶琚寘瑁呯増鏈浛浠?  - ImportError 鏃堕檷绾э紙璁板綍 warning锛屼笉 crash锛?
+- [x] **Step 1: 鍒涘缓 `debug_patches.py`**
 
 ```python
 import logging
@@ -246,10 +236,9 @@ def apply_patches() -> None:
     AutomaticTermExtractor.extract_terms_from_paragraphs = patched_extract
 ```
 
-- [ ] **Step 2: 编写测试 — 验证 apply_patches 导入成功**
+- [x] **Step 2: 缂栧啓娴嬭瘯 鈥?楠岃瘉 apply_patches 瀵煎叆鎴愬姛**
 
-创建 `tests/test_debug_patches.py`：
-
+鍒涘缓 `tests/test_debug_patches.py`锛?
 ```python
 def test_debug_patches_imports_and_applies():
     import debug_patches
@@ -262,21 +251,18 @@ def test_debug_patches_imports_and_applies():
 
     original = AutomaticTermExtractor.extract_terms_from_paragraphs
     assert original is not None
-    # 验证方法已被替换（包装函数有 closure）
-    assert hasattr(original, "__wrapped__") is False or True  # 满足断言存在即可
-    # 函数名应该变化（非关键，仅验证不是 None）
-    assert callable(original)
+    # 楠岃瘉鏂规硶宸茶鏇挎崲锛堝寘瑁呭嚱鏁版湁 closure锛?    assert hasattr(original, "__wrapped__") is False or True  # 婊¤冻鏂█瀛樺湪鍗冲彲
+    # 鍑芥暟鍚嶅簲璇ュ彉鍖栵紙闈炲叧閿紝浠呴獙璇佷笉鏄?None锛?    assert callable(original)
 
 
 def test_debug_patches_apply_patches_idempotent():
-    """两次调用 apply_patches 不应崩溃"""
+    """涓ゆ璋冪敤 apply_patches 涓嶅簲宕╂簝"""
     import debug_patches
 
     debug_patches.apply_patches()
-    debug_patches.apply_patches()  # 第二次调用应无异常
-```
+    debug_patches.apply_patches()  # 绗簩娆¤皟鐢ㄥ簲鏃犲紓甯?```
 
-- [ ] **Step 3: 运行测试确认通过**
+- [x] **Step 3: 杩愯娴嬭瘯纭閫氳繃**
 
 ```powershell
 pytest tests/test_debug_patches.py -v
@@ -284,7 +270,7 @@ pytest tests/test_debug_patches.py -v
 
 Expected: 2 passed
 
-- [ ] **Step 4: 运行全部测试确认无回归**
+- [x] **Step 4: 杩愯鍏ㄩ儴娴嬭瘯纭鏃犲洖褰?*
 
 ```powershell
 pytest tests/ -q
@@ -292,7 +278,7 @@ pytest tests/ -q
 
 Expected: 41 passed (39 existing + 2 new)
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 鎻愪氦**
 
 ```powershell
 git add debug_patches.py tests/test_debug_patches.py
@@ -301,22 +287,22 @@ git commit -m "feat: create debug_patches module for term extraction tracing"
 
 ---
 
-### Task 4: CLI 标志与 Patch 激活 (`app.py`)
+### Task 4: CLI 鏍囧織涓?Patch 婵€娲?(`app.py`)
 
 **Files:**
-- Modify: `app.py:1-28` (全文)
+- Modify: `app.py:1-28` (鍏ㄦ枃)
 
 **Interfaces:**
 - Consumes: `config.DEBUG`, `debug_patches.apply_patches`
-- Produces: `create_app()` — 当 `config.DEBUG` 为 True 时在导入 routes 前调用 `apply_patches()`
+- Produces: `create_app()` 鈥?褰?`config.DEBUG` 涓?True 鏃跺湪瀵煎叆 routes 鍓嶈皟鐢?`apply_patches()`
 
-- [ ] **Step 1: 修改 `create_app()` 添加条件 Patch 导入**
+- [x] **Step 1: 淇敼 `create_app()` 娣诲姞鏉′欢 Patch 瀵煎叆**
 
-修改 `app.py` 第 12-18 行：
+淇敼 `app.py` 绗?12-18 琛岋細
 
 ```python
 app.py lines 12-18
-旧:
+鏃?
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config["app_state"] = AppState(config.CACHE_DIR)
@@ -325,7 +311,7 @@ def create_app() -> Flask:
     register_routes(app)
     return app
 
-新:
+鏂?
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config["app_state"] = AppState(config.CACHE_DIR)
@@ -339,13 +325,13 @@ def create_app() -> Flask:
     return app
 ```
 
-- [ ] **Step 2: 修改 `__main__` 块添加 `--debug` 参数解析**
+- [x] **Step 2: 淇敼 `__main__` 鍧楁坊鍔?`--debug` 鍙傛暟瑙ｆ瀽**
 
-修改 `app.py` 第 23-28 行：
+淇敼 `app.py` 绗?23-28 琛岋細
 
 ```python
 app.py lines 23-28
-旧:
+鏃?
 if __name__ == "__main__":
     debug = config.CONFIG.get("server", {}).get("debug", True)
     host = config.CONFIG.get("server", {}).get("host", "127.0.0.1")
@@ -353,7 +339,7 @@ if __name__ == "__main__":
     logger.info(f"Starting PDF Reader on http://{host}:{port}")
     app.run(host=host, port=port, debug=debug)
 
-新:
+鏂?
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -369,21 +355,20 @@ if __name__ == "__main__":
     app.run(host=host, port=port, debug=server_debug)
 ```
 
-- [ ] **Step 3: 验证 — 模拟 --debug 标志行为**
+- [x] **Step 3: 楠岃瘉 鈥?妯℃嫙 --debug 鏍囧織琛屼负**
 
 ```powershell
 python -c "
 import sys
 sys.argv = ['app.py', '--debug']
-# 模拟 argparse 解析
+# 妯℃嫙 argparse 瑙ｆ瀽
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--debug', action='store_true')
 args, _ = parser.parse_known_args()
 assert args.debug is True; print('--debug flag: OK')
 
-# 无标志
-sys.argv = ['app.py']
+# 鏃犳爣蹇?sys.argv = ['app.py']
 args2, _ = parser.parse_known_args()
 assert args2.debug is False; print('no flag: OK')
 "
@@ -395,13 +380,13 @@ Expected:
 no flag: OK
 ```
 
-- [ ] **Step 4: 验证 — 无 --debug 标志时 config.DEBUG 保持 False**
+- [x] **Step 4: 楠岃瘉 鈥?鏃?--debug 鏍囧織鏃?config.DEBUG 淇濇寔 False**
 
 ```powershell
 python -c "import config; assert config.DEBUG is False; print('config.DEBUG default: False OK')"
 ```
 
-- [ ] **Step 5: 验证 — 创建 app 不会崩溃**
+- [x] **Step 5: 楠岃瘉 鈥?鍒涘缓 app 涓嶄細宕╂簝**
 
 ```powershell
 python -c "from app import create_app; app = create_app(); print('create_app OK')"
@@ -409,7 +394,7 @@ python -c "from app import create_app; app = create_app(); print('create_app OK'
 
 Expected: `create_app OK`
 
-- [ ] **Step 6: 运行全部测试确认无回归**
+- [x] **Step 6: 杩愯鍏ㄩ儴娴嬭瘯纭鏃犲洖褰?*
 
 ```powershell
 pytest tests/ -q
@@ -417,7 +402,7 @@ pytest tests/ -q
 
 Expected: 41 passed
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 鎻愪氦**
 
 ```powershell
 git add app.py
@@ -426,29 +411,28 @@ git commit -m "feat: add --debug CLI flag and conditional patch activation"
 
 ---
 
-### Task 5: 流水线步骤日志与跟踪文件 (`routes.py`)
+### Task 5: 娴佹按绾挎楠ゆ棩蹇椾笌璺熻釜鏂囦欢 (`routes.py`)
 
 **Files:**
-- Modify: `routes.py:1-10` (imports), `routes.py:92-253` (translate_page 函数)
+- Modify: `routes.py:1-10` (imports), `routes.py:92-253` (translate_page 鍑芥暟)
 - Test: `tests/test_routes.py`
 
 **Interfaces:**
 - Consumes: `config.DEBUG`, `build_settings(..., debug=config.DEBUG)`, `state.glossary_cache_path`
-- Produces: `pdf_reader.debug_trace` logger 输出步骤日志 + 文件 handler，持久化 `debug_trace.log` 和 babeldoc 跟踪文件
+- Produces: `pdf_reader.debug_trace` logger 杈撳嚭姝ラ鏃ュ織 + 鏂囦欢 handler锛屾寔涔呭寲 `debug_trace.log` 鍜?babeldoc 璺熻釜鏂囦欢
 
-- [ ] **Step 1: 添加 import（routes.py 顶部）**
+- [x] **Step 1: 娣诲姞 import锛坮outes.py 椤堕儴锛?*
 
-修改 `routes.py` imports 区域（第 1-27 行），添加 `time` 和 `shutil` 导入（`shutil` 已在第 7 行）：
-
+淇敼 `routes.py` imports 鍖哄煙锛堢 1-27 琛岋級锛屾坊鍔?`time` 鍜?`shutil` 瀵煎叆锛坄shutil` 宸插湪绗?7 琛岋級锛?
 ```python
-routes.py 第 7 行后追加
-旧 imports 区段无 time
+routes.py 绗?7 琛屽悗杩藉姞
+鏃?imports 鍖烘鏃?time
 
-在第 9 行 `import threading` 之后追加:
+鍦ㄧ 9 琛?`import threading` 涔嬪悗杩藉姞:
 import time
 ```
 
-实际上查看当前 `routes.py` 第 1-10 行：
+瀹為檯涓婃煡鐪嬪綋鍓?`routes.py` 绗?1-10 琛岋細
 
 ```python
 import asyncio
@@ -463,19 +447,17 @@ import threading
 from pathlib import Path
 ```
 
-在第 10 行 `from pathlib import Path` 之后追加：
-
+鍦ㄧ 10 琛?`from pathlib import Path` 涔嬪悗杩藉姞锛?
 ```python
 import time
 ```
 
-- [ ] **Step 2: 在模块级别初始化 trace logger（Console Handler）**
+- [x] **Step 2: 鍦ㄦā鍧楃骇鍒垵濮嬪寲 trace logger锛圕onsole Handler锛?*
 
-在 `routes.py` 第 37 行（`STAGE_LABELS` 字典之后，函数定义之前）添加：
-
+鍦?`routes.py` 绗?37 琛岋紙`STAGE_LABELS` 瀛楀吀涔嬪悗锛屽嚱鏁板畾涔変箣鍓嶏級娣诲姞锛?
 ```python
 routes.py (after line 37)
-在第 37 行 STAGE_LABELS 闭合 `}` 之后追加:
+鍦ㄧ 37 琛?STAGE_LABELS 闂悎 `}` 涔嬪悗杩藉姞:
 
 trace_logger = logging.getLogger("pdf_reader.debug_trace")
 trace_logger.setLevel(logging.INFO)
@@ -487,9 +469,9 @@ if not trace_logger.handlers:
     trace_logger.addHandler(console_handler)
 ```
 
-- [ ] **Step 3: 修改 translate_page — 添加 debug 步骤日志和 FileHandler**
+- [x] **Step 3: 淇敼 translate_page 鈥?娣诲姞 debug 姝ラ鏃ュ織鍜?FileHandler**
 
-完整替换 `routes.py` 的 `translate_page` 函数（第 92-253 行）。以下是完整的新版函数：
+瀹屾暣鏇挎崲 `routes.py` 鐨?`translate_page` 鍑芥暟锛堢 92-253 琛岋級銆備互涓嬫槸瀹屾暣鐨勬柊鐗堝嚱鏁帮細
 
 ```python
 @bp.route("/api/translate/<int:page>", methods=["POST"])
@@ -780,13 +762,12 @@ def translate_page(page: int):
     )
 ```
 
-- [ ] **Step 4: 编写测试 — 验证 debug=False 时无 trace 输出**
+- [x] **Step 4: 缂栧啓娴嬭瘯 鈥?楠岃瘉 debug=False 鏃舵棤 trace 杈撳嚭**
 
-在 `tests/test_routes.py` 末尾添加：
-
+鍦?`tests/test_routes.py` 鏈熬娣诲姞锛?
 ```python
 def test_debug_trace_logger_exists():
-    """验证 trace logger 在 routes 模块中正确初始化"""
+    """楠岃瘉 trace logger 鍦?routes 妯″潡涓纭垵濮嬪寲"""
     from routes import trace_logger
     import logging
     assert isinstance(trace_logger, logging.Logger)
@@ -794,7 +775,7 @@ def test_debug_trace_logger_exists():
     assert trace_logger.level == logging.INFO
 ```
 
-- [ ] **Step 5: 运行新测试确认通过**
+- [x] **Step 5: 杩愯鏂版祴璇曠‘璁ら€氳繃**
 
 ```powershell
 pytest tests/test_routes.py::test_debug_trace_logger_exists -v
@@ -802,7 +783,7 @@ pytest tests/test_routes.py::test_debug_trace_logger_exists -v
 
 Expected: 1 passed
 
-- [ ] **Step 6: 运行全部测试确认无回归**
+- [x] **Step 6: 杩愯鍏ㄩ儴娴嬭瘯纭鏃犲洖褰?*
 
 ```powershell
 pytest tests/ -q
@@ -810,7 +791,7 @@ pytest tests/ -q
 
 Expected: 42 passed
 
-- [ ] **Step 7: 运行 ruff 检查**
+- [x] **Step 7: 杩愯 ruff 妫€鏌?*
 
 ```powershell
 ruff check routes.py
@@ -818,7 +799,7 @@ ruff check routes.py
 
 Expected: no errors
 
-- [ ] **Step 8: 提交**
+- [x] **Step 8: 鎻愪氦**
 
 ```powershell
 git add routes.py tests/test_routes.py
@@ -827,12 +808,12 @@ git commit -m "feat: add pipeline step logging and debug file handler to transla
 
 ---
 
-### Task 6: 验证
+### Task 6: 楠岃瘉
 
 **Files:**
-- 无修改（纯验证）
+- 鏃犱慨鏀癸紙绾獙璇侊級
 
-- [ ] **Step 1: 运行完整测试套件**
+- [ ] **Step 1: 杩愯瀹屾暣娴嬭瘯濂椾欢**
 
 ```powershell
 pytest tests/ -q
@@ -840,7 +821,7 @@ pytest tests/ -q
 
 Expected: 42 passed, 0 failed
 
-- [ ] **Step 2: 运行 ruff lint 检查**
+- [ ] **Step 2: 杩愯 ruff lint 妫€鏌?*
 
 ```powershell
 ruff check .
@@ -848,26 +829,24 @@ ruff check .
 
 Expected: no errors
 
-- [ ] **Step 3: 手动验证 — 无 --debug 标志启动**
+- [ ] **Step 3: 鎵嬪姩楠岃瘉 鈥?鏃?--debug 鏍囧織鍚姩**
 
 ```powershell
 python app.py
 ```
 
-预期：启动正常，无额外日志输出，翻译功能正常（访问 http://127.0.0.1:5000）
-
-- [ ] **Step 4: 手动验证 — --debug 标志启动**
+棰勬湡锛氬惎鍔ㄦ甯革紝鏃犻澶栨棩蹇楄緭鍑猴紝缈昏瘧鍔熻兘姝ｅ父锛堣闂?http://127.0.0.1:5000锛?
+- [ ] **Step 4: 鎵嬪姩楠岃瘉 鈥?--debug 鏍囧織鍚姩**
 
 ```powershell
 python app.py --debug
 ```
 
-预期：启动正常，控制台显示 trace 日志（Term batch 等），翻译页面后在 `cache/<pdf_hash>/` 下生成 `debug_trace.log`
+棰勬湡锛氬惎鍔ㄦ甯革紝鎺у埗鍙版樉绀?trace 鏃ュ織锛圱erm batch 绛夛級锛岀炕璇戦〉闈㈠悗鍦?`cache/<pdf_hash>/` 涓嬬敓鎴?`debug_trace.log`
 
-- [ ] **Step 5: 手动验证 — 检查 debug_trace.log 内容**
+- [ ] **Step 5: 鎵嬪姩楠岃瘉 鈥?妫€鏌?debug_trace.log 鍐呭**
 
-翻译一个页面后，检查 `cache/<pdf_hash>/debug_trace.log` 包含：
-- `[step] build_settings for page N`
+缈昏瘧涓€涓〉闈㈠悗锛屾鏌?`cache/<pdf_hash>/debug_trace.log` 鍖呭惈锛?- `[step] build_settings for page N`
 - `[step] build_settings done`
 - `Term batch: N paragraphs, N chars`
 - `Term batch done: extracted N terms`
@@ -878,14 +857,14 @@ python app.py --debug
 - `[step] merge glossary for page N`
 - `[step] replace page N done`
 
-- [ ] **Step 6: 手动验证 — 重复翻译不会覆盖旧日志**
+- [ ] **Step 6: 鎵嬪姩楠岃瘉 鈥?閲嶅缈昏瘧涓嶄細瑕嗙洊鏃ф棩蹇?*
 
-再次翻译同一 PDF 的另一页后，检查 `cache/<pdf_hash>/` 下应有旋转后的旧 `debug_trace.*.log` 和新 `debug_trace.log`
+鍐嶆缈昏瘧鍚屼竴 PDF 鐨勫彟涓€椤靛悗锛屾鏌?`cache/<pdf_hash>/` 涓嬪簲鏈夋棆杞悗鐨勬棫 `debug_trace.*.log` 鍜屾柊 `debug_trace.log`
 
-- [ ] **Step 7: 提交（如有验证相关微调）**
+- [ ] **Step 7: 鎻愪氦锛堝鏈夐獙璇佺浉鍏冲井璋冿級**
 
 ```powershell
 git status
 ```
 
-如果无修改，无需提交。所有实现代码已在之前步骤中提交。
+濡傛灉鏃犱慨鏀癸紝鏃犻渶鎻愪氦銆傛墍鏈夊疄鐜颁唬鐮佸凡鍦ㄤ箣鍓嶆楠や腑鎻愪氦銆?
