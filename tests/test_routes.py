@@ -41,6 +41,14 @@ def test_translated_pages_no_doc(test_client):
     assert data == {"pages": []}
 
 
+def test_debug_trace_logger_exists():
+    from routes import trace_logger
+    import logging
+    assert isinstance(trace_logger, logging.Logger)
+    assert trace_logger.name == "pdf_reader.debug_trace"
+    assert trace_logger.level == logging.INFO
+
+
 def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, monkeypatch):
     """build_settings receives cumulative glossary path; merge happens after translation."""
     from services import sha256 as sha256_func
@@ -72,7 +80,7 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     settings_call_kwargs = []
     merge_calls = []
 
-    def fake_build_settings(pdf_path, user_prompt=None, output_dir=None, glossary_paths=None):  # noqa: ANN202
+    def fake_build_settings(pdf_path, user_prompt=None, output_dir=None, glossary_paths=None, debug=None):  # noqa: ANN202
         settings_call_kwargs.append({"glossary_paths": glossary_paths})
         return MagicMock()
 

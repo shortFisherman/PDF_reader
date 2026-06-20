@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import threading
 from pathlib import Path
+import time
 
 import pymupdf
 from flask import (
@@ -35,6 +36,15 @@ STAGE_LABELS = {
     "generating_pdf_bilingual": "\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026",
     "finish": "\u7ffb\u8bd1\u5b8c\u6210",
 }
+
+trace_logger = logging.getLogger("pdf_reader.debug_trace")
+trace_logger.setLevel(logging.INFO)
+if not trace_logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s:%(name)s:%(message)s"
+    ))
+    trace_logger.addHandler(console_handler)
 
 
 def error_response(msg: str, code: int) -> tuple:
@@ -116,12 +126,47 @@ def translate_page(page: int):
                 if cumulative_file.exists() and cumulative_file.stat().st_size > 0:
                     glossary_paths = [str(cumulative_file)]
 
+            file_handler_added = None
+
+            # ---- Debug: File Handler ----
+            if config.DEBUG and cumulative_glossary_path:
+                try:
+                    log_path = cumulative_glossary_path / "debug_trace.log"
+                    # Rotate existing log
+                    if log_path.exists():
+                        rotated = cumulative_glossary_path / (
+                            "debug_trace." + time.strftime("%Y%m%d_%H%M%S") + ".log"
+                        )
+                        shutil.move(str(log_path), str(rotated))
+                    file_handler_added = logging.FileHandler(str(log_path), encoding="utf-8")
+                    file_handler_added.setFormatter(logging.Formatter(
+                        "%(asctime)s %(levelname)s:%(name)s:%(message)s"
+                    ))
+                    trace_logger.addHandler(file_handler_added)
+                    trace_logger.info("=== Debug session start: page %d ===", page)
+                except Exception:
+                    logging.getLogger("pdf_reader").warning(
+                        "Failed to create debug_trace.log file handler", exc_info=True
+                    )
+
+            step_start = time.time()
+            if config.DEBUG:
+                trace_logger.info("[step] build_settings for page %d", page)
             settings = build_settings(
                 str(single_page_pdf),
                 user_prompt,
                 output_dir=output_dir,
                 glossary_paths=glossary_paths,
+                debug=config.DEBUG,
             )
+            if config.DEBUG:
+                trace_logger.info(
+                    "[step] build_settings done (%.2fs), output_dir=%s",
+                    time.time() - step_start, output_dir,
+                )
+            if config.DEBUG:
+                translate_start = time.time()
+                trace_logger.info("[step] submit translate page %d", page)
             event_queue: queue.Queue = queue.Queue()
             error_info: str | None = None
 
@@ -157,6 +202,7 @@ def translate_page(page: int):
             thread.start()
 
             translate_result = None
+            token_usage_finish = None
             while True:
                 try:
                     evt = event_queue.get(timeout=1.0)
@@ -190,6 +236,7 @@ def translate_page(page: int):
                     }) + "\n\n"
                 elif evt_type == "finish":
                     translate_result = evt.get("translate_result")
+                    token_usage_finish = evt.get("token_usage", {})
                     yield "data: " + json.dumps({
                         "type": "progress", "progress": 95,
                         "stage": evt.get("stage", "generating_pdf"),
@@ -206,6 +253,20 @@ def translate_page(page: int):
             if translate_result is None:
                 yield f"data: {json.dumps({'type': 'error', 'error': 'no translation result'})}\n\n"
                 return
+
+            if config.DEBUG:
+                elapsed = time.time() - translate_start
+                trace_logger.info(
+                    "[step] translate page %d done (%.2fs)",
+                    page, elapsed,
+                )
+                if token_usage_finish:
+                    total = token_usage_finish.get("main", {}).get("total", 0)
+                    term_total = token_usage_finish.get("term", {}).get("total", 0)
+                    trace_logger.info(
+                        "Token usage: main=%d, term=%d",
+                        total, term_total,
+                    )
 
             try:
                 translated_pdf = translate_result.mono_pdf_path
@@ -225,11 +286,23 @@ def translate_page(page: int):
                 cumulative_glossary_path is not None
                 and translate_result.auto_extracted_glossary_path
             ):
+                merge_start = time.time()
+                if config.DEBUG:
+                    trace_logger.info("[step] merge glossary for page %d", page)
                 auto_path = Path(translate_result.auto_extracted_glossary_path)
                 cumulative_file = cumulative_glossary_path / "cumulative_glossary.csv"
                 try:
                     merge_glossary_csvs(cumulative_file, auto_path)
+                    if config.DEBUG:
+                        trace_logger.info(
+                            "[step] merge glossary done (%.2fs)",
+                            time.time() - merge_start,
+                        )
                 except Exception:
+                    if config.DEBUG:
+                        trace_logger.warning(
+                            "[step] merge glossary FAILED for page %d", page, exc_info=True,
+                        )
                     logging.getLogger("pdf_reader").warning(
                         "Failed to merge glossary for page %d", page, exc_info=True
                     )
@@ -240,6 +313,14 @@ def translate_page(page: int):
             }) + "\n\n"
             yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
         finally:
+            # Cleanup FileHandler
+            if 'file_handler_added' in locals() and file_handler_added is not None:
+                try:
+                    trace_logger.removeHandler(file_handler_added)
+                    file_handler_added.close()
+                except Exception:
+                    pass
+
             shutil.rmtree(tmpdir, ignore_errors=True)
             shutil.rmtree(output_dir, ignore_errors=True)
 
