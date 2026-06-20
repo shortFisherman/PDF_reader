@@ -117,3 +117,5 @@ CACHE_DIR = Path(CONFIG["pdf_reader"]["cache_dir"]).resolve()
 GLOSSARY_PATH = Path(__file__).parent / "docs" / "glossary.csv"
 TRANSLATION_LANG_IN = CONFIG["translation"]["lang_in"]
 TRANSLATION_LANG_OUT = CONFIG["translation"]["lang_out"]
+
+DEBUG: bool = False
