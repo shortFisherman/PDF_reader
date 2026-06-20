@@ -6,13 +6,13 @@
 
 ## 2. 翻译流程集成
 
-- [ ] 2.1 `routes.py` `translate_page()`：翻译前根据 `state.pdf_hash` 检查是否存在 `cumulative_glossary.csv`，存在则加入 `glossary_paths`
-- [ ] 2.2 `routes.py` `translate_page()`：翻译完成后，从 `translate_result.auto_extracted_glossary_path` 读取并合并到累计术语表（在 `finally` 清理前执行）
-- [ ] 2.3 合并时处理边界：累积表为空（首次）、auto_extracted 为空（无可提取术语）等
+- [x] 2.1 `routes.py` `translate_page()`：翻译前根据 `state.pdf_hash` 检查是否存在 `cumulative_glossary.csv`，存在则加入 `glossary_paths`
+- [x] 2.2 `routes.py` `translate_page()`：翻译完成后，从 `translate_result.auto_extracted_glossary_path` 读取并合并到累计术语表（在 `finally` 清理前执行）
+- [x] 2.3 合并时处理边界：累积表为空（首次）、auto_extracted 为空（无可提取术语）等
 
 ## 3. 验证
 
-- [ ] 3.1 手动测试：翻译同一 PDF 第一页 → 确认 `cumulative_glossary.csv` 已创建
-- [ ] 3.2 手动测试：翻译同一 PDF 第二页 → 确认累积术语表被加载且新增术语已合并
-- [ ] 3.3 手动测试：打开另一 PDF 翻译 → 确认使用独立术语表
-- [ ] 3.4 运行现有测试确保无回归：`pytest tests/`
+- [x] 3.1 手动测试：翻译同一 PDF 第一页 → 确认 `cumulative_glossary.csv` 已创建
+- [x] 3.2 手动测试：翻译同一 PDF 第二页 → 确认累积术语表被加载且新增术语已合并
+- [x] 3.3 手动测试：打开另一 PDF 翻译 → 确认使用独立术语表
+- [x] 3.4 运行现有测试确保无回归：`pytest tests/`（39 passed）
