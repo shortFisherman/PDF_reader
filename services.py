@@ -3,6 +3,7 @@ import logging
 
 import pymupdf
 from pdf2zh_next import SettingsModel
+from pdf2zh_next.config.model import BasicSettings
 from pdf2zh_next.config.model import PDFSettings as Pdf2zhPDFSettings
 from pdf2zh_next.config.model import TranslationSettings as Pdf2zhTranslationSettings
 from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
@@ -73,6 +74,7 @@ def build_settings(
     user_prompt: str | None = None,
     output_dir: str | None = None,
     glossary_paths: list[str] | None = None,
+    debug: bool = False,
 ) -> SettingsModel:
     engine_cls = resolve_engine(config.MODEL_PROVIDER)
     engine_kwargs = build_engine_kwargs(engine_cls)
@@ -96,6 +98,7 @@ def build_settings(
         translation_kwargs["output"] = output_dir
 
     return SettingsModel(
+        basic=BasicSettings(debug=debug),
         translation=Pdf2zhTranslationSettings(**translation_kwargs),
         pdf=Pdf2zhPDFSettings(
             pages="1",

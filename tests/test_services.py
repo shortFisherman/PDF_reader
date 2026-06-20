@@ -189,3 +189,19 @@ def test_build_settings_glossary_paths_empty_list(mock_config, monkeypatch):
     monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
     settings = build_settings("dummy.pdf", glossary_paths=[])
     assert getattr(settings.translation, "glossaries", None) is None
+
+
+def test_build_settings_debug_default_false(mock_config):
+    settings = build_settings("dummy.pdf")
+    assert settings.basic.debug is False
+
+
+def test_build_settings_debug_true(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "DEBUG", True)
+    settings = build_settings("dummy.pdf", debug=True)
+    assert settings.basic.debug is True
+
+
+def test_build_settings_debug_explicit_false(mock_config):
+    settings = build_settings("dummy.pdf", debug=False)
+    assert settings.basic.debug is False
