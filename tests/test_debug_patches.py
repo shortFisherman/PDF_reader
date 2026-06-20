@@ -1,9 +1,9 @@
 def test_debug_patches_imports_and_applies():
-    import debug_patches
-
     from babeldoc.format.pdf.document_il.midend.automatic_term_extractor import (
         AutomaticTermExtractor,
     )
+
+    import debug_patches
 
     debug_patches.apply_patches()
 

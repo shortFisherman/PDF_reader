@@ -2,6 +2,7 @@
 change: cumulative-glossary-across-pages
 design-doc: docs/superpowers/specs/2026-06-20-cumulative-glossary-design.md
 base-ref: 41e77d5e9521db9aa137611209b24b93aff0e5e9
+archived-with: 2026-06-20-cumulative-glossary-across-pages
 ---
 
 # Cumulative Glossary Across Pages Implementation Plan
@@ -24,6 +25,7 @@ base-ref: 41e77d5e9521db9aa137611209b24b93aff0e5e9
 - CSV columns: `source,target`
 - First translation: cumulative CSV absent → skip loading, proceed normally
 
+archived-with: 2026-06-20-cumulative-glossary-across-pages
 ---
 
 ### Task 1: Add `glossary_cache_path` property to `AppState` ✅
@@ -88,6 +90,7 @@ git add state.py tests/test_state.py
 git commit -m "feat(state): add glossary_cache_path property to AppState"
 ```
 
+archived-with: 2026-06-20-cumulative-glossary-across-pages
 ---
 
 ### Task 2: Create `merge_glossary_csvs` in `glossary_merger.py`
@@ -257,6 +260,7 @@ git add glossary_merger.py tests/test_glossary_merger.py
 git commit -m "feat: add merge_glossary_csvs with majority-vote merge logic"
 ```
 
+archived-with: 2026-06-20-cumulative-glossary-across-pages
 ---
 
 ### Task 3: Add `glossary_paths` parameter to `build_settings`
@@ -350,6 +354,7 @@ git add services.py tests/test_services.py
 git commit -m "feat(services): add glossary_paths parameter to build_settings"
 ```
 
+archived-with: 2026-06-20-cumulative-glossary-across-pages
 ---
 
 ### Task 4: Integrate glossary loading and merging into `translate_page`
@@ -501,6 +506,7 @@ git add routes.py
 git commit -m "feat(routes): integrate cumulative glossary loading and merging into translate_page"
 ```
 
+archived-with: 2026-06-20-cumulative-glossary-across-pages
 ---
 
 ### Task 5: Manual verification
@@ -539,6 +545,7 @@ git commit -m "feat(routes): integrate cumulative glossary loading and merging i
 
 No code to commit — verification only. If issues found, fix in new Task.
 
+archived-with: 2026-06-20-cumulative-glossary-across-pages
 ---
 
 ### Task 6: Final regression test run

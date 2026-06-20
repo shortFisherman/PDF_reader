@@ -2,6 +2,8 @@
 comet_change: cumulative-glossary-across-pages
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-20-cumulative-glossary-across-pages
+status: final
 ---
 
 # Cumulative Glossary Across Pages — Technical Design

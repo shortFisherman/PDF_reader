@@ -42,8 +42,9 @@ def test_translated_pages_no_doc(test_client):
 
 
 def test_debug_trace_logger_exists():
-    from routes import trace_logger
     import logging
+
+    from routes import trace_logger
     assert isinstance(trace_logger, logging.Logger)
     assert trace_logger.name == "pdf_reader.debug_trace"
     assert trace_logger.level == logging.INFO

@@ -10,7 +10,7 @@ _original_extract = AutomaticTermExtractor.extract_terms_from_paragraphs
 
 
 def apply_patches() -> None:
-    def patched_extract(self, paragraphs, pbar=None, paragraph_token_count=0):
+    def patched_extract(self, paragraphs, pbar=None, paragraph_token_count=0):  # noqa: ANN202, ANN001
         n_paras = len(paragraphs.paragraphs)
         chars = sum(len(p.unicode or "") for p in paragraphs.paragraphs)
         logger.info("Term batch: %d paragraphs, %d chars", n_paras, chars)
