@@ -2,8 +2,6 @@ import csv
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from glossary_merger import merge_glossary_csvs
 
 
@@ -16,7 +14,7 @@ def write_csv(path: Path, rows: list[tuple[str, str]]) -> None:
 
 
 def read_csv(path: Path) -> list[tuple[str, str]]:
-    with open(path, "r", newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         return [(row["source"], row["target"]) for row in reader]
 

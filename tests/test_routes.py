@@ -72,11 +72,11 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     settings_call_kwargs = []
     merge_calls = []
 
-    def fake_build_settings(pdf_path, user_prompt=None, output_dir=None, glossary_paths=None):
+    def fake_build_settings(pdf_path, user_prompt=None, output_dir=None, glossary_paths=None):  # noqa: ANN202
         settings_call_kwargs.append({"glossary_paths": glossary_paths})
         return MagicMock()
 
-    async def fake_translate_stream(settings, file):
+    async def fake_translate_stream(settings, file):  # noqa: ANN202
         yield {
             "type": "progress_start",
             "stage": "layout_analysis",
@@ -90,7 +90,7 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
             "translate_result": mock_result,
         }
 
-    def fake_merge(cumulative, auto):
+    def fake_merge(cumulative, auto):  # noqa: ANN202
         merge_calls.append((str(cumulative), str(auto)))
 
     monkeypatch.setattr("routes.build_settings", fake_build_settings)

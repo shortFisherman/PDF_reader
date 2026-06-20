@@ -9,7 +9,7 @@
 - **按需翻译**：读到哪页点"翻译"，只翻译当前页，不预加载
 - **自定义提示词**：翻译时输入额外指令（如"waveguide 翻译为波导"）
 - **强制重译**：对已翻译的页可重复翻译，每次绕过缓存
-- **术语表**：CSV 文件维护术语对照，翻译时自动注入 prompt
+- **术语表**：CSV 文件维护术语对照，翻译时自动注入 prompt。自动提取的术语跨页面累积复用，确保同一教材中术语译名一致
 - **持久化**：译文保存在 `right.pdf` 中，关闭后下次打开自动恢复
 - **大 PDF 支持**：IntersectionObserver 懒加载，1000 页不卡顿
 - **翻译进度**：SSE 实时推送翻译进度条
@@ -35,6 +35,7 @@ PDF_reader/
 ├── config.py               # 配置加载（环境变量 / config.toml）
 ├── state.py                # AppState 类（线程安全状态管理）
 ├── services.py             # 纯函数（SHA256、PNG 渲染、设置构建）
+├── glossary_merger.py       # 术语表合并（按 source 列投票去重）
 ├── routes.py               # Flask 路由注册（Blueprint）
 ├── config.toml             # 配置文件（模型、DPI、服务器）
 ├── glossary.csv            # 术语表（source,target）
@@ -50,13 +51,15 @@ PDF_reader/
 │   ├── conftest.py
 │   ├── test_services.py
 │   ├── test_state.py
-│   └── test_routes.py
+│   ├── test_routes.py
+│   └── test_glossary_merger.py
 ├── cache/                  # 翻译缓存目录
 │   └── <sha256>/           # 按 PDF 哈希隔离
-│       └── right.pdf       # 译文持久化文件
+│       ├── right.pdf       # 译文持久化文件
+│       └── cumulative_glossary.csv  # 累积术语表（自动生成）
 ├── venv/                   # Python 虚拟环境
 ├── openspec/               # 项目 OpenSpec 规范
-│   ├── specs/              # 7 个 capability 规格
+│   ├── specs/              # 8 个 capability 规格
 │   └── changes/archive/    # 已归档的变更
 ├── docs/superpowers/       # Superpowers 设计文档与计划
 ├── .comet/                 # Comet 工作流配置
@@ -178,7 +181,15 @@ python app.py
 - 首次打开 PDF 时计算 SHA256，复制原 PDF 到 `cache/<sha256>/right.pdf`
 - 每次翻译将译文替换 right.pdf 对应页，非增量保存
 - 再次打开同一 PDF → 哈希匹配 → 恢复 right.pdf → 译文自动显示
-- 不同 PDF 有不同哈希 → 各自独立缓存
+- 不同 PDF 有不同哈希 → 各自独立缓存，术语表也按 PDF 隔离
+
+### 术语表累积
+
+- 翻译完成后，pdf2zh-next 自动提取的专业术语被合并到 `cache/<sha256>/cumulative_glossary.csv`
+- 后续翻译同一 PDF 的任意页面时，累积术语表自动加载，LLM 在术语提取和正文翻译阶段均能看到已有术语
+- 同一 `source` 出现多个 `target` 时，采用多数投票选最频繁的译名
+- 术语表按 PDF 哈希隔离，不同教材互不干扰
+- 与手动术语表（`glossary.csv`）兼容共存
 
 ### 滚动同步
 
@@ -194,7 +205,7 @@ python app.py
 
 ## 相关文档
 
-- `openspec/specs/` — 7 个 capability 的详细规格
+- `openspec/specs/` — 8 个 capability 的详细规格
 - `docs/superpowers/` — 设计文档与实施计划
 - `pdf2zh-internals-report.md` — pdf2zh v1 源码分析
 - `babeldoc-vs-pdf2zh-next-report.md` — BabelDOC 与 pdf2zh-next 对比
@@ -207,3 +218,4 @@ python app.py
 | 6月17日 | 深度研究 pdf2zh v1 源码，确定双栏阅读器方案 |
 | 6月18日 | 与 OpenCode 重新评估：放弃 v1，选用 pdf2zh-next + BabelDOC。完成 proposal → design → specs → tasks → implement → verify → archive 全流程 |
 | 6月19日 | 代码审查 + Comet 全流程重构：app.py 拆为 5 模块、AppState 线程安全、16 个 pytest 测试、ruff lint 零错误、前端错误处理 |
+| 6月20日 | 增量术语表累积：自动提取的术语跨页面复用，多数投票去重，按 PDF 哈希隔离，新增 glossary_merger.py + 11 个测试 |

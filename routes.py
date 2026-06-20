@@ -1,9 +1,9 @@
 import asyncio
 import io
 import json
+import logging
 import os
 import queue
-import logging
 import shutil
 import tempfile
 import threading
@@ -23,8 +23,8 @@ from flask import (
 from pdf2zh_next import do_translate_async_stream
 
 import config
-from services import build_settings, render_page, sha256
 from glossary_merger import merge_glossary_csvs
+from services import build_settings, render_page, sha256
 
 bp = Blueprint("main", __name__)
 
