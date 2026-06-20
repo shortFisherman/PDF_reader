@@ -3,6 +3,7 @@ import io
 import json
 import os
 import queue
+import logging
 import shutil
 import tempfile
 import threading
@@ -23,6 +24,7 @@ from pdf2zh_next import do_translate_async_stream
 
 import config
 from services import build_settings, render_page, sha256
+from glossary_merger import merge_glossary_csvs
 
 bp = Blueprint("main", __name__)
 
@@ -107,7 +109,19 @@ def translate_page(page: int):
 
     def generate():
         try:
-            settings = build_settings(str(single_page_pdf), user_prompt, output_dir=output_dir)
+            cumulative_glossary_path = state.glossary_cache_path
+            glossary_paths: list[str] | None = None
+            if cumulative_glossary_path is not None:
+                cumulative_file = cumulative_glossary_path / "cumulative_glossary.csv"
+                if cumulative_file.exists() and cumulative_file.stat().st_size > 0:
+                    glossary_paths = [str(cumulative_file)]
+
+            settings = build_settings(
+                str(single_page_pdf),
+                user_prompt,
+                output_dir=output_dir,
+                glossary_paths=glossary_paths,
+            )
             event_queue: queue.Queue = queue.Queue()
             error_info: str | None = None
 
@@ -206,6 +220,19 @@ def translate_page(page: int):
             except Exception as e:
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
                 return
+
+            if (
+                cumulative_glossary_path is not None
+                and translate_result.auto_extracted_glossary_path
+            ):
+                auto_path = Path(translate_result.auto_extracted_glossary_path)
+                cumulative_file = cumulative_glossary_path / "cumulative_glossary.csv"
+                try:
+                    merge_glossary_csvs(cumulative_file, auto_path)
+                except Exception:
+                    logging.getLogger("pdf_reader").warning(
+                        "Failed to merge glossary for page %d", page, exc_info=True
+                    )
 
             yield "data: " + json.dumps({
                 "type": "progress", "progress": 100,
