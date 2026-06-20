@@ -8,6 +8,7 @@ logger = logging.getLogger("pdf_reader")
 
 def merge_glossary_csvs(cumulative_path: Path, auto_extracted_path: Path) -> None:
     if not auto_extracted_path.exists():
+        logger.warning("Auto glossary file does not exist: %s", auto_extracted_path)
         return
 
     source_targets: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
