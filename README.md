@@ -13,6 +13,7 @@
 - **持久化**：译文保存在 `right.pdf` 中，关闭后下次打开自动恢复
 - **大 PDF 支持**：IntersectionObserver 懒加载，1000 页不卡顿
 - **翻译进度**：SSE 实时推送翻译进度条
+- **调试追踪**：全链路日志，术语提取每批 LLM 交互可见（prompt 内容、返回结果、术语数量），翻译各步骤耗时一目了然
 
 ## 技术栈
 
@@ -36,6 +37,7 @@ PDF_reader/
 ├── state.py                # AppState 类（线程安全状态管理）
 ├── services.py             # 纯函数（SHA256、PNG 渲染、设置构建）
 ├── glossary_merger.py       # 术语表合并（按 source 列投票去重）
+├── debug_patches.py          # 调试追踪 monkey-patch（术语提取 LLM 交互日志）
 ├── routes.py               # Flask 路由注册（Blueprint）
 ├── config.toml             # 配置文件（模型、DPI、服务器）
 ├── glossary.csv            # 术语表（source,target）
@@ -52,11 +54,14 @@ PDF_reader/
 │   ├── test_services.py
 │   ├── test_state.py
 │   ├── test_routes.py
-│   └── test_glossary_merger.py
+│   ├── test_glossary_merger.py
+│   └── test_debug_patches.py
 ├── cache/                  # 翻译缓存目录
 │   └── <sha256>/           # 按 PDF 哈希隔离
 │       ├── right.pdf       # 译文持久化文件
 │       └── cumulative_glossary.csv  # 累积术语表（自动生成）
+│       ├── debug_trace.log          # 调试追踪日志
+│       └── debug_trace.*.log        # 轮转的历史调试日志
 ├── venv/                   # Python 虚拟环境
 ├── openspec/               # 项目 OpenSpec 规范
 │   ├── specs/              # 8 个 capability 规格
@@ -205,7 +210,7 @@ python app.py
 
 ## 相关文档
 
-- `openspec/specs/` — 8 个 capability 的详细规格
+- `openspec/specs/` — 9 个 capability 的详细规格
 - `docs/superpowers/` — 设计文档与实施计划
 - `pdf2zh-internals-report.md` — pdf2zh v1 源码分析
 - `babeldoc-vs-pdf2zh-next-report.md` — BabelDOC 与 pdf2zh-next 对比
@@ -219,3 +224,4 @@ python app.py
 | 6月18日 | 与 OpenCode 重新评估：放弃 v1，选用 pdf2zh-next + BabelDOC。完成 proposal → design → specs → tasks → implement → verify → archive 全流程 |
 | 6月19日 | 代码审查 + Comet 全流程重构：app.py 拆为 5 模块、AppState 线程安全、16 个 pytest 测试、ruff lint 零错误、前端错误处理 |
 | 6月20日 | 增量术语表累积：自动提取的术语跨页面复用，多数投票去重，按 PDF 哈希隔离，新增 glossary_merger.py + 11 个测试 |
+| 6月20日 | 全链路调试追踪：monkey-patch 术语提取器，Logger `pdf_reader.debug_trace` 双输出（console + 文件），翻译各步骤耗时日志，debug_trace.log 自动轮转，45 测试 |
