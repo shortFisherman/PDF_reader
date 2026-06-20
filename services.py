@@ -72,6 +72,7 @@ def build_settings(
     single_page_pdf: str,
     user_prompt: str | None = None,
     output_dir: str | None = None,
+    glossary_paths: list[str] | None = None,
 ) -> SettingsModel:
     engine_cls = resolve_engine(config.MODEL_PROVIDER)
     engine_kwargs = build_engine_kwargs(engine_cls)
@@ -83,8 +84,13 @@ def build_settings(
     }
     if user_prompt and user_prompt.strip():
         translation_kwargs["custom_system_prompt"] = user_prompt.strip()
+    paths = []
     if config.GLOSSARY_PATH.exists() and config.GLOSSARY_PATH.stat().st_size > 0:
-        translation_kwargs["glossaries"] = str(config.GLOSSARY_PATH)
+        paths.append(str(config.GLOSSARY_PATH))
+    if glossary_paths:
+        paths.extend(glossary_paths)
+    if paths:
+        translation_kwargs["glossaries"] = ",".join(paths)
     if output_dir is not None:
         translation_kwargs["output"] = output_dir
 

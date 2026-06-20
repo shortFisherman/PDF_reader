@@ -171,3 +171,21 @@ def test_build_settings_missing_api_key_raises(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_API_KEY", None)
     with pytest.raises(RuntimeError, match="未配置"):
         build_settings("dummy.pdf")
+
+
+def test_build_settings_with_glossary_paths(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    settings = build_settings("dummy.pdf", glossary_paths=["/a/one.csv", "/b/two.csv"])
+    assert settings.translation.glossaries == "/a/one.csv,/b/two.csv"
+
+
+def test_build_settings_glossary_paths_none(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    settings = build_settings("dummy.pdf")
+    assert getattr(settings.translation, "glossaries", None) is None
+
+
+def test_build_settings_glossary_paths_empty_list(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    settings = build_settings("dummy.pdf", glossary_paths=[])
+    assert getattr(settings.translation, "glossaries", None) is None
