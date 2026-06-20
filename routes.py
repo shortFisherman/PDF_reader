@@ -164,8 +164,8 @@ def translate_page(page: int):
                     "[step] build_settings done (%.2fs), output_dir=%s",
                     time.time() - step_start, output_dir,
                 )
+            translate_start = time.time()
             if config.DEBUG:
-                translate_start = time.time()
                 trace_logger.info("[step] submit translate page %d", page)
             event_queue: queue.Queue = queue.Queue()
             error_info: str | None = None
