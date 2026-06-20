@@ -52,6 +52,12 @@ class AppState:
     def translated_pages(self) -> frozenset[int]:
         return frozenset(self._translated_pages)
 
+    @property
+    def glossary_cache_path(self) -> Path | None:
+        if self._pdf_hash is None:
+            return None
+        return self._cache_dir / self._pdf_hash
+
     def open_pdf(self, pdf_path: str, sha256_func) -> dict:
         with self._lock:
             self._close_docs()

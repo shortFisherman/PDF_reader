@@ -40,3 +40,19 @@ def test_translated_pages_tracking(sample_pdf, tmp_path):
     state.open_pdf(str(sample_pdf), sha256)
     assert len(state.translated_pages) == 0
     state._close_docs()
+
+def test_glossary_cache_path_no_pdf(tmp_path):
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    state = AppState(cache_dir)
+    assert state.glossary_cache_path is None
+
+def test_glossary_cache_path_after_open(sample_pdf, tmp_path):
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    state = AppState(cache_dir)
+    from services import sha256
+    state.open_pdf(str(sample_pdf), sha256)
+    expected = cache_dir / state.pdf_hash
+    assert state.glossary_cache_path == expected
+    state._close_docs()
