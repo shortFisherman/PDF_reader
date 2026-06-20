@@ -243,7 +243,15 @@ def translate_page(page: int):
                 )
                 try:
                     merge_glossary_csvs(cumulative_file, auto_path)
-                    result_logger.info("Glossary merge complete")
+                    if cumulative_file.exists():
+                        result_logger.info(
+                            "Glossary merge complete. File size: %d bytes, exists=%s",
+                            cumulative_file.stat().st_size, cumulative_file.exists(),
+                        )
+                    else:
+                        result_logger.warning(
+                            "Glossary merge returned but file does not exist: %s", cumulative_file
+                        )
                 except Exception:
                     result_logger.warning(
                         "Failed to merge glossary for page %d", page, exc_info=True
