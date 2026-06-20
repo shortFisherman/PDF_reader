@@ -20,13 +20,17 @@ def create_app() -> Flask:
 app = create_app()
 
 if __name__ == "__main__":
+    import os
     import sys
 
     if "--debug" in sys.argv:
+        os.environ["PDF_READER_DEBUG"] = "1"
+
+    if os.environ.get("PDF_READER_DEBUG") == "1":
         config.DEBUG = True
-        logger.info("Debug tracing enabled")
         from debug_patches import apply_patches
         apply_patches()
+        logger.info("Debug tracing enabled")
 
     server_debug = config.CONFIG.get("server", {}).get("debug", True)
     host = config.CONFIG.get("server", {}).get("host", "127.0.0.1")
