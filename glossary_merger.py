@@ -38,6 +38,7 @@ def merge_glossary_csvs(cumulative_path: Path, auto_extracted_path: Path) -> Non
         return
 
     if not source_targets:
+        logger.info("No terms found in auto-extracted glossary, skipping merge. auto=%s", auto_extracted_path)
         return
 
     try:
@@ -47,5 +48,6 @@ def merge_glossary_csvs(cumulative_path: Path, auto_extracted_path: Path) -> Non
             for source, targets in sorted(source_targets.items()):
                 best_target = max(targets, key=lambda t: targets[t])
                 writer.writerow([source, best_target])
+        logger.info("Wrote %d terms to cumulative glossary: %s", len(source_targets), cumulative_path)
     except Exception:
         logger.warning("Failed to write cumulative glossary", exc_info=True)
