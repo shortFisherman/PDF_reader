@@ -115,9 +115,6 @@ def translate_page(page: int):
                 cumulative_file = cumulative_glossary_path / "cumulative_glossary.csv"
                 if cumulative_file.exists() and cumulative_file.stat().st_size > 0:
                     glossary_paths = [str(cumulative_file)]
-                    logging.getLogger("pdf_reader").info("Loading cumulative glossary: %s", cumulative_file)
-                else:
-                    logging.getLogger("pdf_reader").info("No cumulative glossary found at: %s", cumulative_file)
 
             settings = build_settings(
                 str(single_page_pdf),
@@ -224,44 +221,18 @@ def translate_page(page: int):
                 yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
                 return
 
-            result_logger = logging.getLogger("pdf_reader")
-            glossary_path_value = getattr(translate_result, "auto_extracted_glossary_path", "MISSING_ATTR")
-            result_logger.info(
-                "translate_result has auto_extracted_glossary_path: %s (type=%s)",
-                glossary_path_value, type(glossary_path_value).__name__,
-            )
-
             if (
                 cumulative_glossary_path is not None
                 and translate_result.auto_extracted_glossary_path
             ):
                 auto_path = Path(translate_result.auto_extracted_glossary_path)
                 cumulative_file = cumulative_glossary_path / "cumulative_glossary.csv"
-                result_logger.info(
-                    "Merging glossary: auto=%s → cumulative=%s",
-                    auto_path, cumulative_file,
-                )
                 try:
                     merge_glossary_csvs(cumulative_file, auto_path)
-                    if cumulative_file.exists():
-                        result_logger.info(
-                            "Glossary merge complete. File size: %d bytes, exists=%s",
-                            cumulative_file.stat().st_size, cumulative_file.exists(),
-                        )
-                    else:
-                        result_logger.warning(
-                            "Glossary merge returned but file does not exist: %s", cumulative_file
-                        )
                 except Exception:
-                    result_logger.warning(
+                    logging.getLogger("pdf_reader").warning(
                         "Failed to merge glossary for page %d", page, exc_info=True
                     )
-            else:
-                result_logger.info(
-                    "Skipping glossary merge: cumulative_path=%s, auto_path=%s",
-                    cumulative_glossary_path,
-                    translate_result.auto_extracted_glossary_path if hasattr(translate_result, "auto_extracted_glossary_path") else "ATTR_MISSING",
-                )
 
             yield "data: " + json.dumps({
                 "type": "progress", "progress": 100,
