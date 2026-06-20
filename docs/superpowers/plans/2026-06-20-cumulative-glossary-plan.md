@@ -35,7 +35,7 @@ base-ref: 41e77d5e9521db9aa137611209b24b93aff0e5e9
 **Interfaces:**
 - Produces: `AppState.glossary_cache_path` → `Path | None`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/test_state.py`, add a new test after the existing `test_translated_pages_tracking`:
 
@@ -57,13 +57,13 @@ def test_glossary_cache_path_after_open(sample_pdf, tmp_path):
     state._close_docs()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_state.py::test_glossary_cache_path_no_pdf tests/test_state.py::test_glossary_cache_path_after_open -v`
 
 Expected: FAIL — `AttributeError: 'AppState' object has no attribute 'glossary_cache_path'`
 
-- [ ] **Step 3: Add the `glossary_cache_path` property**
+- [x] **Step 3: Add the `glossary_cache_path` property**
 
 In `state.py`, add after the `translated_pages` property (after line 53):
 
@@ -75,13 +75,13 @@ In `state.py`, add after the `translated_pages` property (after line 53):
         return self._cache_dir / self._pdf_hash
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_state.py::test_glossary_cache_path_no_pdf tests/test_state.py::test_glossary_cache_path_after_open -v`
 
 Expected: PASS (2 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add state.py tests/test_state.py
@@ -99,7 +99,7 @@ git commit -m "feat(state): add glossary_cache_path property to AppState"
 **Interfaces:**
 - Produces: `merge_glossary_csvs(cumulative_path: Path, auto_extracted_path: Path) -> None`
 
-- [ ] **Step 1: Write the failing test suite**
+- [x] **Step 1: Write the failing test suite**
 
 Create `tests/test_glossary_merger.py`:
 
@@ -181,13 +181,13 @@ def test_auto_missing_does_not_create_empty_cumulative():
         assert not cumulative.exists()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_glossary_merger.py -v`
 
 Expected: FAIL — `ModuleNotFoundError: No module named 'glossary_merger'`
 
-- [ ] **Step 3: Implement `glossary_merger.py`**
+- [x] **Step 3: Implement `glossary_merger.py`**
 
 Create `glossary_merger.py`:
 
@@ -244,13 +244,13 @@ def merge_glossary_csvs(cumulative_path: Path, auto_extracted_path: Path) -> Non
         logger.warning("Failed to write cumulative glossary", exc_info=True)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_glossary_merger.py -v`
 
 Expected: PASS (4 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add glossary_merger.py tests/test_glossary_merger.py
@@ -269,7 +269,7 @@ git commit -m "feat: add merge_glossary_csvs with majority-vote merge logic"
 - Consumes: (nothing new — changes the signature of an existing function)
 - Produces: `build_settings(single_page_pdf, user_prompt=None, output_dir=None, glossary_paths=None) -> SettingsModel`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/test_services.py`, add after the existing `test_build_settings_without_output_dir`:
 
@@ -287,13 +287,13 @@ def test_build_settings_glossary_paths_empty_list(mock_config):
     assert getattr(settings.translation, "glossaries", None) is None
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_services.py::test_build_settings_with_glossary_paths tests/test_services.py::test_build_settings_glossary_paths_none tests/test_services.py::test_build_settings_glossary_paths_empty_list -v`
 
 Expected: FAIL — `TypeError: build_settings() got an unexpected keyword argument 'glossary_paths'`
 
-- [ ] **Step 3: Modify `build_settings` signature and glossaries logic**
+- [x] **Step 3: Modify `build_settings` signature and glossaries logic**
 
 In `services.py`, change the `build_settings` function signature and glossaries block at lines 71-91.
 
@@ -337,13 +337,13 @@ With:
         translation_kwargs["glossaries"] = ",".join(paths)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_services.py -v`
 
 Expected: ALL PASS (the 3 new tests + all 17 existing tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services.py tests/test_services.py
@@ -362,7 +362,7 @@ git commit -m "feat(services): add glossary_paths parameter to build_settings"
 - Consumes: `AppState.glossary_cache_path` (from Task 1), `merge_glossary_csvs` (from Task 2), `build_settings(glossary_paths=...)` (from Task 3)
 - Produces: (no new public interfaces — internal integration)
 
-- [ ] **Step 1: Add imports to `routes.py`**
+- [x] **Step 1: Add imports to `routes.py`**
 
 In `routes.py`, the current imports are (lines 1-25):
 
@@ -397,7 +397,7 @@ And add after line 25 (`from services import build_settings, render_page, sha256
 from glossary_merger import merge_glossary_csvs
 ```
 
-- [ ] **Step 2: Add glossary loading before translation starts**
+- [x] **Step 2: Add glossary loading before translation starts**
 
 In `translate_page()`, inside the `generate()` function, after computing `single_page_pdf` (after the line `settings = build_settings(...)`) — actually, glossary loading needs to happen **before** `build_settings()` is called. So locate this line in `generate()`:
 
@@ -423,7 +423,7 @@ Replace it with:
             )
 ```
 
-- [ ] **Step 3: Add glossary merge after translation completes**
+- [x] **Step 3: Add glossary merge after translation completes**
 
 In `generate()`, after the successful translation result block — after line 202 (`state.replace_page(str(translated_pdf), page)`) and before the progress/finish SSE yields — add the merge logic.
 
@@ -488,13 +488,13 @@ Insert glossary merge between `state.replace_page(...)` and the progress yields.
             yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
 ```
 
-- [ ] **Step 4: Verify existing tests still pass**
+- [x] **Step 4: Verify existing tests still pass**
 
 Run: `pytest tests/ -v`
 
 Expected: ALL PASS (no regressions)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add routes.py
@@ -514,7 +514,7 @@ git commit -m "feat(routes): integrate cumulative glossary loading and merging i
 - Open a different PDF, translate → uses independent cumulative glossary file under a different hash subdirectory
 - Translate a page with no extracted terms → cumulative glossary unchanged
 
-- [ ] **Step 1: Manual test — first page in session**
+- [x] **Step 1: Manual test — first page in session**
 
 1. Start the application: `python app.py`
 2. Open a multi-page PDF via the API
@@ -522,20 +522,20 @@ git commit -m "feat(routes): integrate cumulative glossary loading and merging i
 4. Confirm `CACHE_DIR/<hash>/cumulative_glossary.csv` exists and has entries
 5. Inspect the CSV content — should have `source,target` rows from the page
 
-- [ ] **Step 2: Manual test — second page accumulates**
+- [x] **Step 2: Manual test — second page accumulates**
 
 1. In the same session, translate page 10: `POST /api/translate/10`
 2. Confirm `cumulative_glossary.csv` has more rows (or at least as many as before)
 3. Inspect — terms from page 5 and page 10 both present, no duplicate `source` rows
 
-- [ ] **Step 3: Manual test — different PDF isolation**
+- [x] **Step 3: Manual test — different PDF isolation**
 
 1. Open a different PDF (different file path)
 2. Translate page 1
 3. Confirm a **new** `CACHE_DIR/<different_hash>/cumulative_glossary.csv` is created
 4. Confirm the previous PDF's glossary is unchanged (different hash directory)
 
-- [ ] **Step 4: Commit if no issues found**
+- [x] **Step 4: Commit if no issues found**
 
 No code to commit — verification only. If issues found, fix in new Task.
 
@@ -546,13 +546,13 @@ No code to commit — verification only. If issues found, fix in new Task.
 **Files:**
 - (no changes)
 
-- [ ] **Step 1: Run full test suite**
+- [x] **Step 1: Run full test suite**
 
 Run: `pytest tests/ -v`
 
 Expected: ALL PASS
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add -A
