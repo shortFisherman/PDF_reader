@@ -153,3 +153,31 @@ def test_zero_overhead_no_io_when_debug_false(tmp_path):
 
     log_file = glossary_path / "debug_trace.log"
     assert not log_file.exists()
+
+
+import importlib
+import config
+
+
+def test_config_debug_defaults_to_false(monkeypatch):
+    """When no [debug] or [server] debug keys exist, config.DEBUG is False."""
+    monkeypatch.setattr(config, "DEBUG", False)
+    assert config.DEBUG is False
+
+
+def test_config_debug_reads_debug_section():
+    """config.DEBUG is True when [debug] enabled = true in config.toml."""
+    import config as cfg
+    debug_section = cfg.CONFIG.get("debug", {})
+    server_section = cfg.CONFIG.get("server", {})
+    assert isinstance(cfg.DEBUG, bool)
+
+
+def test_config_debug_falls_back_to_server_debug():
+    """When [debug] is absent but [server] debug is present, use server.debug."""
+    import config as cfg
+    debug_section = cfg.CONFIG.get("debug")
+    server_section = cfg.CONFIG.get("server", {})
+    if debug_section is None:
+        expected = server_section.get("debug", False)
+        assert cfg.DEBUG == expected

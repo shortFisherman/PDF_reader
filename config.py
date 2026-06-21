@@ -174,4 +174,11 @@ GLOSSARY_PATH = Path(__file__).parent / "docs" / "glossary.csv"
 TRANSLATION_LANG_IN = CONFIG["translation"]["lang_in"]
 TRANSLATION_LANG_OUT = CONFIG["translation"]["lang_out"]
 
-DEBUG: bool = False
+def _resolve_debug() -> bool:
+    debug_section = CONFIG.get("debug")
+    if isinstance(debug_section, dict) and "enabled" in debug_section:
+        return bool(debug_section["enabled"])
+    server_section = CONFIG.get("server", {})
+    return bool(server_section.get("debug", False))
+
+DEBUG: bool = _resolve_debug()
