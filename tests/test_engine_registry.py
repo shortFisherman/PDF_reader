@@ -61,7 +61,10 @@ def test_all_engines_build_kwargs_structure(monkeypatch):
         )
 
 
-# Snapshot of the old FIELD_MAP for migration equivalence test
+# Migration-equivalence snapshot of the original FIELD_MAP that was
+# once defined in config.py and later deleted in favour of EngineSpec.
+# Preserved here so the old-code path can still be compared against the
+# production path in test_new_path_matches_old_path.
 _OLD_FIELD_MAP = {
     "api_key": {
         "DeepSeekSettings": "deepseek_api_key",
@@ -126,12 +129,19 @@ _OLD_FIELD_MAP = {
 
 
 def test_engine_registry_covers_all_providers():
+    settings_to_provider = {
+        spec.settings_cls.__name__: spec.provider
+        for spec in config.PROVIDER_INDEX.values()
+    }
+    expected_providers = {
+        settings_to_provider[name]
+        for name in _OLD_FIELD_MAP["api_key"]
+    }
     registry_providers = set(config.PROVIDER_INDEX.keys())
-    assert len(registry_providers) == 10, (
-        f"Expected 10 providers, got {len(registry_providers)}: {registry_providers}"
+    assert registry_providers == expected_providers, (
+        f"Provider mismatch: registry={sorted(registry_providers)}, "
+        f"expected from _OLD_FIELD_MAP={sorted(expected_providers)}"
     )
-    assert "deepseek" in registry_providers
-    assert "openai_compatible" in registry_providers
 
 
 def _old_build_engine_kwargs(engine_cls):
@@ -159,40 +169,6 @@ def _old_build_engine_kwargs(engine_cls):
     return kwargs
 
 
-def _new_build_engine_kwargs(spec):
-    CONFIG_ATTR_MAP = {
-        "model": "MODEL",
-        "api_key": "MODEL_API_KEY",
-        "base_url": "MODEL_BASE_URL",
-        "thinking_mode": "MODEL_THINKING_MODE",
-        "reasoning_effort": "MODEL_REASONING_EFFORT",
-        "enable_json_mode": "MODEL_ENABLE_JSON_MODE",
-        "temperature": "MODEL_TEMPERATURE",
-        "timeout": "MODEL_TIMEOUT",
-    }
-    kwargs = {}
-    engine_fields = spec.settings_cls.model_fields
-    for unified_name, engine_field in spec.field_map.items():
-        config_attr = CONFIG_ATTR_MAP[unified_name]
-        value = getattr(config, config_attr, None)
-        if engine_field not in engine_fields:
-            import logging
-            logger = logging.getLogger("pdf_reader")
-            logger.warning("引擎 %s 不支持字段 %s，已跳过", spec.provider, engine_field)
-            continue
-        if value is not None:
-            kwargs[engine_field] = value
-        elif unified_name in spec.required_fields:
-            raise RuntimeError(f"model.{unified_name} 未配置")
-        elif unified_name == "base_url":
-            pass
-        else:
-            import logging
-            logger = logging.getLogger("pdf_reader")
-            logger.warning("当前引擎不支持 %s，已忽略", unified_name)
-    return kwargs
-
-
 def test_new_path_matches_old_path(monkeypatch):
     monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
     monkeypatch.setattr(config, "MODEL", "test-model")
@@ -205,7 +181,7 @@ def test_new_path_matches_old_path(monkeypatch):
 
     for provider, spec in config.PROVIDER_INDEX.items():
         old_kwargs = _old_build_engine_kwargs(spec.settings_cls)
-        new_kwargs = _new_build_engine_kwargs(spec)
+        new_kwargs = build_engine_kwargs(spec)
         assert old_kwargs == new_kwargs, (
             f"{provider}: old={old_kwargs} != new={new_kwargs}"
         )
