@@ -61,7 +61,5 @@ def log_token_usage(token_usage: dict) -> None:
         return
     total = token_usage.get("main", {}).get("total", 0)
     term_total = token_usage.get("term", {}).get("total", 0)
-    if total:
-        trace_logger.info("Token usage main: %d", total)
-    if term_total:
-        trace_logger.info("Token usage term: %d", term_total)
+    if total or term_total:
+        trace_logger.info("Token usage: main=%d, term=%d", total, term_total)

@@ -1,3 +1,4 @@
+import csv
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -267,3 +268,101 @@ def test_generate_cleans_up_tmpdir(tmp_path):
 
     assert not tmpdir.exists()
     assert not Path(output_dir).exists()
+
+
+def test_generate_merges_glossary_with_str_auto_path(tmp_path):
+    glossary_cache = tmp_path / "cache"
+    glossary_cache.mkdir()
+    cumulative_file = glossary_cache / "cumulative_glossary.csv"
+    with open(cumulative_file, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["source", "target"])
+        w.writerow(["alpha", "\u963f\u5c14\u6cd5"])
+
+    auto_file = glossary_cache / "auto_extracted.csv"
+    with open(auto_file, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["source", "target"])
+        w.writerow(["beta", "\u8d1d\u5854"])
+
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = str(auto_file)
+
+    events = [
+        {"type": "progress_start", "stage": "layout_analysis", "overall_progress": 0,
+         "stage_current": 0, "stage_total": 0},
+        {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result,
+         "token_usage": {}},
+    ]
+
+    state = MagicMock()
+    state.glossary_cache_path = glossary_cache
+    state.replace_page = MagicMock()
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    single_page_pdf = tmpdir / "page.pdf"
+    single_page_pdf.write_bytes(b"fake pdf")
+    output_dir = str(tmp_path / "output")
+
+    ctx = GenerateContext(
+        settings=MagicMock(),
+        single_page_pdf=single_page_pdf,
+        state=state,
+        page=0,
+        glossary_paths=None,
+        tmpdir=tmpdir,
+        output_dir=output_dir,
+    )
+
+    with patch("sse_stream.run_translation", return_value=iter(events)):
+        with patch("sse_stream.debug_trace"):
+            list(generate(ctx))
+
+    with open(cumulative_file, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = {row["source"]: row["target"] for row in reader}
+
+    assert rows.get("alpha") == "\u963f\u5c14\u6cd5"
+    assert rows.get("beta") == "\u8d1d\u5854"
+
+
+def test_generate_passes_through_keepalive_empty_string(tmp_path):
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+
+    events = [
+        "",
+        {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result,
+         "token_usage": {}},
+    ]
+
+    state = MagicMock()
+    state.glossary_cache_path = None
+    state.replace_page = MagicMock()
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    single_page_pdf = tmpdir / "page.pdf"
+    single_page_pdf.write_bytes(b"fake pdf")
+    output_dir = str(tmp_path / "output")
+
+    ctx = GenerateContext(
+        settings=MagicMock(),
+        single_page_pdf=single_page_pdf,
+        state=state,
+        page=0,
+        glossary_paths=None,
+        tmpdir=tmpdir,
+        output_dir=output_dir,
+    )
+
+    with patch("sse_stream.run_translation", return_value=iter(events)):
+        with patch("sse_stream.debug_trace"):
+            result = list(generate(ctx))
+
+    assert result[0] == ""

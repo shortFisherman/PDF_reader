@@ -67,4 +67,4 @@ def test_log_token_usage_logs_when_has_data():
         token_usage = {"main": {"total": 100}, "term": {"total": 50}}
         with patch.object(debug_trace.trace_logger, "info") as mock_info:
             debug_trace.log_token_usage(token_usage)
-            assert mock_info.call_count == 2
+            mock_info.assert_called_once_with("Token usage: main=%d, term=%d", 100, 50)

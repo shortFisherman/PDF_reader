@@ -1,4 +1,5 @@
 import json
+import logging
 import shutil
 import time
 from collections.abc import Iterator
@@ -108,10 +109,13 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
         cumulative_glossary_file: Path | None = None
         if ctx.state.glossary_cache_path is not None:
             cumulative_glossary_file = ctx.state.glossary_cache_path / "cumulative_glossary.csv"
+        debug_trace.log_step("merge glossary for page %d", ctx.page)
+        merge_start = time.time()
         merge_after_translate(
             cumulative_glossary_file,
             translate_result.auto_extracted_glossary_path,
         )
+        debug_trace.log_step("merge glossary done (%.2fs)", time.time() - merge_start)
 
         yield "data: " + json.dumps({
             "type": "progress", "progress": 100,
@@ -122,6 +126,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
     except TranslationError as e:
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     except Exception as e:
+        logging.getLogger("pdf_reader").warning("translate_page generate error", exc_info=True)
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     finally:
         debug_trace.cleanup_file_handler(handler)

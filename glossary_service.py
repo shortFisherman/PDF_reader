@@ -18,9 +18,9 @@ def resolve_glossary_paths(state: AppState) -> list[str] | None:
 
 
 def merge_after_translate(cumulative_path: Path | None, auto_extracted_path: Path | None) -> None:
-    if cumulative_path is None or auto_extracted_path is None:
+    if not cumulative_path or not auto_extracted_path:
         return
     try:
-        merge_glossary_csvs(cumulative_path, auto_extracted_path)
+        merge_glossary_csvs(Path(cumulative_path), Path(auto_extracted_path))
     except Exception:
         logger.warning("Failed to merge glossary", exc_info=True)

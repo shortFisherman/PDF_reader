@@ -1328,25 +1328,25 @@ git commit -m "refactor: slim translate_page to thin orchestration with service 
 
 **tasks.md ref:** 7.1, 7.2
 
-- [ ] **Step 1: 运行全量测试**
+- [x] **Step 1: 运行全量测试**
 
 Run: `python -m pytest tests/ -v`
 Expected: ALL PASSED（原有测�?+ 新增 service 模块测试�?
-- [ ] **Step 2: 运行 ruff lint**
+- [x] **Step 2: 运行 ruff lint**
 
 Run: `python -m ruff check .`
 Expected: 0 errors
 
-- [ ] **Step 3: 如有 lint 错误，修复后重新运行**
+- [x] **Step 3: 如有 lint 错误，修复后重新运行**
 
 修复所�?ruff 报告的错误，然后重新运行 Step 1 �?Step 2 确认全绿�?
-- [ ] **Step 4: 提交（如�?lint 修复�?*
+- [x] **Step 4: 提交（如�?lint 修复�?*
 
 ```bash
 git add -A
 git commit -m "chore: lint cleanup for translation service layer extraction"
 ```
 
-- [ ] **Step 5: 确认所�?tasks.md 任务已勾�?*
+- [x] **Step 5: 确认所�?tasks.md 任务已勾�?*
 
 检�?`openspec/changes/extract-translation-service-layer/tasks.md` 中所�?`[ ]` 已改�?`[x]`�?
