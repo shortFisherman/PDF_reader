@@ -6,7 +6,6 @@ from pdf2zh_next import SettingsModel
 from pdf2zh_next.config.model import BasicSettings
 from pdf2zh_next.config.model import PDFSettings as Pdf2zhPDFSettings
 from pdf2zh_next.config.model import TranslationSettings as Pdf2zhTranslationSettings
-from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
 
 import config
 
@@ -29,37 +28,42 @@ def render_page(doc: pymupdf.Document, page_num: int, dpi: int) -> bytes:
     return pix.tobytes(output="png")
 
 
-def resolve_engine(provider: str):  # noqa: ANN201
-    engine_cls = config.PROVIDER_MAP.get(provider)
-    if engine_cls is None:
+def resolve_engine(provider: str) -> config.EngineSpec:  # noqa: ANN201
+    spec = config.PROVIDER_INDEX.get(provider)
+    if spec is None:
         logger.info("Provider '%s' not found, falling back to OpenAI Compatible", provider)
-        return OpenAICompatibleSettings
-    logger.info("Using engine: %s (%s)", engine_cls.__name__, config.MODEL)
-    return engine_cls
+        spec = config.PROVIDER_INDEX["openai_compatible"]
+    logger.info("Using engine: %s (%s)", spec.settings_cls.__name__, config.MODEL)
+    return spec
 
 
-def build_engine_kwargs(engine_cls):  # noqa: ANN001, ANN201
-    engine_fields = engine_cls.model_fields
-    engine_name = engine_cls.__name__
-    kwargs = {}
+CONFIG_ATTR_MAP: dict[str, str] = {
+    "model": "MODEL",
+    "api_key": "MODEL_API_KEY",
+    "base_url": "MODEL_BASE_URL",
+    "thinking_mode": "MODEL_THINKING_MODE",
+    "reasoning_effort": "MODEL_REASONING_EFFORT",
+    "enable_json_mode": "MODEL_ENABLE_JSON_MODE",
+    "temperature": "MODEL_TEMPERATURE",
+    "timeout": "MODEL_TIMEOUT",
+}
 
-    for unified_name in ("api_key", "model", "base_url", "thinking_mode",
-                         "reasoning_effort", "enable_json_mode",
-                         "temperature", "timeout"):
-        config_attr_name = "MODEL" if unified_name == "model" else f"MODEL_{unified_name.upper()}"
-        value = getattr(config, config_attr_name, None)
 
-        engine_field = config.FIELD_MAP.get(unified_name, {}).get(engine_name)
-        if engine_field is None:
-            if value is not None and unified_name not in ("api_key", "model", "base_url"):
-                logger.warning("当前引擎不支持 %s，已忽略", unified_name)
-            continue
+def build_engine_kwargs(spec: config.EngineSpec) -> dict:  # noqa: ANN001, ANN201
+    engine_fields = spec.settings_cls.model_fields
+    kwargs: dict = {}
+
+    for unified_name, engine_field in spec.field_map.items():
+        config_attr = CONFIG_ATTR_MAP[unified_name]
+        value = getattr(config, config_attr, None)
+
         if engine_field not in engine_fields:
+            logger.warning("引擎 %s 不支持字段 %s，已跳过", spec.provider, engine_field)
             continue
 
         if value is not None:
             kwargs[engine_field] = value
-        elif unified_name in ("api_key", "model"):
+        elif unified_name in spec.required_fields:
             raise RuntimeError(f"model.{unified_name} 未配置")
         elif unified_name == "base_url":
             pass
@@ -76,8 +80,8 @@ def build_settings(
     glossary_paths: list[str] | None = None,
     debug: bool = False,
 ) -> SettingsModel:
-    engine_cls = resolve_engine(config.MODEL_PROVIDER)
-    engine_kwargs = build_engine_kwargs(engine_cls)
+    spec = resolve_engine(config.MODEL_PROVIDER)
+    engine_kwargs = build_engine_kwargs(spec)
 
     translation_kwargs = {
         "lang_in": config.TRANSLATION_LANG_IN,
@@ -106,5 +110,5 @@ def build_settings(
             only_include_translated_page=True,
             watermark_output_mode="no_watermark",
         ),
-        translate_engine_settings=engine_cls(**engine_kwargs),
+        translate_engine_settings=spec.settings_cls(**engine_kwargs),
     )

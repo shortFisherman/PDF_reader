@@ -38,20 +38,6 @@ if not MODEL_API_KEY or MODEL_API_KEY.startswith("sk-your-api-key"):
 if not MODEL:
     raise ValueError("请设置 model.model")
 
-PROVIDER_MAP: dict[str, type] = {
-    "deepseek":           DeepSeekSettings,
-    "zhipu":              ZhipuSettings,
-    "siliconflow":        SiliconFlowSettings,
-    "aliyun":             AliyunDashScopeSettings,
-    "gemini":             GeminiSettings,
-    "groq":               GroqSettings,
-    "grok":               GrokSettings,
-    "modelscope":         ModelScopeSettings,
-    "openai":             OpenAISettings,
-    "openai_compatible":  OpenAICompatibleSettings,
-}
-
-
 @dataclass(frozen=True)
 class EngineSpec:
     provider: str
@@ -60,136 +46,118 @@ class EngineSpec:
     required_fields: tuple[str, ...]
 
 
-FIELD_MAP: dict[str, dict[str, str]] = {
-    "api_key": {
-        "DeepSeekSettings":    "deepseek_api_key",
-        "ZhipuSettings":       "zhipu_api_key",
-        "SiliconFlowSettings": "siliconflow_api_key",
-        "AliyunDashScopeSettings": "aliyun_dashscope_api_key",
-        "GeminiSettings":      "gemini_api_key",
-        "GroqSettings":        "groq_api_key",
-        "GrokSettings":        "grok_api_key",
-        "ModelScopeSettings":  "modelscope_api_key",
-        "OpenAISettings":      "openai_api_key",
-        "OpenAICompatibleSettings": "openai_compatible_api_key",
-    },
-    "model": {
-        "DeepSeekSettings":    "deepseek_model",
-        "ZhipuSettings":       "zhipu_model",
-        "SiliconFlowSettings": "siliconflow_model",
-        "AliyunDashScopeSettings": "aliyun_dashscope_model",
-        "GeminiSettings":      "gemini_model",
-        "GroqSettings":        "groq_model",
-        "GrokSettings":        "grok_model",
-        "ModelScopeSettings":  "modelscope_model",
-        "OpenAISettings":      "openai_model",
-        "OpenAICompatibleSettings": "openai_compatible_model",
-    },
-    "base_url": {
-        "SiliconFlowSettings": "siliconflow_base_url",
-        "AliyunDashScopeSettings": "aliyun_dashscope_base_url",
-        "OpenAISettings":      "openai_base_url",
-        "OpenAICompatibleSettings": "openai_compatible_base_url",
-    },
-    "thinking_mode": {
-        "DeepSeekSettings": "deepseek_thinking_mode",
-    },
-    "reasoning_effort": {
-        "DeepSeekSettings": "deepseek_reasoning_effort",
-        "OpenAISettings":   "openai_reasoning_effort",
-        "OpenAICompatibleSettings": "openai_compatible_reasoning_effort",
-    },
-    "enable_json_mode": {
-        "DeepSeekSettings":    "deepseek_enable_json_mode",
-        "ZhipuSettings":       "zhipu_enable_json_mode",
-        "SiliconFlowSettings": "siliconflow_enable_json_mode",
-        "GeminiSettings":      "gemini_enable_json_mode",
-        "GroqSettings":        "groq_enable_json_mode",
-        "GrokSettings":        "grok_enable_json_mode",
-        "ModelScopeSettings":  "modelscope_enable_json_mode",
-        "OpenAISettings":      "openai_enable_json_mode",
-        "OpenAICompatibleSettings": "openai_compatible_enable_json_mode",
-    },
-    "temperature": {
-        "OpenAISettings":      "openai_temperature",
-        "AliyunDashScopeSettings": "aliyun_dashscope_temperature",
-        "OpenAICompatibleSettings": "openai_compatible_temperature",
-    },
-    "timeout": {
-        "OpenAISettings":      "openai_timeout",
-        "AliyunDashScopeSettings": "aliyun_dashscope_timeout",
-        "OpenAICompatibleSettings": "openai_compatible_timeout",
-    },
-}
-
-
-def _derive_field_map(engine_class_name: str) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for unified_name, class_mapping in FIELD_MAP.items():
-        if engine_class_name in class_mapping:
-            result[unified_name] = class_mapping[engine_class_name]
-    return result
-
-
 ENGINE_REGISTRY: list[EngineSpec] = [
     EngineSpec(
         provider="deepseek",
         settings_cls=DeepSeekSettings,
-        field_map=_derive_field_map("DeepSeekSettings"),
+        field_map={
+            "api_key": "deepseek_api_key",
+            "model": "deepseek_model",
+            "thinking_mode": "deepseek_thinking_mode",
+            "reasoning_effort": "deepseek_reasoning_effort",
+            "enable_json_mode": "deepseek_enable_json_mode",
+        },
         required_fields=("api_key", "model"),
     ),
     EngineSpec(
         provider="zhipu",
         settings_cls=ZhipuSettings,
-        field_map=_derive_field_map("ZhipuSettings"),
+        field_map={
+            "api_key": "zhipu_api_key",
+            "model": "zhipu_model",
+            "enable_json_mode": "zhipu_enable_json_mode",
+        },
         required_fields=("api_key", "model"),
     ),
     EngineSpec(
         provider="siliconflow",
         settings_cls=SiliconFlowSettings,
-        field_map=_derive_field_map("SiliconFlowSettings"),
+        field_map={
+            "api_key": "siliconflow_api_key",
+            "model": "siliconflow_model",
+            "base_url": "siliconflow_base_url",
+            "enable_json_mode": "siliconflow_enable_json_mode",
+        },
         required_fields=("api_key", "model"),
     ),
     EngineSpec(
         provider="aliyun",
         settings_cls=AliyunDashScopeSettings,
-        field_map=_derive_field_map("AliyunDashScopeSettings"),
+        field_map={
+            "api_key": "aliyun_dashscope_api_key",
+            "model": "aliyun_dashscope_model",
+            "base_url": "aliyun_dashscope_base_url",
+            "temperature": "aliyun_dashscope_temperature",
+            "timeout": "aliyun_dashscope_timeout",
+        },
         required_fields=("api_key", "model"),
     ),
     EngineSpec(
         provider="gemini",
         settings_cls=GeminiSettings,
-        field_map=_derive_field_map("GeminiSettings"),
+        field_map={
+            "api_key": "gemini_api_key",
+            "model": "gemini_model",
+            "enable_json_mode": "gemini_enable_json_mode",
+        },
         required_fields=("api_key", "model"),
     ),
     EngineSpec(
         provider="groq",
         settings_cls=GroqSettings,
-        field_map=_derive_field_map("GroqSettings"),
+        field_map={
+            "api_key": "groq_api_key",
+            "model": "groq_model",
+            "enable_json_mode": "groq_enable_json_mode",
+        },
         required_fields=("api_key", "model"),
     ),
     EngineSpec(
         provider="grok",
         settings_cls=GrokSettings,
-        field_map=_derive_field_map("GrokSettings"),
+        field_map={
+            "api_key": "grok_api_key",
+            "model": "grok_model",
+            "enable_json_mode": "grok_enable_json_mode",
+        },
         required_fields=("api_key", "model"),
     ),
     EngineSpec(
         provider="modelscope",
         settings_cls=ModelScopeSettings,
-        field_map=_derive_field_map("ModelScopeSettings"),
+        field_map={
+            "api_key": "modelscope_api_key",
+            "model": "modelscope_model",
+            "enable_json_mode": "modelscope_enable_json_mode",
+        },
         required_fields=("api_key", "model"),
     ),
     EngineSpec(
         provider="openai",
         settings_cls=OpenAISettings,
-        field_map=_derive_field_map("OpenAISettings"),
+        field_map={
+            "api_key": "openai_api_key",
+            "model": "openai_model",
+            "base_url": "openai_base_url",
+            "reasoning_effort": "openai_reasoning_effort",
+            "enable_json_mode": "openai_enable_json_mode",
+            "temperature": "openai_temperature",
+            "timeout": "openai_timeout",
+        },
         required_fields=("api_key", "model"),
     ),
     EngineSpec(
         provider="openai_compatible",
         settings_cls=OpenAICompatibleSettings,
-        field_map=_derive_field_map("OpenAICompatibleSettings"),
+        field_map={
+            "api_key": "openai_compatible_api_key",
+            "model": "openai_compatible_model",
+            "base_url": "openai_compatible_base_url",
+            "reasoning_effort": "openai_compatible_reasoning_effort",
+            "enable_json_mode": "openai_compatible_enable_json_mode",
+            "temperature": "openai_compatible_temperature",
+            "timeout": "openai_compatible_timeout",
+        },
         required_fields=("api_key", "model"),
     ),
 ]
