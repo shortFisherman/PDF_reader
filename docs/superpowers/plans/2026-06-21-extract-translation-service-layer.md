@@ -666,7 +666,7 @@ git commit -m "feat: extract glossary_service with path resolution and merge"
 - Produces: `trace_logger`、`log_step(step: str, *args) -> None`、`setup_file_handler(glossary_path: Path | None, page: int) -> logging.FileHandler | None`、`cleanup_file_handler(handler: logging.FileHandler | None) -> None`、`log_token_usage(token_usage: dict) -> None`
 
 **tasks.md ref:** 无（design.md 决策 1 �?`debug_trace.py` 见变�?D，此处建骨架�?
-- [ ] **Step 1: �?`tests/test_debug_trace.py` 编写失败测试**
+- [x] **Step 1: �?`tests/test_debug_trace.py` 编写失败测试**
 
 ```python
 import logging
@@ -740,12 +740,12 @@ def test_log_token_usage_logs_when_has_data():
             assert mock_info.call_count == 2
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_debug_trace.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'debug_trace'`
 
-- [ ] **Step 3: 创建 `debug_trace.py`**
+- [x] **Step 3: 创建 `debug_trace.py`**
 
 ```python
 import logging
@@ -815,12 +815,12 @@ def log_token_usage(token_usage: dict) -> None:
         trace_logger.info("Token usage: main=%d, term=%d", total, term_total)
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m pytest tests/test_debug_trace.py -v`
 Expected: 9 PASSED
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add debug_trace.py tests/test_debug_trace.py
