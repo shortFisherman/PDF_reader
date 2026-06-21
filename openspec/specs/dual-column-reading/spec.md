@@ -3,12 +3,10 @@
 ## Purpose
 
 Display original and translated PDF page images side-by-side in two synchronized, vertically scrollable columns, providing a continuous reading experience comparable to a web page.
-
 ## Requirements
-
 ### Requirement: Two synchronized scrollable columns
 
-The system SHALL display original and translated PDF pages side by side in two vertically scrollable columns.
+The system SHALL display original and translated PDF pages side by side in two vertically scrollable columns. Scroll synchronization logic SHALL reside in a dedicated `scroll-sync` frontend module; behavior SHALL remain identical to the pre-refactor implementation.
 
 #### Scenario: Initial layout
 
@@ -46,4 +44,5 @@ The system SHALL provide a floating toolbar that remains visible during scrollin
 #### Scenario: Page indicator
 
 - **WHEN** the user scrolls such that page N occupies more than 50% of the viewport
-- **THEN** the toolbar SHALL display "Page N" as the current page
+- **THEN** the toolbar SHALL display "Page N" as the current page, computed by the `scroll-sync` module's page detection
+

@@ -85,7 +85,6 @@ def build_settings(
     user_prompt: str | None = None,
     output_dir: str | None = None,
     glossary_paths: list[str] | None = None,
-    debug: bool = False,
 ) -> SettingsModel:
     spec = resolve_engine(config.MODEL_PROVIDER)
     engine_kwargs = build_engine_kwargs(spec)
@@ -109,7 +108,7 @@ def build_settings(
         translation_kwargs["output"] = output_dir
 
     return SettingsModel(
-        basic=BasicSettings(debug=debug),
+        basic=BasicSettings(debug=False),
         translation=Pdf2zhTranslationSettings(**translation_kwargs),
         pdf=Pdf2zhPDFSettings(
             pages="1",

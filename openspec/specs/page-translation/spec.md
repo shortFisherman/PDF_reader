@@ -6,12 +6,12 @@ Enable on-demand, per-page translation of PDF content using pdf2zh-next with Dee
 ## Requirements
 ### Requirement: Manual per-page translation trigger
 
-The system SHALL allow the user to trigger translation of the currently visible page via a button in the floating toolbar. The `/api/translate/<page>` endpoint SHALL delegate to the translation service layer; the route function SHALL only parse the request, validate the page, compose services, and return the SSE Response.
+The system SHALL allow the user to trigger translation of the currently visible page via a button in the floating toolbar. Translation orchestration and progress UI SHALL reside in dedicated `translator` and `sse-client` frontend modules; behavior SHALL remain identical to the pre-refactor implementation. Stage labels SHALL be fetched from the backend single source of truth rather than hardcoded.
 
 #### Scenario: Translate untranslated page
 
 - **WHEN** the user clicks "Translate" on a page that has not been translated
-- **THEN** the system SHALL extract the page from the original PDF, send it to the translation engine, and replace the corresponding page in right.pdf with the translated output
+- **THEN** the `translator` module SHALL request translation and the system SHALL replace the corresponding page in right.pdf with the translated output
 
 #### Scenario: Re-translate already translated page
 
@@ -28,10 +28,10 @@ The system SHALL allow the user to trigger translation of the currently visible 
 - **WHEN** a page translation completes
 - **THEN** the right-column image for that page SHALL refresh to show the translated content within 2 seconds
 
-#### Scenario: SSE event stream byte-level compatibility
+#### Scenario: SSE stream parsed by sse-client module
 
-- **WHEN** the service layer formats SSE events
-- **THEN** the event type, field names, stage labels, and `data: {json}\n\n` framing SHALL be byte-for-byte identical to the pre-refactor output, so the frontend requires no changes
+- **WHEN** the translation SSE stream is received
+- **THEN** the `sse-client` module SHALL read and parse the `data: {json}\n\n` events and invoke the `translator` module's event handlers, identical to pre-refactor behavior
 
 ### Requirement: Custom user prompt per translation
 
@@ -91,27 +91,27 @@ The system SHALL configure the translation engine to output only the translated 
 
 ### Requirement: User-facing stage status display
 
-The system SHALL display user-readable Chinese text describing the current translation stage in the progress bar area during translation.
+The system SHALL display user-readable Chinese text describing the current translation stage in the progress bar area during translation, using stage labels fetched from the backend single source of truth.
 
 #### Scenario: Layout analysis stage display
 
 - **WHEN** the translation enters the layout_analysis stage
-- **THEN** the progress bar area SHALL display "正在分析版面..." in Chinese
+- **THEN** the progress bar area SHALL display the stage label fetched from the backend (e.g., "正在分析版面...") in Chinese
 
 #### Scenario: Translating stage display
 
 - **WHEN** the translation enters the translating stage
-- **THEN** the progress bar area SHALL display "正在翻译..." followed by paragraph-level progress if available (e.g., "正在翻译... 第 3/8 段")
+- **THEN** the progress bar area SHALL display the fetched stage label followed by paragraph-level progress if available (e.g., "正在翻译... 第3/8 段")
 
 #### Scenario: Generating PDF stage display
 
 - **WHEN** the translation completes text translation and begins generating the output PDF
-- **THEN** the progress bar area SHALL display "正在生成译文..." in Chinese
+- **THEN** the progress bar area SHALL display the fetched stage label (e.g., "正在生成译文...") in Chinese
 
 #### Scenario: Translation complete display
 
 - **WHEN** the translation finishes successfully
-- **THEN** the progress bar area SHALL display "翻译完成" briefly before returning to its idle state
+- **THEN** the progress bar area SHALL display the fetched completion label briefly before returning to its idle state
 
 #### Scenario: Translation error display
 

@@ -3,12 +3,10 @@
 ## Purpose
 
 Support 1000-page PDFs without degrading browser performance by loading page images only when they approach the viewport. Uses IntersectionObserver with a 5-page buffer and automatic unloading of distant pages.
-
 ## Requirements
-
 ### Requirement: Viewport-based image loading
 
-The system SHALL load page images only when they enter or are near the browser viewport, deferring loading of off-screen pages.
+The system SHALL load page images only when they enter or are near the browser viewport, deferring loading of off-screen pages. The IntersectionObserver logic SHALL reside in a dedicated `lazy-loader` frontend module; behavior SHALL remain identical to the pre-refactor implementation.
 
 #### Scenario: Initial page load
 
@@ -27,12 +25,12 @@ The system SHALL load page images only when they enter or are near the browser v
 
 ### Requirement: IntersectionObserver implementation
 
-The system SHALL use the browser's IntersectionObserver API to detect which page elements are near the viewport.
+The system SHALL use the browser's IntersectionObserver API to detect which page elements are near the viewport, implemented in the `lazy-loader` module.
 
 #### Scenario: Observer setup
 
 - **WHEN** the dual-column view initializes
-- **THEN** the system SHALL create an IntersectionObserver with rootMargin set to load pages within 5 page-heights of the viewport
+- **THEN** the `lazy-loader` module SHALL create an IntersectionObserver with rootMargin set to load pages within 5 page-heights of the viewport
 
 #### Scenario: Placeholder dimensions
 
@@ -52,3 +50,4 @@ The system SHALL support PDF documents with up to 1000 pages without degrading b
 
 - **WHEN** total loaded images exceed 50 pages
 - **THEN** the system SHALL unload images furthest from the viewport to stay within memory limits
+

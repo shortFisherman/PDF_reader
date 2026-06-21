@@ -93,7 +93,7 @@ def translate_page(page: int):
     glossary_paths = glossary_service.resolve_glossary_paths(state)
     settings = services.build_settings(
         str(single_page_pdf), user_prompt,
-        output_dir=output_dir, glossary_paths=glossary_paths, debug=config.DEBUG,
+        output_dir=output_dir, glossary_paths=glossary_paths,
     )
     ctx = sse_stream.GenerateContext(
         settings=settings, single_page_pdf=single_page_pdf, state=state,

@@ -1,3 +1,7 @@
+---
+archived-with: 2026-06-21-modularize-frontend
+status: final
+---
 ﻿---
 change: modularize-frontend
 design-doc: docs/superpowers/specs/2026-06-21-modularize-frontend-design.md

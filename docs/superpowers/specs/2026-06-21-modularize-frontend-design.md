@@ -3,6 +3,8 @@ comet_change: modularize-frontend
 role: technical-design
 canonical_spec: openspec
 status: final
+archived-with: 2026-06-21-modularize-frontend
+status: final
 ---
 
 # Design: Modularize Frontend
