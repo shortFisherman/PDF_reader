@@ -300,3 +300,23 @@ def test_debug_session_exception_safe(tmp_path):
         if isinstance(h, logging.FileHandler)
     ]
     assert len(handlers_after) == len(handlers_before)
+
+
+def test_log_glossary_merge_logs_when_debug_true():
+    with patch("debug_trace.config") as mock_config:
+        mock_config.DEBUG = True
+        with patch.object(debug_trace.trace_logger, "info") as mock_info:
+            debug_trace.log_glossary_merge(
+                "merge_done", page=1, elapsed=0.02, entries=5
+            )
+            mock_info.assert_called_once()
+            call_args = mock_info.call_args
+            assert "merge_done" in str(call_args)
+
+
+def test_log_glossary_merge_no_op_when_debug_false():
+    with patch("debug_trace.config") as mock_config:
+        mock_config.DEBUG = False
+        with patch.object(debug_trace.trace_logger, "info") as mock_info:
+            debug_trace.log_glossary_merge("merge_done", page=1)
+            mock_info.assert_not_called()

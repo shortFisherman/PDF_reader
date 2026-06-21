@@ -155,3 +155,10 @@ def log_token_usage(token_usage: dict) -> None:
     term_total = token_usage.get("term", {}).get("total", 0)
     if total or term_total:
         trace_logger.info("Token usage: main=%d, term=%d", total, term_total)
+
+
+def log_glossary_merge(action: str, **fields) -> None:
+    if not config.DEBUG:
+        return
+    parts = [f"{k}={v}" for k, v in fields.items()]
+    trace_logger.info("[glossary %s] %s", action, " ".join(parts))
