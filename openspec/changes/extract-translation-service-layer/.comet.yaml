@@ -1,5 +1,5 @@
 workflow: full
-phase: build
+phase: verify
 context_compression: off
 build_mode: subagent-driven-development
 build_pause: null
@@ -20,3 +20,5 @@ verified_at: null
 archived: false
 handoff_context: openspec/changes/extract-translation-service-layer/.comet/handoff/design-context.json
 handoff_hash: d6eb45c7b63a5cac2eca5c61af6fa94f5f420e5d16327605358f2e3c46edf1db
+build_command: python -m ruff check .
+verify_command: python -m pytest tests/ -q
