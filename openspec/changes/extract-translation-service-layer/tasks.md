@@ -1,7 +1,7 @@
 ## 1. SSE 字节级回归基线
 
-- [ ] 1.1 在 `tests/test_sse_stream.py` 编写测试：捕获现状 `translate_page` SSE 输出（progress_start/update/finish/error 各类事件）的期望字节串作为黄金样本
-- [ ] 1.2 运行确认基线测试在现状代码上通过（锁定契约）
+- [x] 1.1 在 `tests/test_sse_stream.py` 编写测试：捕获现状 `translate_page` SSE 输出（progress_start/update/finish/error 各类事件）的期望字节串作为黄金样本
+- [x] 1.2 运行确认基线测试在现状代码上通过（锁定契约）
 
 ## 2. 抽取 pdf_extraction service
 
