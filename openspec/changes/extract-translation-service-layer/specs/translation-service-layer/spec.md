@@ -24,6 +24,11 @@ The system SHALL provide a translation service layer that separates the concerns
 - **WHEN** a translation starts or finishes
 - **THEN** a glossary service SHALL resolve cumulative glossary paths before translation and merge auto-extracted terms after translation, without inline logic in the route function
 
+#### Scenario: Translation error propagation
+
+- **WHEN** the translation engine raises an exception or yields an error event
+- **THEN** the orchestrator SHALL propagate the error to the SSE stream as an error event, and the route SHALL NOT crash
+
 ### Requirement: Route function thinness
 
 The `translate_page` route function SHALL be limited to request parsing, page validation, service composition, and returning the SSE Response. It SHALL NOT contain business orchestration logic such as pymupdf calls, asyncio loop management, or inline debug logging.

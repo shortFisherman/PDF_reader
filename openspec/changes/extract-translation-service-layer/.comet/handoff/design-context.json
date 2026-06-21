@@ -1,0 +1,16 @@
+{
+  "change": "extract-translation-service-layer",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "d6eb45c7b63a5cac2eca5c61af6fa94f5f420e5d16327605358f2e3c46edf1db",
+  "files": [
+    { "path": "openspec/changes/extract-translation-service-layer/proposal.md", "sha256": "029d9d062d2d3bc9f37cbb5da04446d0a07e5d534e6fbf7e794bbe59a215924b" },
+    { "path": "openspec/changes/extract-translation-service-layer/design.md", "sha256": "502d660101d3e1816f7e62c40d6957b20bac505770eba1f6401370df50dc1609" },
+    { "path": "openspec/changes/extract-translation-service-layer/tasks.md", "sha256": "d19aafc42fd06222f50dede9cc2f6df853abefb78723567993a2e86b7eea3876" },
+    { "path": "openspec/changes/extract-translation-service-layer/specs/code-quality-foundations/spec.md", "sha256": "13aad1366ee29571fff170d2c2da77b1749b6f948b3d7838750c8fb6ca81e227" },
+    { "path": "openspec/changes/extract-translation-service-layer/specs/page-translation/spec.md", "sha256": "21e5232e0938cdc1c3a3c0469136a7aa26087fe3abba7a152786f84d93563481" },
+    { "path": "openspec/changes/extract-translation-service-layer/specs/translation-service-layer/spec.md", "sha256": "0ed34963943c2801fe667f59500df947bf1524d9adf3f8b48821a7d0aa6d688d" }
+  ]
+}
