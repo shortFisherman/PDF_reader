@@ -2,6 +2,7 @@
 change: data-driven-engine-config
 design-doc: docs/superpowers/specs/2026-06-21-data-driven-engine-config-design.md
 base-ref: 4952acf8150e5bf8d28623e119015067d9601e9d
+archived-with: 2026-06-21-data-driven-engine-config
 ---
 
 # Data-Driven Engine Configuration 实现计划
@@ -19,6 +20,7 @@ base-ref: 4952acf8150e5bf8d28623e119015067d9601e9d
 - 其它可选字段（thinking_mode, reasoning_effort, enable_json_mode, temperature, timeout）配置了值但引擎不支持时 `logger.warning`
 - 引擎 Settings 类字段变更（pdf2zh-next 版本升级）时不注册时报错，而是运行时跳�?警告
 - `FIELD_MAP` �?`PROVIDER_MAP` 仅被 `services.py` 引用，一起删�?
+archived-with: 2026-06-21-data-driven-engine-config
 ---
 
 ### 任务 1：等价回归基�?
@@ -112,6 +114,7 @@ git add tests/test_engine_registry.py
 git commit -m "test: add equivalence regression baseline for engine registry"
 ```
 
+archived-with: 2026-06-21-data-driven-engine-config
 ---
 
 ### 任务 2：实�?EngineSpec 注册�?
@@ -239,6 +242,7 @@ git add config.py
 git commit -m "feat: add EngineSpec dataclass and ENGINE_REGISTRY"
 ```
 
+archived-with: 2026-06-21-data-driven-engine-config
 ---
 
 ### 任务 3：重�?services 使用 EngineSpec
@@ -673,6 +677,7 @@ git add config.py services.py tests/test_services.py tests/test_engine_registry.
 git commit -m "refactor: migrate to data-driven EngineSpec registry"
 ```
 
+archived-with: 2026-06-21-data-driven-engine-config
 ---
 
 ### 任务 4：扩展性验�?
@@ -771,6 +776,7 @@ git add tests/test_engine_registry.py
 git commit -m "test: add extensibility verification for EngineSpec"
 ```
 
+archived-with: 2026-06-21-data-driven-engine-config
 ---
 
 ### 任务 5：全量回归与 lint

@@ -1,6 +1,5 @@
-import sys
-import importlib
 import argparse
+import sys
 from unittest.mock import patch
 
 
@@ -38,7 +37,7 @@ def test_import_app_does_not_trigger_side_effects():
     """Importing app module does NOT set config.DEBUG=True or apply patches."""
     with patch("config.DEBUG", False):
         with patch("app.debug_trace.init_debug") as mock_init:
-            import app
+            import app  # noqa: F401
             mock_init.assert_not_called()
 
 

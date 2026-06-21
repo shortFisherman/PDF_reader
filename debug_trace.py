@@ -1,11 +1,10 @@
 import logging
 import shutil
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import config
-
-from contextlib import contextmanager
 
 logger = logging.getLogger("pdf_reader.debug_trace")
 

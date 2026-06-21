@@ -3,6 +3,8 @@ comet_change: data-driven-engine-config
 role: technical-design
 canonical_spec: openspec
 status: draft
+archived-with: 2026-06-21-data-driven-engine-config
+status: final
 ---
 
 # Design: Data-Driven Engine Configuration

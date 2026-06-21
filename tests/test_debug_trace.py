@@ -1,9 +1,9 @@
 import io
-import contextlib
 import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import config
 import debug_trace
 
 
@@ -155,11 +155,6 @@ def test_zero_overhead_no_io_when_debug_false(tmp_path):
     assert not log_file.exists()
 
 
-import importlib
-import config
-from unittest.mock import MagicMock, patch, PropertyMock
-
-
 def test_init_debug_true_patches_extractor():
     with patch("debug_trace.AutomaticTermExtractor", create=True) as mock_cls:
         mock_cls.extract_terms_from_paragraphs = MagicMock()
@@ -182,7 +177,6 @@ def test_init_debug_handles_import_error(monkeypatch):
         raise ImportError("babeldoc not available")
 
     import debug_trace as dt
-    # Force a fresh call that will trigger the import path
     with patch("debug_trace.logger.warning") as mock_warn:
         try:
             dt._apply_monkey_patches()
@@ -199,8 +193,6 @@ def test_config_debug_defaults_to_false(monkeypatch):
 def test_config_debug_reads_debug_section():
     """config.DEBUG is True when [debug] enabled = true in config.toml."""
     import config as cfg
-    debug_section = cfg.CONFIG.get("debug", {})
-    server_section = cfg.CONFIG.get("server", {})
     assert isinstance(cfg.DEBUG, bool)
 
 
@@ -208,13 +200,9 @@ def test_config_debug_falls_back_to_server_debug():
     """When [debug] is absent but [server] debug is present, use server.debug."""
     import config as cfg
     debug_section = cfg.CONFIG.get("debug")
-    server_section = cfg.CONFIG.get("server", {})
+    server_debug = cfg.CONFIG.get("server", {}).get("debug", False)
     if debug_section is None:
-        expected = server_section.get("debug", False)
-        assert cfg.DEBUG == expected
-
-
-from pathlib import Path
+        assert cfg.DEBUG == server_debug
 
 
 def test_debug_session_creates_and_removes_file_handler(tmp_path):
