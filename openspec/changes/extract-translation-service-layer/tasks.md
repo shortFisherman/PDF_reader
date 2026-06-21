@@ -23,9 +23,9 @@
 
 ## 5. 抽取 glossary_service
 
-- [ ] 5.1 创建 `glossary_service.py`，迁移累积术语表路径解析与合并逻辑
-- [ ] 5.2 在 `tests/test_glossary_service.py` 编写测试：路径解析（有/无累积文件）、合并调用委托 `glossary_merger`
-- [ ] 5.3 运行测试通过
+- [x] 5.1 创建 `glossary_service.py`，迁移累积术语表路径解析与合并逻辑
+- [x] 5.2 在 `tests/test_glossary_service.py` 编写测试：路径解析（有/无累积文件）、合并调用委托 `glossary_merger`
+- [x] 5.3 运行测试通过
 
 ## 6. 重构 translate_page 路由
 

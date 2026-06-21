@@ -534,7 +534,7 @@ git commit -m "feat: extract sse_stream service with format_sse_event and STAGE_
 
 **tasks.md ref:** 5.1, 5.2, 5.3
 
-- [ ] **Step 1: �?`tests/test_glossary_service.py` 编写失败测试**
+- [x] **Step 1: �?`tests/test_glossary_service.py` 编写失败测试**
 
 ```python
 import csv
@@ -605,12 +605,12 @@ def test_merge_after_translate_none_paths():
     merge_after_translate(None, None)
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_glossary_service.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'glossary_service'`
 
-- [ ] **Step 3: 创建 `glossary_service.py`**
+- [x] **Step 3: 创建 `glossary_service.py`**
 
 ```python
 import logging
@@ -641,12 +641,12 @@ def merge_after_translate(cumulative_path: Path | None, auto_extracted_path: Pat
         logger.warning("Failed to merge glossary", exc_info=True)
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m pytest tests/test_glossary_service.py -v`
 Expected: 7 PASSED
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add glossary_service.py tests/test_glossary_service.py
