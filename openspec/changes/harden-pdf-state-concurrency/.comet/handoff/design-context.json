@@ -1,0 +1,17 @@
+{
+  "change": "harden-pdf-state-concurrency",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "b4502fa5041832a416448d3724c083758fb32760cc87df4d50e0a83676dc3ea0",
+  "files": [
+    { "path": "openspec/changes/harden-pdf-state-concurrency/proposal.md", "sha256": "ca11d15381c101769ecb2ee269529eb06b0b59a23292b5ef88f4459665232742" },
+    { "path": "openspec/changes/harden-pdf-state-concurrency/design.md", "sha256": "7c1e4d17ca28b70e43aef978dcb815ae7242c25c5e8aba51e85bed84b38b3e9f" },
+    { "path": "openspec/changes/harden-pdf-state-concurrency/tasks.md", "sha256": "0d9cd558e012739baabbf8fb9ac58b792182805076c01c3df8eaaa9191af09c7" },
+    { "path": "openspec/changes/harden-pdf-state-concurrency/specs/code-quality-foundations/spec.md", "sha256": "63ed541a5d21a5e7d26c367e73577e92e5d96ec97ab172a26034005ed2c16f6f" },
+    { "path": "openspec/changes/harden-pdf-state-concurrency/specs/page-translation/spec.md", "sha256": "6ae873ef97a663c947915ecf8fb49df94525371fba21f871d236f314ed555888" },
+    { "path": "openspec/changes/harden-pdf-state-concurrency/specs/pdf-rendering/spec.md", "sha256": "2d9ffe759b178fc05282d9616b4493e5bd83b15500c6beff1ad2e83c6751345b" },
+    { "path": "openspec/changes/harden-pdf-state-concurrency/specs/translation-output-isolation/spec.md", "sha256": "73bf030e099d7cb3ad04a945df764f916529aea360aadd20e81651ea8f75b5fb" }
+  ]
+}

@@ -1,3 +1,7 @@
+---
+archived-with: 2026-06-20-debug-translation-pipeline
+status: final
+---
 ﻿---
 change: debug-translation-pipeline
 design-doc: docs/superpowers/specs/2026-06-20-debug-translation-pipeline-design.md

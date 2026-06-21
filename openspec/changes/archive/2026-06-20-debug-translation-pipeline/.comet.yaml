@@ -1,0 +1,24 @@
+workflow: full
+phase: archive
+context_compression: off
+build_mode: subagent-driven-development
+build_pause: null
+subagent_dispatch: confirmed
+tdd_mode: direct
+review_mode: off
+isolation: branch
+verify_mode: full
+auto_transition: true
+base_ref: f6540131fe7974db4782571dfc7ecb900f23efe4
+design_doc: docs/superpowers/specs/2026-06-20-debug-translation-pipeline-design.md
+plan: docs/superpowers/plans/2026-06-20-debug-translation-pipeline.md
+verify_result: pass
+verification_report: docs/superpowers/reports/2026-06-20-debug-translation-pipeline-verify.md
+branch_status: handled
+build_command: pytest tests/ -q
+verify_command: pytest tests/ -q
+created_at: 2026-06-20
+verified_at: 2026-06-20
+archived: true
+handoff_context: openspec/changes/debug-translation-pipeline/.comet/handoff/design-context.json
+handoff_hash: e7cf13f0dfc339398858499de8d76000ab3a7d202cc1b1cdc04fa99c2434a197

@@ -2,6 +2,8 @@
 comet_change: debug-translation-pipeline
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-20-debug-translation-pipeline
+status: final
 ---
 
 # Debug Translation Pipeline — Technical Design
