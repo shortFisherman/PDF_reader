@@ -10,6 +10,8 @@ base-ref: cb737e1477364beeaa6fa1945688e1676ef7f656
 
 **Goal:** 修复 AppState 的渲染竞态、replace_page 锁内慢 IO 与并发损坏、以及 translate_page 无页码校验三处缺陷。
 
+> **Debug Gate Revision（实现阶段调整）**：实现发现原代码 `replace_page` 已全程持主锁、已是并发安全的串行实现（无丢失更新），且 Windows `os.replace` 无法替换被 pymupdf 打开的文件。故回退 Task 3 的双层锁重构，保留原 `replace_page` 实现；删除 Task 1 Step 4 的慢 IO 测试（前提不成立）；Task 5 Step 1 的测试总数从 49 改为 48。详见 design doc "Debug Gate Revision" 节。Task 3 保留勾选状态（调整为"确认原实现正确，无需修改"）。
+
 **Architecture:** 双层锁分离——`_lock`（主锁）保护 doc 内存状态，`_write_lock`（串行锁）仅串行化 `os.replace` 原子操作。`render_page` 全程持主锁；`replace_page` 在主锁内完成内存操作 + save(tmp)，释放主锁后在 `_write_lock` 内做 os.replace，再重新取主锁 close + reopen。`translate_page` 入口校验页码范围。
 
 **Tech Stack:** Python 3, threading.Lock/Event/Barrier, PyMuPDF (pymupdf), Flask, pytest, ruff

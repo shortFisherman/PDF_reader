@@ -6,7 +6,7 @@ The system SHALL validate that the requested page index is within the opened doc
 
 #### Scenario: Translate page below range
 
-- **WHEN** a translation is requested for a negative page index
+- **WHEN** a translation is requested for a negative page index (via direct handler call; Flask's `<int:page>` route converter matches only non-negative integers, so this path is defensive for direct callers)
 - **THEN** the system SHALL return HTTP 400 with an error response, without invoking the translation engine
 
 #### Scenario: Translate page above range

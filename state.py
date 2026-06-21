@@ -88,6 +88,7 @@ class AppState:
             return self._left_doc if side == "left" else self._right_doc
 
     def render_page(self, side: str, page_num: int, render_func, dpi: int) -> bytes:
+        """Render a page under the state lock. render_func must not reenter AppState (non-reentrant lock)."""
         with self._lock:
             doc = self._left_doc if side == "left" else self._right_doc
             if doc is None:
