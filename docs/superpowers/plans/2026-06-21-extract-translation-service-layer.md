@@ -839,7 +839,7 @@ git commit -m "feat: add debug_trace skeleton interface with simple delegation"
 
 **tasks.md ref:** 4.1（generate 部分）�?.1（SSE 生成器组合）
 
-- [ ] **Step 1: �?`tests/test_sse_stream.py` 增加 generate 失败测试**
+- [x] **Step 1: �?`tests/test_sse_stream.py` 增加 generate 失败测试**
 
 在文件末尾追加：
 
@@ -1007,11 +1007,11 @@ def test_generate_cleans_up_tmpdir(tmp_path):
     assert not Path(output_dir).exists()
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_sse_stream.py::test_generate_full_flow_byte_level_compatible -v`
 Expected: FAIL（generate raises NotImplementedError�?
-- [ ] **Step 3: �?`sse_stream.py` 实现 generate 函数**
+- [x] **Step 3: �?`sse_stream.py` 实现 generate 函数**
 
 �?`sse_stream.py` 中的 `generate` 函数替换为：
 
@@ -1141,11 +1141,11 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
         shutil.rmtree(ctx.output_dir, ignore_errors=True)
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m pytest tests/test_sse_stream.py -v`
 Expected: 13 PASSED�? 黄金样本 + 6 format_sse_event + 4 generate 测试�?
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add sse_stream.py tests/test_sse_stream.py
