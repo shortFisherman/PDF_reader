@@ -1,4 +1,4 @@
-import asyncio
+from collections.abc import AsyncIterator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,7 +13,7 @@ def test_run_translation_yields_events_in_order():
         {"type": "finish", "stage": "generating_pdf", "translate_result": MagicMock()},
     ]
 
-    async def fake_stream(settings, file):
+    async def fake_stream(settings, file) -> AsyncIterator[dict]:
         for evt in events:
             yield evt
 
@@ -27,7 +27,7 @@ def test_run_translation_yields_events_in_order():
 
 
 def test_run_translation_raises_on_thread_error():
-    async def failing_stream(settings, file):
+    async def failing_stream(settings, file) -> AsyncIterator[dict]:
         yield {"type": "progress_start", "stage": "layout_analysis"}
         raise RuntimeError("translation engine crashed")
 
@@ -37,7 +37,7 @@ def test_run_translation_raises_on_thread_error():
 
 
 def test_run_translation_propagates_error_event():
-    async def error_stream(settings, file):
+    async def error_stream(settings, file) -> AsyncIterator[dict]:
         yield {"type": "error", "error": "engine error"}
         yield {"type": "finish"}
 

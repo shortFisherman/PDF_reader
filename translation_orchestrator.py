@@ -1,15 +1,16 @@
 import asyncio
 import queue
 import threading
+from collections.abc import Iterator
 
-from pdf2zh_next import do_translate_async_stream
+from pdf2zh_next import SettingsModel, do_translate_async_stream
 
 
 class TranslationError(Exception):
     pass
 
 
-def run_translation(settings, pdf_path: str):
+def run_translation(settings: SettingsModel, pdf_path: str) -> Iterator[dict | str]:
     event_queue: queue.Queue = queue.Queue()
     error_info: str | None = None
 

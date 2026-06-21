@@ -15,7 +15,7 @@ if not trace_logger.handlers:
     trace_logger.addHandler(console_handler)
 
 
-def log_step(step: str, *args) -> None:
+def log_step(step: str, *args: object) -> None:
     if config.DEBUG:
         trace_logger.info(f"[step] {step}", *args)
 

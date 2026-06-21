@@ -36,5 +36,5 @@
 
 ## 7. 全量回归与 lint
 
-- [ ] 7.1 运行 `pytest tests/ -v`，全部测试通过
-- [ ] 7.2 运行 `ruff check`，零错误
+- [x] 7.1 运行 `pytest tests/ -v`，全部测试通过
+- [x] 7.2 运行 `ruff check`，零错误
