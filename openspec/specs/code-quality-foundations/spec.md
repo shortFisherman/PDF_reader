@@ -80,7 +80,7 @@ The system SHALL include a ruff configuration file and SHALL pass linting checks
 
 ### Requirement: Modular source code organization
 
-The system SHALL be organized into separate Python modules with clear separation of concerns. Engine configuration SHALL be data-driven via a single declarative registry rather than scattered dictionaries. `config.py` SHALL expose the engine registry as the single source of truth for provider-to-settings-class and unified-field-to-engine-field mappings.
+The system SHALL be organized into separate Python modules with clear separation of concerns. `app.py` SHALL be free of import-time side effects: no monkey-patching, no hardcoded debug flags, and no logging at module import. Debug initialization SHALL occur explicitly inside `create_app()`. Debug tracing SHALL be encapsulated in a dedicated `debug_trace` module.
 
 #### Scenario: Config loading is independent
 
@@ -92,10 +92,15 @@ The system SHALL be organized into separate Python modules with clear separation
 - **WHEN** app.py creates the Flask application
 - **THEN** it SHALL import and register routes from the routes module
 
-#### Scenario: Engine mapping is data-driven
+#### Scenario: app.py import has no side effects
 
-- **WHEN** the engine configuration is inspected
-- **THEN** it SHALL be driven by a single registry structure, and no separate `PROVIDER_MAP` or multi-key `FIELD_MAP` dictionaries SHALL exist alongside it
+- **WHEN** `app.py` is imported without executing the server
+- **THEN** no monkey-patching SHALL be applied, no debug flag SHALL be hardcoded, and no debug logging SHALL occur
+
+#### Scenario: Debug tracing is module-isolated
+
+- **WHEN** business modules need debug tracing
+- **THEN** they SHALL call the `debug_trace` module interfaces, and all `if config.DEBUG` branching SHALL live inside `debug_trace.py`, not in route or service business logic
 
 ### Requirement: Frontend JavaScript in separate file
 

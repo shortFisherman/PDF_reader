@@ -1,3 +1,7 @@
+---
+archived-with: 2026-06-21-isolate-debug-tracing
+status: final
+---
 ﻿---
 change: isolate-debug-tracing
 design-doc: docs/superpowers/specs/2026-06-21-isolate-debug-tracing-design.md

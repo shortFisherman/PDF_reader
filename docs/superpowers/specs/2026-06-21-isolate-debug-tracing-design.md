@@ -3,6 +3,8 @@ comet_change: isolate-debug-tracing
 role: technical-design
 canonical_spec: openspec
 status: final
+archived-with: 2026-06-21-isolate-debug-tracing
+status: final
 ---
 
 # Design: Isolate Debug Tracing
