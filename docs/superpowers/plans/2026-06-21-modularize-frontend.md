@@ -146,7 +146,7 @@ git commit -m "docs: add frontend manual verification checklist for modularize-f
 **接口：**
 - 产出：`GET /api/stages` → `{"layout_analysis": "正在分析版面\u2026", "translating": "正在翻译\u2026", "generating_pdf": "正在生成译文\u2026", "generating_pdf_bilingual": "正在生成译文\u2026", "finish": "翻译完成"}`
 
-- [ ] **Step 1：编写失败测试**
+- [x] **Step 1：编写失败测试**
 
 在 `tests/test_routes.py` 末尾追加：
 
@@ -170,7 +170,7 @@ def test_get_stages(test_client):
     }
 ```
 
-- [ ] **Step 2：运行测试验证失败**
+- [x] **Step 2：运行测试验证失败**
 
 ```bash
 pytest tests/test_routes.py::test_get_stages -v
@@ -178,7 +178,7 @@ pytest tests/test_routes.py::test_get_stages -v
 
 预期：`FAILED` — 404 Not Found（端点尚不存在）
 
-- [ ] **Step 3：实现端点**
+- [x] **Step 3：实现端点**
 
 在 `routes.py` 第 113 行（`translated_pages` 路由函数之后，`@bp.app_errorhandler(404)` 之前）插入：
 
@@ -188,7 +188,7 @@ def get_stages():
     return jsonify(sse_stream.STAGE_LABELS)
 ```
 
-- [ ] **Step 4：运行测试验证通过**
+- [x] **Step 4：运行测试验证通过**
 
 ```bash
 pytest tests/test_routes.py::test_get_stages -v
@@ -196,7 +196,7 @@ pytest tests/test_routes.py::test_get_stages -v
 
 预期：`PASSED`
 
-- [ ] **Step 5：运行全量后端测试**
+- [x] **Step 5：运行全量后端测试**
 
 ```bash
 pytest tests/ -v
@@ -204,7 +204,7 @@ pytest tests/ -v
 
 预期：全部测试通过
 
-- [ ] **Step 6：提交**
+- [x] **Step 6：提交**
 
 ```bash
 git add routes.py tests/test_routes.py

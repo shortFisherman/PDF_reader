@@ -5,9 +5,9 @@
 
 ## 2. 新增后端 /api/stages 端点
 
-- [ ] 2.1 在 `routes.py`（或变更B后的 `sse_stream.py`）新增 `GET /api/stages` 返回 `STAGE_LABELS` JSON
-- [ ] 2.2 在 `tests/test_routes.py` 编写测试：`/api/stages` 返回正确 stage 标签映射
-- [ ] 2.3 运行测试通过
+- [x] 2.1 在 `routes.py`（或变更B后的 `sse_stream.py`）新增 `GET /api/stages` 返回 `STAGE_LABELS` JSON
+- [x] 2.2 在 `tests/test_routes.py` 编写测试：`/api/stages` 返回正确 stage 标签映射
+- [x] 2.3 运行测试通过
 
 ## 3. 抽取 scroll-sync 模块
 
