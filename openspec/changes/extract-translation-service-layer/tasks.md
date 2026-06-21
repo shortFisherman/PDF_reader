@@ -11,9 +11,9 @@
 
 ## 3. 抽取 translation_orchestrator service
 
-- [ ] 3.1 创建 `translation_orchestrator.py`，实现 `run_translation(settings, pdf_path) -> Iterator[dict]`，封装 asyncio 线程 + 事件队列 + `_done`/`error` 信号
-- [ ] 3.2 在 `tests/test_translation_orchestrator.py` 编写测试：mock `do_translate_async_stream` 返回事件序列，断言迭代器顺序正确、error 信号传播、loop 正确关闭
-- [ ] 3.3 运行新测试通过
+- [x] 3.1 创建 `translation_orchestrator.py`，实现 `run_translation(settings, pdf_path) -> Iterator[dict]`，封装 asyncio 线程 + 事件队列 + `_done`/`error` 信号
+- [x] 3.2 在 `tests/test_translation_orchestrator.py` 编写测试：mock `do_translate_async_stream` 返回事件序列，断言迭代器顺序正确、error 信号传播、loop 正确关闭
+- [x] 3.3 运行新测试通过
 
 ## 4. 抽取 sse_stream service
 

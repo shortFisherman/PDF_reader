@@ -8,23 +8,16 @@ base-ref: aa14d6306157e5f70fb88a5ee005fe9b3ca293d2
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 `routes.py:translate_page`（230 行巨函数）拆分为 5 个独立可测试的 service 模块，路由层瘦身至 ≤ 40 行，SSE 事件流字节级兼容现状。
-
-**Architecture:** 函数式 service 模块（顶层平铺），`sse_stream.generate` 作为组合中心接收 `GenerateContext` dataclass。service 层抛异常，generate 统一捕获并格式化为 SSE error 事件。临时文件由 generate 的 finally 块统一清理。
-
+**Goal:** �?`routes.py:translate_page`�?30 行巨函数）拆分为 5 个独立可测试�?service 模块，路由层瘦身�?�?40 行，SSE 事件流字节级兼容现状�?
+**Architecture:** 函数�?service 模块（顶层平铺），`sse_stream.generate` 作为组合中心接收 `GenerateContext` dataclass。service 层抛异常，generate 统一捕获并格式化�?SSE error 事件。临时文件由 generate �?finally 块统一清理�?
 **Tech Stack:** Python 3, Flask, PyMuPDF (pymupdf), pdf2zh_next (do_translate_async_stream), asyncio + threading, pytest, ruff
 
 ## Global Constraints
 
 - SSE 事件流的类型/字段/stage 标签字节级不变，`/api/*` 契约不变，前端无需改动
-- `translate_page` 路由函数体 ≤ 40 行
-- 现有测试必须保持通过
-- TDD 顺序：先写失败测试 → 确认失败 → 实现 → 确认通过
-- 不添加任何注释（遵循项目代码风格约定）
-- `debug_trace.py` 为骨架接口 + 简单委托，完整实现留给变更 D（isolate-debug-tracing）
-- 依赖变更 A（harden-pdf-state-concurrency）已归档完成的并发修复
-- 新模块为顶层平铺 .py 文件（与现有 services.py、glossary_merger.py、state.py 同级）
-- glossary merge 失败仅记日志不抛异常（保持现状行为）
+- `translate_page` 路由函数�?�?40 �?- 现有测试必须保持通过
+- TDD 顺序：先写失败测�?�?确认失败 �?实现 �?确认通过
+- 不添加任何注释（遵循项目代码风格约定�?- `debug_trace.py` 为骨架接�?+ 简单委托，完整实现留给变更 D（isolate-debug-tracing�?- 依赖变更 A（harden-pdf-state-concurrency）已归档完成的并发修�?- 新模块为顶层平铺 .py 文件（与现有 services.py、glossary_merger.py、state.py 同级�?- glossary merge 失败仅记日志不抛异常（保持现状行为）
 
 ## File Structure
 
@@ -32,34 +25,30 @@ base-ref: aa14d6306157e5f70fb88a5ee005fe9b3ca293d2
 |------|------|----------|
 | `pdf_extraction.py` | 单页 PDF 抽取 | 新建 |
 | `translation_orchestrator.py` | asyncio 线程 + 事件队列编排 | 新建 |
-| `sse_stream.py` | SSE 事件格式化 + 组合中心 | 新建 |
+| `sse_stream.py` | SSE 事件格式�?+ 组合中心 | 新建 |
 | `glossary_service.py` | 术语表路径解析与合并 | 新建 |
 | `debug_trace.py` | 调试追踪日志骨架 | 新建 |
-| `routes.py` | Flask 路由（translate_page 瘦身） | 修改 |
-| `tests/test_sse_stream.py` | SSE 格式化 + generate 测试 | 新建 |
+| `routes.py` | Flask 路由（translate_page 瘦身�?| 修改 |
+| `tests/test_sse_stream.py` | SSE 格式�?+ generate 测试 | 新建 |
 | `tests/test_pdf_extraction.py` | PDF 抽取测试 | 新建 |
 | `tests/test_translation_orchestrator.py` | 翻译编排测试 | 新建 |
-| `tests/test_glossary_service.py` | 术语表 service 测试 | 新建 |
+| `tests/test_glossary_service.py` | 术语�?service 测试 | 新建 |
 | `tests/test_debug_trace.py` | 调试追踪骨架测试 | 新建 |
-| `tests/test_routes.py` | 路由测试（更新 mock 路径） | 修改 |
+| `tests/test_routes.py` | 路由测试（更�?mock 路径�?| 修改 |
 
 ---
 
-### Task 1: SSE 字节级回归基线
-
+### Task 1: SSE 字节级回归基�?
 **Files:**
 - Create: `tests/test_sse_stream.py`
-- Modify: `routes.py`（不修改，仅用于捕获基线）
-
+- Modify: `routes.py`（不修改，仅用于捕获基线�?
 **Interfaces:**
-- Consumes: `routes.py:translate_page` 现有实现、`conftest.py` fixtures（`app_state`, `sample_pdf`）
-- Produces: 黄金样本常量（`EXPECTED_PROGRESS_START_SSE`, `EXPECTED_PROGRESS_UPDATE_SSE`, `EXPECTED_FINISH_SSE`, `EXPECTED_ERROR_SSE`），供 Task 5 验证字节级兼容
-
+- Consumes: `routes.py:translate_page` 现有实现、`conftest.py` fixtures（`app_state`, `sample_pdf`�?- Produces: 黄金样本常量（`EXPECTED_PROGRESS_START_SSE`, `EXPECTED_PROGRESS_UPDATE_SSE`, `EXPECTED_FINISH_SSE`, `EXPECTED_ERROR_SSE`），�?Task 5 验证字节级兼�?
 **tasks.md ref:** 1.1, 1.2
 
-- [x] **Step 1: 创建 `tests/test_sse_stream.py`，编写黄金样本测试**
+- [x] **Step 1: 创建 `tests/test_sse_stream.py`，编写黄金样本测�?*
 
-创建 `tests/test_sse_stream.py`，捕获现状 `translate_page` SSE 输出的期望字节串。基于 routes.py:224-248 的事件格式化逻辑，直接硬编码期望值：
+创建 `tests/test_sse_stream.py`，捕获现�?`translate_page` SSE 输出的期望字节串。基�?routes.py:224-248 的事件格式化逻辑，直接硬编码期望值：
 
 ```python
 import json
@@ -142,12 +131,12 @@ Expected: 3 PASSED（黄金样本常量验证自身一致性）
 - Create: `tests/test_pdf_extraction.py`
 
 **Interfaces:**
-- Consumes: `pymupdf.Document`（来自 `state.left_doc`）、`pathlib.Path`
+- Consumes: `pymupdf.Document`（来�?`state.left_doc`）、`pathlib.Path`
 - Produces: `extract_single_page(src_doc: pymupdf.Document, page_num: int, tmpdir: Path) -> Path`
 
 **tasks.md ref:** 2.1, 2.2, 2.3
 
-- [x] **Step 1: 在 `tests/test_pdf_extraction.py` 编写失败测试**
+- [x] **Step 1: �?`tests/test_pdf_extraction.py` 编写失败测试**
 
 ```python
 import pymupdf
@@ -240,7 +229,7 @@ git commit -m "feat: extract pdf_extraction service from translate_page"
 
 **tasks.md ref:** 3.1, 3.2, 3.3
 
-- [ ] **Step 1: 在 `tests/test_translation_orchestrator.py` 编写失败测试**
+- [x] **Step 1: �?`tests/test_translation_orchestrator.py` 编写失败测试**
 
 ```python
 import asyncio
@@ -294,12 +283,12 @@ def test_run_translation_propagates_error_event():
     assert result[0]["error"] == "engine error"
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_translation_orchestrator.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'translation_orchestrator'`
 
-- [ ] **Step 3: 创建 `translation_orchestrator.py`**
+- [x] **Step 3: 创建 `translation_orchestrator.py`**
 
 ```python
 import asyncio
@@ -368,12 +357,12 @@ def run_translation(settings, pdf_path: str):
         raise TranslationError(error_info)
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m pytest tests/test_translation_orchestrator.py -v`
 Expected: 3 PASSED
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add translation_orchestrator.py tests/test_translation_orchestrator.py
@@ -386,15 +375,14 @@ git commit -m "feat: extract translation_orchestrator service with TranslationEr
 
 **Files:**
 - Create: `sse_stream.py`
-- Modify: `tests/test_sse_stream.py`（增加 format_sse_event 和 generate 测试）
-
+- Modify: `tests/test_sse_stream.py`（增�?format_sse_event �?generate 测试�?
 **Interfaces:**
 - Consumes: `translation_orchestrator.run_translation`、`glossary_service`（Task 5）、`debug_trace`（Task 6）、`state.AppState`、`services.build_settings`
 - Produces: `STAGE_LABELS`、`GenerateContext`、`format_sse_event(evt: dict) -> str | None`、`generate(ctx: GenerateContext) -> Iterator[str]`
 
 **tasks.md ref:** 4.1, 4.2, 4.3
 
-- [ ] **Step 1: 在 `tests/test_sse_stream.py` 增加 `format_sse_event` 失败测试**
+- [ ] **Step 1: �?`tests/test_sse_stream.py` 增加 `format_sse_event` 失败测试**
 
 在文件末尾追加：
 
@@ -454,7 +442,7 @@ def test_format_sse_event_unknown_type_returns_none():
 Run: `python -m pytest tests/test_sse_stream.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'sse_stream'`
 
-- [ ] **Step 3: 创建 `sse_stream.py`（format_sse_event + STAGE_LABELS + GenerateContext）**
+- [ ] **Step 3: 创建 `sse_stream.py`（format_sse_event + STAGE_LABELS + GenerateContext�?*
 
 ```python
 import json
@@ -468,10 +456,10 @@ from state import AppState
 
 
 STAGE_LABELS = {
-    "layout_analysis": "正在分析版面…",
-    "translating": "正在翻译…",
-    "generating_pdf": "正在生成译文…",
-    "generating_pdf_bilingual": "正在生成译文…",
+    "layout_analysis": "正在分析版面�?,
+    "translating": "正在翻译�?,
+    "generating_pdf": "正在生成译文�?,
+    "generating_pdf_bilingual": "正在生成译文�?,
     "finish": "翻译完成",
 }
 
@@ -524,8 +512,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `python -m pytest tests/test_sse_stream.py -v`
-Expected: 9 PASSED（3 黄金样本 + 6 format_sse_event 测试）
-
+Expected: 9 PASSED�? 黄金样本 + 6 format_sse_event 测试�?
 - [ ] **Step 5: 提交**
 
 ```bash
@@ -547,7 +534,7 @@ git commit -m "feat: extract sse_stream service with format_sse_event and STAGE_
 
 **tasks.md ref:** 5.1, 5.2, 5.3
 
-- [ ] **Step 1: 在 `tests/test_glossary_service.py` 编写失败测试**
+- [ ] **Step 1: �?`tests/test_glossary_service.py` 编写失败测试**
 
 ```python
 import csv
@@ -678,9 +665,8 @@ git commit -m "feat: extract glossary_service with path resolution and merge"
 - Consumes: `config.DEBUG`、`logging`、`pathlib.Path`、`time`
 - Produces: `trace_logger`、`log_step(step: str, *args) -> None`、`setup_file_handler(glossary_path: Path | None, page: int) -> logging.FileHandler | None`、`cleanup_file_handler(handler: logging.FileHandler | None) -> None`、`log_token_usage(token_usage: dict) -> None`
 
-**tasks.md ref:** 无（design.md 决策 1 中 `debug_trace.py` 见变更 D，此处建骨架）
-
-- [ ] **Step 1: 在 `tests/test_debug_trace.py` 编写失败测试**
+**tasks.md ref:** 无（design.md 决策 1 �?`debug_trace.py` 见变�?D，此处建骨架�?
+- [ ] **Step 1: �?`tests/test_debug_trace.py` 编写失败测试**
 
 ```python
 import logging
@@ -846,16 +832,14 @@ git commit -m "feat: add debug_trace skeleton interface with simple delegation"
 ### Task 7: 实现 sse_stream.generate 组合中心
 
 **Files:**
-- Modify: `sse_stream.py`（实现 generate 函数）
-- Modify: `tests/test_sse_stream.py`（增加 generate 集成测试）
-
+- Modify: `sse_stream.py`（实�?generate 函数�?- Modify: `tests/test_sse_stream.py`（增�?generate 集成测试�?
 **Interfaces:**
 - Consumes: `translation_orchestrator.run_translation`、`translation_orchestrator.TranslationError`、`glossary_service.merge_after_translate`、`debug_trace.setup_file_handler`/`cleanup_file_handler`/`log_step`/`log_token_usage`、`state.AppState.replace_page`
-- Produces: 完整的 `generate(ctx: GenerateContext) -> Iterator[str]` 实现
+- Produces: 完整�?`generate(ctx: GenerateContext) -> Iterator[str]` 实现
 
-**tasks.md ref:** 4.1（generate 部分）、6.1（SSE 生成器组合）
+**tasks.md ref:** 4.1（generate 部分）�?.1（SSE 生成器组合）
 
-- [ ] **Step 1: 在 `tests/test_sse_stream.py` 增加 generate 失败测试**
+- [ ] **Step 1: �?`tests/test_sse_stream.py` 增加 generate 失败测试**
 
 在文件末尾追加：
 
@@ -1026,11 +1010,10 @@ def test_generate_cleans_up_tmpdir(tmp_path):
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_sse_stream.py::test_generate_full_flow_byte_level_compatible -v`
-Expected: FAIL（generate raises NotImplementedError）
+Expected: FAIL（generate raises NotImplementedError�?
+- [ ] **Step 3: �?`sse_stream.py` 实现 generate 函数**
 
-- [ ] **Step 3: 在 `sse_stream.py` 实现 generate 函数**
-
-将 `sse_stream.py` 中的 `generate` 函数替换为：
+�?`sse_stream.py` 中的 `generate` 函数替换为：
 
 ```python
 import json
@@ -1048,10 +1031,10 @@ from translation_orchestrator import TranslationError, run_translation
 
 
 STAGE_LABELS = {
-    "layout_analysis": "正在分析版面…",
-    "translating": "正在翻译…",
-    "generating_pdf": "正在生成译文…",
-    "generating_pdf_bilingual": "正在生成译文…",
+    "layout_analysis": "正在分析版面�?,
+    "translating": "正在翻译�?,
+    "generating_pdf": "正在生成译文�?,
+    "generating_pdf_bilingual": "正在生成译文�?,
     "finish": "翻译完成",
 }
 
@@ -1161,8 +1144,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `python -m pytest tests/test_sse_stream.py -v`
-Expected: 13 PASSED（3 黄金样本 + 6 format_sse_event + 4 generate 测试）
-
+Expected: 13 PASSED�? 黄金样本 + 6 format_sse_event + 4 generate 测试�?
 - [ ] **Step 5: 提交**
 
 ```bash
@@ -1175,18 +1157,15 @@ git commit -m "feat: implement sse_stream.generate composition center with error
 ### Task 8: 重构 translate_page 路由
 
 **Files:**
-- Modify: `routes.py`（translate_page 瘦身 + 移除 STAGE_LABELS/trace_logger）
-- Modify: `tests/test_routes.py`（更新 mock 路径）
-
+- Modify: `routes.py`（translate_page 瘦身 + 移除 STAGE_LABELS/trace_logger�?- Modify: `tests/test_routes.py`（更�?mock 路径�?
 **Interfaces:**
 - Consumes: `pdf_extraction.extract_single_page`、`glossary_service.resolve_glossary_paths`、`sse_stream.GenerateContext`/`generate`、`debug_trace`、`services.build_settings`
-- Produces: `translate_page` ≤ 40 行
-
+- Produces: `translate_page` �?40 �?
 **tasks.md ref:** 6.1, 6.2, 6.3, 6.4
 
 - [ ] **Step 1: 重写 `routes.py:translate_page`**
 
-将 routes.py 的 import 部分和 translate_page 函数替换。首先更新 imports（移除 asyncio/queue/threading/tempfile/time/shutil/Path/pymupdf/do_translate_async_stream/merge_glossary_csvs，添加新 service 模块）：
+�?routes.py �?import 部分�?translate_page 函数替换。首先更�?imports（移�?asyncio/queue/threading/tempfile/time/shutil/Path/pymupdf/do_translate_async_stream/merge_glossary_csvs，添加新 service 模块）：
 
 ```python
 import io
@@ -1215,10 +1194,8 @@ import sse_stream
 from services import build_settings, render_page, sha256
 ```
 
-移除 `STAGE_LABELS` 和 `trace_logger` 定义（已迁移到 sse_stream.py 和 debug_trace.py）。
-
-重写 `translate_page`：
-
+移除 `STAGE_LABELS` �?`trace_logger` 定义（已迁移�?sse_stream.py �?debug_trace.py）�?
+重写 `translate_page`�?
 ```python
 @bp.route("/api/translate/<int:page>", methods=["POST"])
 def translate_page(page: int):
@@ -1265,7 +1242,7 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     with open(cumulative_file, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["source", "target"])
-        w.writerow(["alpha", "阿尔法"])
+        w.writerow(["alpha", "阿尔�?])
 
     auto_file = glossary_cache / "auto_extracted.csv"
     with open(auto_file, "w", newline="", encoding="utf-8") as f:
@@ -1316,8 +1293,7 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     assert merge_calls[0] == (str(cumulative_file), str(auto_file))
 ```
 
-同时更新 `test_debug_trace_logger_exists`：
-
+同时更新 `test_debug_trace_logger_exists`�?
 ```python
 def test_debug_trace_logger_exists():
     import logging
@@ -1330,12 +1306,11 @@ def test_debug_trace_logger_exists():
 - [ ] **Step 3: 运行路由测试确认通过**
 
 Run: `python -m pytest tests/test_routes.py -v`
-Expected: ALL PASSED（包括更新后的 glossary 集成测试和 debug_trace_logger 测试）
-
-- [ ] **Step 4: 确认 translate_page 函数体 ≤ 40 行**
+Expected: ALL PASSED（包括更新后�?glossary 集成测试�?debug_trace_logger 测试�?
+- [ ] **Step 4: 确认 translate_page 函数�?�?40 �?*
 
 Run: `python -c "import routes, inspect; src = inspect.getsource(routes.translate_page); lines = [l for l in src.split(chr(10)) if l.strip() and not l.strip().startswith('@') and not l.strip().startswith('def ')]; print(f'Body lines: {len(lines)}')"`
-Expected: `Body lines: ≤ 20`
+Expected: `Body lines: �?20`
 
 - [ ] **Step 5: 提交**
 
@@ -1346,7 +1321,7 @@ git commit -m "refactor: slim translate_page to thin orchestration with service 
 
 ---
 
-### Task 9: 全量回归与 lint
+### Task 9: 全量回归�?lint
 
 **Files:**
 - 无新文件，验证所有测试和 lint
@@ -1356,8 +1331,7 @@ git commit -m "refactor: slim translate_page to thin orchestration with service 
 - [ ] **Step 1: 运行全量测试**
 
 Run: `python -m pytest tests/ -v`
-Expected: ALL PASSED（原有测试 + 新增 service 模块测试）
-
+Expected: ALL PASSED（原有测�?+ 新增 service 模块测试�?
 - [ ] **Step 2: 运行 ruff lint**
 
 Run: `python -m ruff check .`
@@ -1365,15 +1339,14 @@ Expected: 0 errors
 
 - [ ] **Step 3: 如有 lint 错误，修复后重新运行**
 
-修复所有 ruff 报告的错误，然后重新运行 Step 1 和 Step 2 确认全绿。
-
-- [ ] **Step 4: 提交（如有 lint 修复）**
+修复所�?ruff 报告的错误，然后重新运行 Step 1 �?Step 2 确认全绿�?
+- [ ] **Step 4: 提交（如�?lint 修复�?*
 
 ```bash
 git add -A
 git commit -m "chore: lint cleanup for translation service layer extraction"
 ```
 
-- [ ] **Step 5: 确认所有 tasks.md 任务已勾选**
+- [ ] **Step 5: 确认所�?tasks.md 任务已勾�?*
 
-检查 `openspec/changes/extract-translation-service-layer/tasks.md` 中所有 `[ ]` 已改为 `[x]`。
+检�?`openspec/changes/extract-translation-service-layer/tasks.md` 中所�?`[ ]` 已改�?`[x]`�?
