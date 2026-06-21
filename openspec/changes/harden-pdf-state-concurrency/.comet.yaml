@@ -1,5 +1,5 @@
 workflow: full
-phase: build
+phase: verify
 context_compression: off
 build_mode: executing-plans
 build_pause: null
@@ -7,16 +7,17 @@ subagent_dispatch: null
 tdd_mode: tdd
 review_mode: off
 isolation: branch
-verify_mode: null
+verify_mode: full
 auto_transition: true
 base_ref: cb737e1477364beeaa6fa1945688e1676ef7f656
 design_doc: docs/superpowers/specs/2026-06-21-harden-pdf-state-concurrency-design.md
 plan: docs/superpowers/plans/2026-06-21-harden-pdf-state-concurrency.md
 verify_result: pending
-verification_report: null
+verification_report: docs/superpowers/reports/2026-06-21-harden-pdf-state-concurrency-verify.md
 branch_status: pending
 created_at: 2026-06-20
 verified_at: null
 archived: false
 handoff_context: openspec/changes/harden-pdf-state-concurrency/.comet/handoff/design-context.json
 handoff_hash: b4502fa5041832a416448d3724c083758fb32760cc87df4d50e0a83676dc3ea0
+build_command: "./venv/Scripts/python.exe -m pytest tests/ -q && ./venv/Scripts/python.exe -m ruff check"

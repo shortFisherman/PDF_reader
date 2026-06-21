@@ -88,10 +88,12 @@ class AppState:
             return self._left_doc if side == "left" else self._right_doc
 
     def render_page(self, side: str, page_num: int, render_func, dpi: int) -> bytes:
-        doc = self.get_doc(side)
-        if doc is None:
-            raise ValueError("no document opened")
-        return render_func(doc, page_num, dpi)
+        """Render a page under the state lock. render_func must not reenter AppState (non-reentrant lock)."""
+        with self._lock:
+            doc = self._left_doc if side == "left" else self._right_doc
+            if doc is None:
+                raise ValueError("no document opened")
+            return render_func(doc, page_num, dpi)
 
     def replace_page(self, translated_pdf_path: str, page_num: int) -> None:
         with self._lock:

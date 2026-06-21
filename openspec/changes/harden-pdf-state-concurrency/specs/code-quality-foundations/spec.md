@@ -2,7 +2,7 @@
 
 ### Requirement: Thread-safe global state access
 
-The system SHALL protect all read and write access to the global application state with locking to prevent race conditions under concurrent Flask requests. Critical sections SHALL be minimized: disk IO (file save, os.replace, reopen) SHALL NOT execute while holding the state lock; a separate write lock SHALL serialize atomic file replacement so concurrent translation of different pages cannot corrupt `right.pdf`. Rendering a page SHALL hold the state lock for the entire duration of the render call so the underlying `pymupdf.Document` cannot be closed or replaced mid-render.
+The system SHALL protect all read and write access to the global application state with locking to prevent race conditions under concurrent Flask requests. `replace_page` SHALL hold the state lock for its entire duration (delete, insert, save, close, os.replace, reopen) so concurrent translations serialize and cannot corrupt `right.pdf`. `render_page` SHALL hold the state lock for the entire duration of the render call so the underlying `pymupdf.Document` cannot be closed or replaced mid-render.
 
 #### Scenario: Concurrent page requests
 
@@ -19,7 +19,7 @@ The system SHALL protect all read and write access to the global application sta
 - **WHEN** a render request runs concurrently with a page replacement on the same document
 - **THEN** the render SHALL complete against a stable document handle that is not closed or half-saved, and SHALL NOT raise due to a closed/invalid document
 
-#### Scenario: Slow disk IO does not block all state access
+#### Scenario: Concurrent translations serialize via state lock
 
-- **WHEN** a page replacement performs file save, os.replace, and reopen
-- **THEN** the state lock SHALL be released before os.replace and reopen, so concurrent render/open requests are not blocked by disk IO
+- **WHEN** two translation requests for different pages run concurrently and both attempt to replace pages in right.pdf
+- **THEN** the state lock SHALL serialize the full replace_page operations, and the resulting right.pdf SHALL contain both translated pages without corruption

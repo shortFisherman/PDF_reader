@@ -128,3 +128,29 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     # 8. Verify merge_glossary_csvs called with correct paths
     assert len(merge_calls) == 1
     assert merge_calls[0] == (str(cumulative_file), str(auto_file))
+
+
+def test_translate_page_out_of_range(app_state, sample_pdf):
+    from services import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+
+    from flask import Flask
+
+    from routes import register_routes
+
+    app = Flask(__name__)
+    app.config["app_state"] = app_state
+    app.config["TESTING"] = True
+    register_routes(app)
+
+    with app.test_client() as client:
+        resp = client.post(f"/api/translate/{app_state.page_count}", json={})
+        assert resp.status_code == 400
+        data = json.loads(resp.data)
+        assert data["error"] == "page out of range"
+
+        resp = client.post("/api/translate/999", json={})
+        assert resp.status_code == 400
+        data = json.loads(resp.data)
+        assert data["error"] == "page out of range"

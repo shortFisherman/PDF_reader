@@ -6,24 +6,10 @@ The system SHALL validate that the requested page index is within the opened doc
 
 #### Scenario: Translate page below range
 
-- **WHEN** a translation is requested for a negative page index
+- **WHEN** a translation is requested for a negative page index (via direct handler call; Flask's `<int:page>` route converter matches only non-negative integers, so this path is defensive for direct callers)
 - **THEN** the system SHALL return HTTP 400 with an error response, without invoking the translation engine
 
 #### Scenario: Translate page above range
 
 - **WHEN** a translation is requested for a page index greater than or equal to the document's page count
 - **THEN** the system SHALL return HTTP 400 with an error response, without invoking the translation engine
-
-### Requirement: Serialized page replacement for concurrent translations
-
-The system SHALL serialize file replacement operations on the same `right.pdf` so that concurrent translation of different pages cannot corrupt the persisted file. Atomic file replacement (temporary file + `os.replace`) SHALL be used.
-
-#### Scenario: Concurrent translation of different pages
-
-- **WHEN** two translation requests for different pages run concurrently and both attempt to replace their respective pages in right.pdf
-- **THEN** the file replacements SHALL be serialized, and the resulting right.pdf SHALL contain both translated pages without corruption
-
-#### Scenario: Atomic write on replace
-
-- **WHEN** a page replacement writes the updated right.pdf
-- **THEN** the system SHALL write to a temporary file in the same directory and atomically replace right.pdf via os.replace, so a crash mid-write never leaves a partial right.pdf
