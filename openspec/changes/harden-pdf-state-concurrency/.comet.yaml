@@ -1,5 +1,5 @@
 workflow: full
-phase: build
+phase: verify
 context_compression: off
 build_mode: executing-plans
 build_pause: null
@@ -20,3 +20,4 @@ verified_at: null
 archived: false
 handoff_context: openspec/changes/harden-pdf-state-concurrency/.comet/handoff/design-context.json
 handoff_hash: b4502fa5041832a416448d3724c083758fb32760cc87df4d50e0a83676dc3ea0
+build_command: "./venv/Scripts/python.exe -m pytest tests/ -q && ./venv/Scripts/python.exe -m ruff check"
