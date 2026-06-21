@@ -70,6 +70,13 @@ def build_engine_kwargs(spec: config.EngineSpec) -> dict:  # noqa: ANN001, ANN20
         else:
             logger.warning("当前引擎不支持 %s，已忽略", unified_name)
 
+    optional_fields = ("thinking_mode", "reasoning_effort", "enable_json_mode", "temperature", "timeout")
+    for unified_name in optional_fields:
+        if unified_name not in spec.field_map:
+            value = getattr(config, CONFIG_ATTR_MAP[unified_name], None)
+            if value is not None:
+                logger.warning("当前引擎不支持 %s，已忽略", unified_name)
+
     return kwargs
 
 

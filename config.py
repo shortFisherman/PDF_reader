@@ -146,6 +146,7 @@ ENGINE_REGISTRY: list[EngineSpec] = [
         },
         required_fields=("api_key", "model"),
     ),
+    # openai_compatible entry MUST remain — it serves as the fallback in resolve_engine
     EngineSpec(
         provider="openai_compatible",
         settings_cls=OpenAICompatibleSettings,
