@@ -5,9 +5,9 @@
 
 ## 2. 抽取 pdf_extraction service
 
-- [ ] 2.1 创建 `pdf_extraction.py`，实现 `extract_single_page(src_doc, page_num) -> Path`，从 `translate_page` 内联逻辑迁移
-- [ ] 2.2 在 `tests/test_pdf_extraction.py` 编写测试：小 PDF 抽取单页，断言产出 PDF 页数=1、内容匹配
-- [ ] 2.3 运行新测试通过
+- [x] 2.1 创建 `pdf_extraction.py`，实现 `extract_single_page(src_doc, page_num) -> Path`，从 `translate_page` 内联逻辑迁移
+- [x] 2.2 在 `tests/test_pdf_extraction.py` 编写测试：小 PDF 抽取单页，断言产出 PDF 页数=1、内容匹配
+- [x] 2.3 运行新测试通过
 
 ## 3. 抽取 translation_orchestrator service
 

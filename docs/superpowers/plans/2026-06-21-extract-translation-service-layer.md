@@ -147,7 +147,7 @@ Expected: 3 PASSED（黄金样本常量验证自身一致性）
 
 **tasks.md ref:** 2.1, 2.2, 2.3
 
-- [ ] **Step 1: 在 `tests/test_pdf_extraction.py` 编写失败测试**
+- [x] **Step 1: 在 `tests/test_pdf_extraction.py` 编写失败测试**
 
 ```python
 import pymupdf
@@ -195,12 +195,9 @@ def test_extract_single_page_correct_content():
     src_doc.close()
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
-Run: `python -m pytest tests/test_pdf_extraction.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'pdf_extraction'`
-
-- [ ] **Step 3: 创建 `pdf_extraction.py`**
+- [x] **Step 3: 创建 `pdf_extraction.py`**
 
 ```python
 from pathlib import Path
@@ -217,12 +214,12 @@ def extract_single_page(src_doc: pymupdf.Document, page_num: int, tmpdir: Path) 
     return single_page_pdf
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m pytest tests/test_pdf_extraction.py -v`
 Expected: 2 PASSED
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add pdf_extraction.py tests/test_pdf_extraction.py
