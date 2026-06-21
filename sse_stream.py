@@ -105,8 +105,11 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
             yield f"data: {json.dumps({'type': 'error', 'error': 'no output PDF'})}\n\n"
             return
 
+        cumulative_glossary_file: Path | None = None
+        if ctx.state.glossary_cache_path is not None:
+            cumulative_glossary_file = ctx.state.glossary_cache_path / "cumulative_glossary.csv"
         merge_after_translate(
-            ctx.state.glossary_cache_path,
+            cumulative_glossary_file,
             translate_result.auto_extracted_glossary_path,
         )
 

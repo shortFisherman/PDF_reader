@@ -1,16 +1,8 @@
-import asyncio
 import io
-import json
-import logging
 import os
-import queue
-import shutil
 import tempfile
-import threading
-import time
 from pathlib import Path
 
-import pymupdf
 from flask import (
     Blueprint,
     Response,
@@ -21,30 +13,15 @@ from flask import (
     send_file,
     stream_with_context,
 )
-from pdf2zh_next import do_translate_async_stream
 
 import config
-from glossary_merger import merge_glossary_csvs
-from services import build_settings, render_page, sha256
+import glossary_service
+import pdf_extraction
+import services
+import sse_stream
+from services import render_page, sha256
 
 bp = Blueprint("main", __name__)
-
-STAGE_LABELS = {
-    "layout_analysis": "\u6b63\u5728\u5206\u6790\u7248\u9762\u2026",
-    "translating": "\u6b63\u5728\u7ffb\u8bd1\u2026",
-    "generating_pdf": "\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026",
-    "generating_pdf_bilingual": "\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026",
-    "finish": "\u7ffb\u8bd1\u5b8c\u6210",
-}
-
-trace_logger = logging.getLogger("pdf_reader.debug_trace")
-trace_logger.setLevel(logging.INFO)
-if not trace_logger.handlers:
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter(
-        "%(asctime)s %(levelname)s:%(name)s:%(message)s"
-    ))
-    trace_logger.addHandler(console_handler)
 
 
 def error_response(msg: str, code: int) -> tuple:
@@ -110,229 +87,22 @@ def translate_page(page: int):
     data = request.get_json(silent=True) or {}
     user_prompt = (data.get("prompt") or "").strip() or None
 
-    tmpdir = tempfile.mkdtemp()
+    tmpdir = Path(tempfile.mkdtemp())
     output_dir = tempfile.mkdtemp(dir=str(config.CACHE_DIR))
-    tmpdir_path = Path(tmpdir)
-    single_page_pdf = tmpdir_path / "page.pdf"
-    single_doc = pymupdf.open()
-    single_doc.insert_pdf(state.left_doc, from_page=page, to_page=page)
-    single_doc.save(str(single_page_pdf))
-    single_doc.close()
-
-    def generate():
-        try:
-            cumulative_glossary_path = state.glossary_cache_path
-            glossary_paths: list[str] | None = None
-            if cumulative_glossary_path is not None:
-                cumulative_file = cumulative_glossary_path / "cumulative_glossary.csv"
-                if cumulative_file.exists() and cumulative_file.stat().st_size > 0:
-                    glossary_paths = [str(cumulative_file)]
-
-            file_handler_added = None
-
-            # ---- Debug: File Handler ----
-            if config.DEBUG and cumulative_glossary_path:
-                try:
-                    log_path = cumulative_glossary_path / "debug_trace.log"
-                    # Rotate existing log
-                    if log_path.exists():
-                        rotated = cumulative_glossary_path / (
-                            "debug_trace." + time.strftime("%Y%m%d_%H%M%S") + ".log"
-                        )
-                        shutil.move(str(log_path), str(rotated))
-                    file_handler_added = logging.FileHandler(str(log_path), encoding="utf-8")
-                    file_handler_added.setFormatter(logging.Formatter(
-                        "%(asctime)s %(levelname)s:%(name)s:%(message)s"
-                    ))
-                    trace_logger.addHandler(file_handler_added)
-                    trace_logger.info("=== Debug session start: page %d ===", page)
-                except Exception:
-                    logging.getLogger("pdf_reader").warning(
-                        "Failed to create debug_trace.log file handler", exc_info=True
-                    )
-
-            step_start = time.time()
-            if config.DEBUG:
-                trace_logger.info("[step] build_settings for page %d", page)
-            settings = build_settings(
-                str(single_page_pdf),
-                user_prompt,
-                output_dir=output_dir,
-                glossary_paths=glossary_paths,
-                debug=config.DEBUG,
-            )
-            if config.DEBUG:
-                trace_logger.info(
-                    "[step] build_settings done (%.2fs), output_dir=%s",
-                    time.time() - step_start, output_dir,
-                )
-            translate_start = time.time()
-            if config.DEBUG:
-                trace_logger.info("[step] submit translate page %d", page)
-            event_queue: queue.Queue = queue.Queue()
-            error_info: str | None = None
-
-            def run_translation() -> None:
-                nonlocal error_info
-                loop: asyncio.AbstractEventLoop | None = None
-                try:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                    async def _run() -> bool:
-                        async for evt in do_translate_async_stream(settings, str(single_page_pdf)):
-                            event_queue.put(evt)
-                        return True
-
-                    loop.run_until_complete(_run())
-                except Exception as e:
-                    error_info = str(e)
-                finally:
-                    if loop is not None:
-                        try:
-                            pending = asyncio.all_tasks(loop)
-                            if pending:
-                                for task in pending:
-                                    task.cancel()
-                                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-                        except Exception:
-                            pass
-                        loop.close()
-                    event_queue.put({"type": "_done"})
-
-            thread = threading.Thread(target=run_translation, daemon=True)
-            thread.start()
-
-            translate_result = None
-            token_usage_finish = None
-            while True:
-                try:
-                    evt = event_queue.get(timeout=1.0)
-                except queue.Empty:
-                    yield ""
-                    continue
-
-                if evt.get("type") == "_done":
-                    break
-
-                evt_type = evt.get("type", "")
-                # BabelDOC event contract (from do_translate_async_stream):
-                #   progress_start:   stage, overall_progress, stage_current, stage_total
-                #   progress_update:  stage, overall_progress, stage_current, stage_total
-                #   progress_end:     stage, overall_progress
-                #   finish:           translate_result, token_usage
-                if evt_type == "progress_start":
-                    yield "data: " + json.dumps({
-                        "type": "progress", "progress": 0,
-                        "stage": evt.get("stage", ""),
-                        "stage_current": evt.get("stage_current", 0),
-                        "stage_total": evt.get("stage_total", 0),
-                    }) + "\n\n"
-                elif evt_type == "progress_update":
-                    yield "data: " + json.dumps({
-                        "type": "progress",
-                        "progress": evt.get("overall_progress", 0),
-                        "stage": evt.get("stage", ""),
-                        "stage_current": evt.get("stage_current", 0),
-                        "stage_total": evt.get("stage_total", 0),
-                    }) + "\n\n"
-                elif evt_type == "finish":
-                    translate_result = evt.get("translate_result")
-                    token_usage_finish = evt.get("token_usage", {})
-                    yield "data: " + json.dumps({
-                        "type": "progress", "progress": 95,
-                        "stage": evt.get("stage", "generating_pdf"),
-                        "stage_current": 0, "stage_total": 0,
-                    }) + "\n\n"
-                elif evt_type == "error":
-                    yield f"data: {json.dumps({'type': 'error', 'error': evt.get('error', 'unknown')})}\n\n"
-                    return
-
-            if error_info:
-                yield f"data: {json.dumps({'type': 'error', 'error': error_info})}\n\n"
-                return
-
-            if translate_result is None:
-                yield f"data: {json.dumps({'type': 'error', 'error': 'no translation result'})}\n\n"
-                return
-
-            if config.DEBUG:
-                elapsed = time.time() - translate_start
-                trace_logger.info(
-                    "[step] translate page %d done (%.2fs)",
-                    page, elapsed,
-                )
-                if token_usage_finish:
-                    total = token_usage_finish.get("main", {}).get("total", 0)
-                    term_total = token_usage_finish.get("term", {}).get("total", 0)
-                    trace_logger.info(
-                        "Token usage: main=%d, term=%d",
-                        total, term_total,
-                    )
-
-            try:
-                translated_pdf = translate_result.mono_pdf_path
-                if translated_pdf is None and translate_result.dual_pdf_path is not None:
-                    translated_pdf = translate_result.dual_pdf_path
-
-                if translated_pdf is not None:
-                    state.replace_page(str(translated_pdf), page)
-                else:
-                    yield f"data: {json.dumps({'type': 'error', 'error': 'no output PDF'})}\n\n"
-                    return
-            except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-                return
-
-            if (
-                cumulative_glossary_path is not None
-                and translate_result.auto_extracted_glossary_path
-            ):
-                merge_start = time.time()
-                if config.DEBUG:
-                    trace_logger.info("[step] merge glossary for page %d", page)
-                auto_path = Path(translate_result.auto_extracted_glossary_path)
-                cumulative_file = cumulative_glossary_path / "cumulative_glossary.csv"
-                try:
-                    merge_glossary_csvs(cumulative_file, auto_path)
-                    if config.DEBUG:
-                        trace_logger.info(
-                            "[step] merge glossary done (%.2fs)",
-                            time.time() - merge_start,
-                        )
-                except Exception:
-                    if config.DEBUG:
-                        trace_logger.warning(
-                            "[step] merge glossary FAILED for page %d", page, exc_info=True,
-                        )
-                    logging.getLogger("pdf_reader").warning(
-                        "Failed to merge glossary for page %d", page, exc_info=True
-                    )
-
-            yield "data: " + json.dumps({
-                "type": "progress", "progress": 100,
-                "stage": "finish", "stage_current": 0, "stage_total": 0,
-            }) + "\n\n"
-            yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
-        finally:
-            # Cleanup FileHandler
-            if 'file_handler_added' in locals() and file_handler_added is not None:
-                try:
-                    trace_logger.removeHandler(file_handler_added)
-                    file_handler_added.close()
-                except Exception:
-                    pass
-
-            shutil.rmtree(tmpdir, ignore_errors=True)
-            shutil.rmtree(output_dir, ignore_errors=True)
-
+    single_page_pdf = pdf_extraction.extract_single_page(state.left_doc, page, tmpdir)
+    glossary_paths = glossary_service.resolve_glossary_paths(state)
+    settings = services.build_settings(
+        str(single_page_pdf), user_prompt,
+        output_dir=output_dir, glossary_paths=glossary_paths, debug=config.DEBUG,
+    )
+    ctx = sse_stream.GenerateContext(
+        settings=settings, single_page_pdf=single_page_pdf, state=state,
+        page=page, glossary_paths=glossary_paths, tmpdir=tmpdir, output_dir=output_dir,
+    )
     return Response(
-        stream_with_context(generate()),
+        stream_with_context(sse_stream.generate(ctx)),
         mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

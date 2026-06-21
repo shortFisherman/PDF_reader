@@ -44,7 +44,7 @@ def test_translated_pages_no_doc(test_client):
 def test_debug_trace_logger_exists():
     import logging
 
-    from routes import trace_logger
+    from debug_trace import trace_logger
     assert isinstance(trace_logger, logging.Logger)
     assert trace_logger.name == "pdf_reader.debug_trace"
     assert trace_logger.level == logging.INFO
@@ -102,9 +102,9 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     def fake_merge(cumulative, auto):  # noqa: ANN202
         merge_calls.append((str(cumulative), str(auto)))
 
-    monkeypatch.setattr("routes.build_settings", fake_build_settings)
-    monkeypatch.setattr("routes.do_translate_async_stream", fake_translate_stream)
-    monkeypatch.setattr("routes.merge_glossary_csvs", fake_merge)
+    monkeypatch.setattr("services.build_settings", fake_build_settings)
+    monkeypatch.setattr("translation_orchestrator.do_translate_async_stream", fake_translate_stream)
+    monkeypatch.setattr("glossary_service.merge_glossary_csvs", fake_merge)
 
     # 5. Create Flask app with our state
     app = Flask(__name__)
