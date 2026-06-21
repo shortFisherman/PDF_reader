@@ -76,6 +76,7 @@ def test_config_deepseek_field_map_api_key():
 def test_resolve_engine_deepseek(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_PROVIDER", "deepseek")
     from pdf2zh_next.config.translate_engine_model import DeepSeekSettings
+
     from services import resolve_engine
     spec = resolve_engine("deepseek")
     assert isinstance(spec, config.EngineSpec)
@@ -85,6 +86,7 @@ def test_resolve_engine_deepseek(mock_config, monkeypatch):
 def test_resolve_engine_unknown_fallback(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_PROVIDER", "nonexistent")
     from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
+
     from services import resolve_engine
     spec = resolve_engine("nonexistent")
     assert isinstance(spec, config.EngineSpec)

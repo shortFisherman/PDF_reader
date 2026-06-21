@@ -1,8 +1,8 @@
 """等价回归基线：对所有 10 引擎，新旧路径产出一致"""
-import config
-from services import resolve_engine, build_engine_kwargs
 from unittest.mock import MagicMock
 
+import config
+from services import build_engine_kwargs, resolve_engine
 
 ALL_PROVIDERS = [
     "deepseek",
@@ -145,7 +145,7 @@ def test_engine_registry_covers_all_providers():
     )
 
 
-def _old_build_engine_kwargs(engine_cls):
+def _old_build_engine_kwargs(engine_cls) -> dict:
     engine_fields = engine_cls.model_fields
     engine_name = engine_cls.__name__
     kwargs = {}

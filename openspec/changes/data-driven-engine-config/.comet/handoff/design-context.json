@@ -1,0 +1,16 @@
+{
+  "change": "data-driven-engine-config",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "eb890d4aca3e2eff5c8825135c344077caa04dbefd92cc815cf10033382abd2d",
+  "files": [
+    { "path": "openspec/changes/data-driven-engine-config/proposal.md", "sha256": "30a7bd6268dfc01ae8f055071c20cd345484e8ccb3d6952c57a8a9b7b9e063e3" },
+    { "path": "openspec/changes/data-driven-engine-config/design.md", "sha256": "60052d197ea8958b5ee3226dfcedf677eedc2a5b3499e5fabed9a98c742c3683" },
+    { "path": "openspec/changes/data-driven-engine-config/tasks.md", "sha256": "3ca31e77693825f206e1b107f664d5f98824a4edf6ea63d7f77ff5016a2781a5" },
+    { "path": "openspec/changes/data-driven-engine-config/specs/code-quality-foundations/spec.md", "sha256": "ce20f56a02abdf492410f15614b6d3171758969299122187377d48686456c73f" },
+    { "path": "openspec/changes/data-driven-engine-config/specs/engine-registry/spec.md", "sha256": "41dc775789630b01ebc6f37c48cb47540f3e5a42404156c53f264c51c28c9790" },
+    { "path": "openspec/changes/data-driven-engine-config/specs/page-translation/spec.md", "sha256": "d321b6047ef9b0c836a2df83c93df9cce483503d24114e65a5a16c16e01ddd35" }
+  ]
+}
