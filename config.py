@@ -1,5 +1,6 @@
 import os
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 from pdf2zh_next.config.translate_engine_model import (
@@ -49,6 +50,15 @@ PROVIDER_MAP: dict[str, type] = {
     "openai":             OpenAISettings,
     "openai_compatible":  OpenAICompatibleSettings,
 }
+
+
+@dataclass(frozen=True)
+class EngineSpec:
+    provider: str
+    settings_cls: type
+    field_map: dict[str, str]
+    required_fields: tuple[str, ...]
+
 
 FIELD_MAP: dict[str, dict[str, str]] = {
     "api_key": {
@@ -110,6 +120,83 @@ FIELD_MAP: dict[str, dict[str, str]] = {
         "AliyunDashScopeSettings": "aliyun_dashscope_timeout",
         "OpenAICompatibleSettings": "openai_compatible_timeout",
     },
+}
+
+
+def _derive_field_map(engine_class_name: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for unified_name, class_mapping in FIELD_MAP.items():
+        if engine_class_name in class_mapping:
+            result[unified_name] = class_mapping[engine_class_name]
+    return result
+
+
+ENGINE_REGISTRY: list[EngineSpec] = [
+    EngineSpec(
+        provider="deepseek",
+        settings_cls=DeepSeekSettings,
+        field_map=_derive_field_map("DeepSeekSettings"),
+        required_fields=("api_key", "model"),
+    ),
+    EngineSpec(
+        provider="zhipu",
+        settings_cls=ZhipuSettings,
+        field_map=_derive_field_map("ZhipuSettings"),
+        required_fields=("api_key", "model"),
+    ),
+    EngineSpec(
+        provider="siliconflow",
+        settings_cls=SiliconFlowSettings,
+        field_map=_derive_field_map("SiliconFlowSettings"),
+        required_fields=("api_key", "model"),
+    ),
+    EngineSpec(
+        provider="aliyun",
+        settings_cls=AliyunDashScopeSettings,
+        field_map=_derive_field_map("AliyunDashScopeSettings"),
+        required_fields=("api_key", "model"),
+    ),
+    EngineSpec(
+        provider="gemini",
+        settings_cls=GeminiSettings,
+        field_map=_derive_field_map("GeminiSettings"),
+        required_fields=("api_key", "model"),
+    ),
+    EngineSpec(
+        provider="groq",
+        settings_cls=GroqSettings,
+        field_map=_derive_field_map("GroqSettings"),
+        required_fields=("api_key", "model"),
+    ),
+    EngineSpec(
+        provider="grok",
+        settings_cls=GrokSettings,
+        field_map=_derive_field_map("GrokSettings"),
+        required_fields=("api_key", "model"),
+    ),
+    EngineSpec(
+        provider="modelscope",
+        settings_cls=ModelScopeSettings,
+        field_map=_derive_field_map("ModelScopeSettings"),
+        required_fields=("api_key", "model"),
+    ),
+    EngineSpec(
+        provider="openai",
+        settings_cls=OpenAISettings,
+        field_map=_derive_field_map("OpenAISettings"),
+        required_fields=("api_key", "model"),
+    ),
+    EngineSpec(
+        provider="openai_compatible",
+        settings_cls=OpenAICompatibleSettings,
+        field_map=_derive_field_map("OpenAICompatibleSettings"),
+        required_fields=("api_key", "model"),
+    ),
+]
+
+
+PROVIDER_INDEX: dict[str, EngineSpec] = {
+    spec.provider: spec for spec in ENGINE_REGISTRY
 }
 
 DPI = CONFIG["pdf_reader"]["dpi"]
