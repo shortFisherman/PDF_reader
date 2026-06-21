@@ -104,6 +104,8 @@ def translate_page(page: int):
     state = _get_state()
     if state.left_doc is None:
         return error_response("no document opened", 400)
+    if page < 0 or page >= state.page_count:
+        return error_response("page out of range", 400)
 
     data = request.get_json(silent=True) or {}
     user_prompt = (data.get("prompt") or "").strip() or None
