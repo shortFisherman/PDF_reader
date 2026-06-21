@@ -1,6 +1,7 @@
 """等价回归基线：对所有 10 引擎，新旧路径产出一致"""
 import config
 from services import resolve_engine, build_engine_kwargs
+from unittest.mock import MagicMock
 
 
 ALL_PROVIDERS = [
@@ -185,3 +186,65 @@ def test_new_path_matches_old_path(monkeypatch):
         assert old_kwargs == new_kwargs, (
             f"{provider}: old={old_kwargs} != new={new_kwargs}"
         )
+
+
+def test_fake_engine_extensibility(monkeypatch):
+    fake_settings_cls = MagicMock()
+    fake_settings_cls.__name__ = "FakeEngineSettings"
+    fake_settings_cls.model_fields = {
+        "fake_api_key": MagicMock(),
+        "fake_model": MagicMock(),
+    }
+
+    fake_spec = config.EngineSpec(
+        provider="fake",
+        settings_cls=fake_settings_cls,
+        field_map={
+            "api_key": "fake_api_key",
+            "model": "fake_model",
+        },
+        required_fields=("api_key", "model"),
+    )
+
+    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-fake-key")
+    monkeypatch.setattr(config, "MODEL", "fake-model-v1")
+
+    kwargs = build_engine_kwargs(fake_spec)
+
+    assert kwargs == {
+        "fake_api_key": "sk-fake-key",
+        "fake_model": "fake-model-v1",
+    }
+
+
+def test_fake_engine_optional_field_warns(monkeypatch, caplog):
+    import logging
+    caplog.set_level(logging.WARNING)
+
+    fake_settings_cls = MagicMock()
+    fake_settings_cls.__name__ = "MinimalEngineSettings"
+    fake_settings_cls.model_fields = {
+        "minimal_key": MagicMock(),
+        "minimal_model": MagicMock(),
+    }
+
+    fake_spec = config.EngineSpec(
+        provider="minimal",
+        settings_cls=fake_settings_cls,
+        field_map={
+            "api_key": "minimal_key",
+            "model": "minimal_model",
+            "temperature": "nonexistent_field",
+        },
+        required_fields=("api_key", "model"),
+    )
+
+    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-minimal")
+    monkeypatch.setattr(config, "MODEL", "minimal-model")
+    monkeypatch.setattr(config, "MODEL_TEMPERATURE", "0.5")
+
+    kwargs = build_engine_kwargs(fake_spec)
+
+    assert kwargs["minimal_key"] == "sk-minimal"
+    assert kwargs["minimal_model"] == "minimal-model"
+    assert any("不支持字段" in record.message for record in caplog.records)
