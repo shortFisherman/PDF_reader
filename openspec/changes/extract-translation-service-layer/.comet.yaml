@@ -7,7 +7,7 @@ subagent_dispatch: confirmed
 tdd_mode: tdd
 review_mode: off
 isolation: branch
-verify_mode: null
+verify_mode: full
 auto_transition: true
 base_ref: cb737e1477364beeaa6fa1945688e1676ef7f656
 design_doc: docs/superpowers/specs/2026-06-21-extract-translation-service-layer-design.md
