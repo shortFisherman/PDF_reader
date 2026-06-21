@@ -1,3 +1,9 @@
+import { getElements, createPageEl, calculatePlaceholderHeight } from './modules/dom.js';
+import { setupIntersectionObserver } from './modules/lazy-loader.js';
+import { setupScrollSync, setupPageDetection } from './modules/scroll-sync.js';
+import { fetchStageLabels, getStageLabel } from './modules/stages.js';
+import { translateCurrentPage } from './modules/translator.js';
+
 const API = '/api';
 let pageCount = 0;
 let pageHeight = 0;
@@ -7,55 +13,34 @@ let isTranslating = false;
 let promptVisible = false;
 let statusTimer = null;
 
-const STAGE_LABELS = {
-    layout_analysis: '\u6b63\u5728\u5206\u6790\u7248\u9762\u2026',
-    translating: '\u6b63\u5728\u7ffb\u8bd1\u2026',
-    generating_pdf: '\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026',
-    generating_pdf_bilingual: '\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026',
-    finish: '\u7ffb\u8bd1\u5b8c\u6210'
-};
+let els;
 
-const leftCol = document.getElementById('left-column');
-const rightCol = document.getElementById('right-column');
-const pageIndicator = document.getElementById('page-indicator');
-const translateBtn = document.getElementById('translate-btn');
-const promptInput = document.getElementById('prompt-input');
-const promptToggle = document.getElementById('prompt-toggle');
-const progressBar = document.getElementById('progress-bar');
-const progressFill = document.getElementById('progress-fill');
-const progressStatusText = document.getElementById('progress-status-text');
-const fileArea = document.getElementById('file-input-area');
-const appView = document.getElementById('app');
-const toolbar = document.getElementById('toolbar');
+function init() {
+    els = getElements();
 
-document.getElementById('open-btn').addEventListener('click', openPdf);
-document.getElementById('pdf-path').addEventListener('keydown', e => {
-    if (e.key === 'Enter') openPdf();
-});
-promptToggle.addEventListener('click', () => {
-    promptVisible = !promptVisible;
-    promptInput.style.display = promptVisible ? 'inline-block' : 'none';
-    promptToggle.textContent = promptVisible ? '- Prompt' : '+ Prompt';
-});
-translateBtn.addEventListener('click', translateCurrentPage);
+    els.openBtn.addEventListener('click', openPdf);
+    els.pdfPathInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') openPdf();
+    });
+    els.promptToggle.addEventListener('click', () => {
+        promptVisible = !promptVisible;
+        els.promptInput.style.display = promptVisible ? 'inline-block' : 'none';
+        els.promptToggle.textContent = promptVisible ? '- Prompt' : '+ Prompt';
+    });
+    els.translateBtn.addEventListener('click', onTranslateClick);
 
-function calculatePlaceholderHeight() {
-    if (pageWidth && pageHeight) {
-        const ratio = pageHeight / pageWidth;
-        return Math.round(100 * ratio);
-    }
-    return 600;
+    fetchStageLabels();
 }
 
 async function openPdf() {
-    const path = document.getElementById('pdf-path').value.trim();
+    const path = els.pdfPathInput.value.trim();
     if (!path) return;
 
     try {
         const resp = await fetch(`${API}/open`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path })
+            body: JSON.stringify({ path }),
         });
 
         if (!resp.ok) {
@@ -65,7 +50,7 @@ async function openPdf() {
                 const errData = JSON.parse(errText);
                 errMsg = errData.error || errMsg;
             } catch (e) {}
-            fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">${errMsg}</p>`);
+            els.fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">${errMsg}</p>`);
             return;
         }
 
@@ -74,55 +59,28 @@ async function openPdf() {
         pageHeight = data.page_height;
         pageWidth = data.page_width;
 
-        leftCol.innerHTML = '';
-        rightCol.innerHTML = '';
+        els.leftCol.innerHTML = '';
+        els.rightCol.innerHTML = '';
 
         for (let i = 0; i < pageCount; i++) {
-            leftCol.appendChild(createPageEl(i, 'left'));
-            rightCol.appendChild(createPageEl(i, 'right'));
+            els.leftCol.appendChild(createPageEl(i, 'left', pageWidth, pageHeight));
+            els.rightCol.appendChild(createPageEl(i, 'right', pageWidth, pageHeight));
         }
 
-        fileArea.classList.add('hidden');
-        appView.classList.remove('hidden');
-        toolbar.classList.remove('hidden');
+        els.fileArea.classList.add('hidden');
+        els.appView.classList.remove('hidden');
+        els.toolbar.classList.remove('hidden');
 
-        setupIntersectionObserver();
-        setupScrollSync();
-        setupPageDetection();
+        setupIntersectionObserver({
+            load: loadPageImage,
+            unload: unloadPageImage,
+        });
+        setupScrollSync({ left: els.leftCol, right: els.rightCol });
+        setupPageDetection({ container: els.leftCol }, onPageChange);
         loadTranslatedState();
     } catch (e) {
-        fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">Network error: ${e.message}</p>`);
+        els.fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">Network error: ${e.message}</p>`);
     }
-}
-
-async function loadTranslatedState() {
-    try {
-        const resp = await fetch(`${API}/translated-pages`);
-        if (!resp.ok) return;
-        const data = await resp.json();
-        data.pages.forEach(p => {
-            const el = rightCol.querySelector(`.page-container[data-page="${p}"]`);
-            if (el) el.classList.add('translated');
-        });
-    } catch (e) {}
-}
-
-function createPageEl(pageNum, side) {
-    const container = document.createElement('div');
-    container.className = 'page-container';
-    container.dataset.page = pageNum;
-    container.dataset.side = side;
-
-    const ph = calculatePlaceholderHeight();
-
-    const placeholder = document.createElement('div');
-    placeholder.className = 'page-placeholder';
-    placeholder.style.paddingBottom = `${ph}%`;
-    placeholder.textContent = `Page ${pageNum + 1}`;
-    placeholder.dataset.loaded = 'false';
-    container.appendChild(placeholder);
-
-    return container;
 }
 
 function loadPageImage(container) {
@@ -157,7 +115,7 @@ function unloadPageImage(container) {
 
     const placeholder = document.createElement('div');
     placeholder.className = 'page-placeholder';
-    const ph = calculatePlaceholderHeight();
+    const ph = calculatePlaceholderHeight(pageWidth, pageHeight);
     placeholder.style.paddingBottom = `${ph}%`;
     placeholder.textContent = `Page ${parseInt(container.dataset.page) + 1}`;
     placeholder.dataset.loaded = 'false';
@@ -165,171 +123,87 @@ function unloadPageImage(container) {
     img.replaceWith(placeholder);
 }
 
-function setupIntersectionObserver() {
-    const BUFFER = 5;
-
-    const observer = new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-            const container = entry.target;
-            if (entry.isIntersecting) {
-                loadPageImage(container);
-            } else {
-                unloadPageImage(container);
-            }
-        }
-    }, {
-        root: null,
-        rootMargin: `${BUFFER * 100}% 0px`,
-    });
-
-    const allContainers = document.querySelectorAll('.page-container');
-    allContainers.forEach(c => observer.observe(c));
-}
-
-function setupScrollSync() {
-    let syncing = false;
-
-    leftCol.addEventListener('scroll', () => {
-        if (!syncing) {
-            syncing = true;
-            rightCol.scrollTop = leftCol.scrollTop;
-            requestAnimationFrame(() => { syncing = false; });
-        }
-    });
-}
-
-function setupPageDetection() {
-    const col = leftCol;
-    col.addEventListener('scroll', () => {
-        const containers = col.querySelectorAll('.page-container');
-        let bestPage = 0;
-        let bestCoverage = 0;
-        const viewTop = col.scrollTop;
-        const viewBottom = viewTop + col.clientHeight;
-
-        containers.forEach(c => {
-            const rect = c.getBoundingClientRect();
-            const colRect = col.getBoundingClientRect();
-            const top = rect.top - colRect.top + col.scrollTop;
-            const bottom = top + rect.height;
-            const overlap = Math.min(bottom, viewBottom) - Math.max(top, viewTop);
-            const coverage = overlap / rect.height;
-            if (coverage > bestCoverage) {
-                bestCoverage = coverage;
-                bestPage = parseInt(c.dataset.page);
-            }
+async function loadTranslatedState() {
+    try {
+        const resp = await fetch(`${API}/translated-pages`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        data.pages.forEach(p => {
+            const el = els.rightCol.querySelector(`.page-container[data-page="${p}"]`);
+            if (el) el.classList.add('translated');
         });
-
-        if (bestPage !== currentPage) {
-            currentPage = bestPage;
-            pageIndicator.textContent = `Page ${bestPage + 1}`;
-        }
-    });
+    } catch (e) {}
 }
 
-async function translateCurrentPage() {
+function onPageChange(pageNum) {
+    if (pageNum !== currentPage) {
+        currentPage = pageNum;
+        els.pageIndicator.textContent = `Page ${pageNum + 1}`;
+    }
+}
+
+async function onTranslateClick() {
     if (isTranslating) return;
     isTranslating = true;
-    translateBtn.disabled = true;
-    translateBtn.textContent = 'Translating...';
-    progressBar.classList.add('active');
-    progressFill.style.width = '0%';
-    progressStatusText.textContent = '';
-    progressStatusText.classList.remove('error', 'done');
+    els.translateBtn.disabled = true;
+    els.translateBtn.textContent = 'Translating...';
+    els.progressBar.classList.add('active');
+    els.progressFill.style.width = '0%';
+    els.progressStatusText.textContent = '';
+    els.progressStatusText.classList.remove('error', 'done');
     if (statusTimer) {
         clearTimeout(statusTimer);
         statusTimer = null;
     }
 
-    const prompt = promptInput.value.trim() || null;
-
-    try {
-        const resp = await fetch(`${API}/translate/${currentPage}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt })
-        });
-
-        if (!resp.ok) {
-            const err = await resp.json();
-            throw new Error(err.error || 'Translation failed');
-        }
-
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    try {
-                        const evt = JSON.parse(line.slice(6));
-                        if (evt.type === 'progress') {
-                            progressFill.style.width = `${evt.progress}%`;
-                            if (evt.stage) {
-                                let label = STAGE_LABELS[evt.stage] || evt.stage;
-                                if (evt.stage_current > 0 && evt.stage_total > 0) {
-                                    label += ` \u7b2c ${evt.stage_current}/${evt.stage_total} \u6bb5`;
-                                }
-                                progressStatusText.textContent = label;
-                                if (evt.stage === 'finish') {
-                                    progressStatusText.classList.add('done');
-                                    progressStatusText.classList.remove('error');
-                                } else {
-                                    progressStatusText.classList.remove('done', 'error');
-                                }
-                            }
-                        } else if (evt.type === 'finish') {
-                            progressFill.style.width = '100%';
-                            progressStatusText.textContent = STAGE_LABELS.finish;
-                            progressStatusText.classList.add('done');
-                            progressStatusText.classList.remove('error');
-                            statusTimer = setTimeout(() => {
-                                progressBar.classList.remove('active');
-                                progressStatusText.textContent = '';
-                                progressStatusText.classList.remove('done', 'error');
-                            }, 2000);
-                        } else if (evt.type === 'error') {
-                            throw new Error(evt.error);
-                        }
-                    } catch (e) {
-                        if (e instanceof SyntaxError) {
-                            continue;
-                        }
-                        throw e;
-                    }
-                }
+    await translateCurrentPage(currentPage, {
+        prompt: els.promptInput.value.trim() || null,
+        onStageChange(stage, labelText) {
+            els.progressStatusText.textContent = labelText;
+            if (stage === 'finish') {
+                els.progressStatusText.classList.add('done');
+                els.progressStatusText.classList.remove('error');
+            } else {
+                els.progressStatusText.classList.remove('done', 'error');
             }
-        }
+        },
+        onProgress(percent) {
+            els.progressFill.style.width = `${percent}%`;
+        },
+        onFinish() {
+            els.progressFill.style.width = '100%';
+            els.progressStatusText.textContent = getStageLabel('finish');
+            els.progressStatusText.classList.add('done');
+            els.progressStatusText.classList.remove('error');
+            statusTimer = setTimeout(() => {
+                els.progressBar.classList.remove('active');
+                els.progressStatusText.textContent = '';
+                els.progressStatusText.classList.remove('done', 'error');
+            }, 2000);
 
-        const rightEl = rightCol.querySelector(`.page-container[data-page="${currentPage}"]`);
-        if (rightEl) {
-            unloadPageImage(rightEl);
-            loadPageImage(rightEl);
-            rightEl.classList.add('translated');
-        }
-        loadTranslatedState();
+            const rightEl = els.rightCol.querySelector(`.page-container[data-page="${currentPage}"]`);
+            if (rightEl) {
+                unloadPageImage(rightEl);
+                loadPageImage(rightEl);
+                rightEl.classList.add('translated');
+            }
+            loadTranslatedState();
+        },
+        onError(message) {
+            els.progressBar.classList.remove('active');
+            els.progressStatusText.textContent = message;
+            els.progressStatusText.classList.add('error');
+            els.progressStatusText.classList.remove('done');
+            statusTimer = setTimeout(() => {
+                els.progressStatusText.textContent = '';
+                els.progressStatusText.classList.remove('error', 'done');
+            }, 3000);
+        },
+    });
 
-    } catch (e) {
-        progressBar.classList.remove('active');
-        progressStatusText.textContent = e.message || '\u7ffb\u8bd1\u51fa\u9519';
-        progressStatusText.classList.add('error');
-        progressStatusText.classList.remove('done');
-        statusTimer = setTimeout(() => {
-            progressStatusText.textContent = '';
-            progressStatusText.classList.remove('error', 'done');
-        }, 3000);
-        fileArea.classList.remove('hidden');
-        fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">Translation error: ${e.message}</p>`);
-    } finally {
-        isTranslating = false;
-        translateBtn.disabled = false;
-        translateBtn.textContent = 'Translate';
-    }
+    isTranslating = false;
+    els.translateBtn.disabled = false;
+    els.translateBtn.textContent = 'Translate';
 }
+
+init();
