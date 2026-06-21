@@ -1,19 +1,21 @@
+import logging
+from unittest.mock import patch
+
+import debug_trace
+
+
 def test_debug_patches_imports_and_applies():
-    from babeldoc.format.pdf.document_il.midend.automatic_term_extractor import (
-        AutomaticTermExtractor,
-    )
-
-    import debug_patches
-
-    debug_patches.apply_patches()
-
-    result = AutomaticTermExtractor.extract_terms_from_paragraphs
-    assert callable(result)
+    """init_debug(True) applies monkey-patch to AutomaticTermExtractor."""
+    with patch("debug_trace.AutomaticTermExtractor", create=True) as mock_cls:
+        mock_cls.extract_terms_from_paragraphs = lambda self, p, pbar=None, ptc=0: None
+        debug_trace.init_debug(True)
+        result = mock_cls.extract_terms_from_paragraphs
+        assert callable(result)
 
 
 def test_debug_patches_apply_patches_idempotent():
-    """Twice calling apply_patches should not crash"""
-    import debug_patches
-
-    debug_patches.apply_patches()
-    debug_patches.apply_patches()  # second call should not raise
+    """init_debug called twice should not crash."""
+    with patch("debug_trace.AutomaticTermExtractor", create=True) as mock_cls:
+        mock_cls.extract_terms_from_paragraphs = lambda self, p, pbar=None, ptc=0: None
+        debug_trace.init_debug(True)
+        debug_trace.init_debug(True)

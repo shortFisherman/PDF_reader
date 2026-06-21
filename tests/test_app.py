@@ -37,9 +37,9 @@ def test_cli_no_debug_flag_does_not_override():
 def test_import_app_does_not_trigger_side_effects():
     """Importing app module does NOT set config.DEBUG=True or apply patches."""
     with patch("config.DEBUG", False):
-        with patch("app.apply_patches") as mock_apply:
+        with patch("app.debug_trace.init_debug") as mock_init:
             import app
-            mock_apply.assert_not_called()
+            mock_init.assert_not_called()
 
 
 def test_create_app_calls_init_debug():
