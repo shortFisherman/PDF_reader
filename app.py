@@ -1,20 +1,26 @@
+import argparse
 import logging
+import sys
 
 from flask import Flask
 
 import config
-from debug_patches import apply_patches
+import debug_trace
 from state import AppState
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pdf_reader")
 
-config.DEBUG = True
-apply_patches()
-logger.info("Debug tracing enabled")
+_parser = argparse.ArgumentParser()
+_parser.add_argument("--debug", action="store_true", default=None,
+                     help="Enable debug tracing")
+_cli_args, _ = _parser.parse_known_args()
+if _cli_args.debug is not None:
+    config.DEBUG = _cli_args.debug
 
 
 def create_app() -> Flask:
+    debug_trace.init_debug(config.DEBUG)
     app = Flask(__name__)
     app.config["app_state"] = AppState(config.CACHE_DIR)
     from routes import register_routes
