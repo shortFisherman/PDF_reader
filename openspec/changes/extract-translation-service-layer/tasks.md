@@ -17,9 +17,9 @@
 
 ## 4. 抽取 sse_stream service
 
-- [ ] 4.1 创建 `sse_stream.py`，迁移 `STAGE_LABELS` 与 `format_sse_event(evt) -> str` 纯函数
-- [ ] 4.2 在 `tests/test_sse_stream.py` 用步骤 1 的黄金样本验证新模块输出字节级一致
-- [ ] 4.3 运行测试通过
+- [x] 4.1 创建 `sse_stream.py`，迁移 `STAGE_LABELS` 与 `format_sse_event(evt) -> str` 纯函数
+- [x] 4.2 在 `tests/test_sse_stream.py` 用步骤 1 的黄金样本验证新模块输出字节级一致
+- [x] 4.3 运行测试通过
 
 ## 5. 抽取 glossary_service
 

@@ -382,7 +382,7 @@ git commit -m "feat: extract translation_orchestrator service with TranslationEr
 
 **tasks.md ref:** 4.1, 4.2, 4.3
 
-- [ ] **Step 1: �?`tests/test_sse_stream.py` 增加 `format_sse_event` 失败测试**
+- [x] **Step 1: �?`tests/test_sse_stream.py` 增加 `format_sse_event` 失败测试**
 
 在文件末尾追加：
 
@@ -437,12 +437,12 @@ def test_format_sse_event_unknown_type_returns_none():
     assert format_sse_event(evt) is None
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `python -m pytest tests/test_sse_stream.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'sse_stream'`
 
-- [ ] **Step 3: 创建 `sse_stream.py`（format_sse_event + STAGE_LABELS + GenerateContext�?*
+- [x] **Step 3: 创建 `sse_stream.py`（format_sse_event + STAGE_LABELS + GenerateContext�?*
 
 ```python
 import json
@@ -509,11 +509,11 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
     raise NotImplementedError("Implemented in Task 7 with full integration")
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `python -m pytest tests/test_sse_stream.py -v`
 Expected: 9 PASSED�? 黄金样本 + 6 format_sse_event 测试�?
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add sse_stream.py tests/test_sse_stream.py
