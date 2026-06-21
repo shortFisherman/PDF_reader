@@ -10,8 +10,6 @@ logger = logging.getLogger("pdf_reader.debug_trace")
 
 _original_extract = None
 
-_original_handler = None
-
 
 def _apply_monkey_patches() -> None:
     global _original_extract
@@ -67,13 +65,18 @@ def debug_session(glossary_path: Path | None, page: int):
         return
 
     handler = None
-    try:
-        log_path = glossary_path / "debug_trace.log"
-        if log_path.exists():
+    log_path = glossary_path / "debug_trace.log"
+    if log_path.exists():
+        try:
             rotated = glossary_path / (
                 "debug_trace." + time.strftime("%Y%m%d_%H%M%S") + ".log"
             )
             shutil.move(str(log_path), str(rotated))
+        except Exception:
+            logging.getLogger("pdf_reader").warning(
+                "Failed to rotate debug_trace.log, continuing", exc_info=True
+            )
+    try:
         file_handler = logging.FileHandler(str(log_path), encoding="utf-8")
         file_handler.setFormatter(logging.Formatter(
             "%(asctime)s %(levelname)s:%(name)s:%(message)s"
