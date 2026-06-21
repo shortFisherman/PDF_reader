@@ -80,7 +80,7 @@ The system SHALL include a ruff configuration file and SHALL pass linting checks
 
 ### Requirement: Modular source code organization
 
-The system SHALL be organized into separate Python modules (config.py, routes.py, services.py) with app.py serving as the application entry point and factory.
+The system SHALL be organized into separate Python modules with clear separation of concerns: `config.py` (configuration), `routes.py` (HTTP routing, thin), `services.py` (pure helpers), and a translation service layer (`pdf_extraction`, `translation_orchestrator`, `sse_stream`, `glossary_service`, `debug_trace`) that isolates business orchestration from HTTP handling. `app.py` serves as the application entry point and factory.
 
 #### Scenario: Config loading is independent
 
@@ -91,6 +91,11 @@ The system SHALL be organized into separate Python modules (config.py, routes.py
 
 - **WHEN** app.py creates the Flask application
 - **THEN** it SHALL import and register routes from the routes module
+
+#### Scenario: Route layer delegates to service layer
+
+- **WHEN** a translation request is handled by the route function
+- **THEN** the route SHALL delegate PDF extraction, translation orchestration, SSE formatting, glossary handling, and debug tracing to dedicated service modules, and SHALL NOT contain those concerns inline
 
 ### Requirement: Frontend JavaScript in separate file
 

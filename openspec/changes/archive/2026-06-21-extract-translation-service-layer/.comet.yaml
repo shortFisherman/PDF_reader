@@ -17,7 +17,7 @@ verification_report: docs/superpowers/reports/2026-06-21-extract-translation-ser
 branch_status: handled
 created_at: 2026-06-20
 verified_at: 2026-06-21
-archived: false
+archived: true
 handoff_context: openspec/changes/extract-translation-service-layer/.comet/handoff/design-context.json
 handoff_hash: d6eb45c7b63a5cac2eca5c61af6fa94f5f420e5d16327605358f2e3c46edf1db
 build_command: python -m ruff check .

@@ -2,6 +2,8 @@
 comet_change: extract-translation-service-layer
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-21-extract-translation-service-layer
+status: final
 ---
 
 # Design: Extract Translation Service Layer

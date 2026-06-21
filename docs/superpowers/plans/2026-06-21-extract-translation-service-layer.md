@@ -2,6 +2,7 @@
 change: extract-translation-service-layer
 design-doc: docs/superpowers/specs/2026-06-21-extract-translation-service-layer-design.md
 base-ref: aa14d6306157e5f70fb88a5ee005fe9b3ca293d2
+archived-with: 2026-06-21-extract-translation-service-layer
 ---
 
 # Extract Translation Service Layer 实现计划
@@ -36,6 +37,7 @@ base-ref: aa14d6306157e5f70fb88a5ee005fe9b3ca293d2
 | `tests/test_debug_trace.py` | 调试追踪骨架测试 | 新建 |
 | `tests/test_routes.py` | 路由测试（更�?mock 路径�?| 修改 |
 
+archived-with: 2026-06-21-extract-translation-service-layer
 ---
 
 ### Task 1: SSE 字节级回归基�?
@@ -122,6 +124,7 @@ Expected: 3 PASSED（黄金样本常量验证自身一致性）
 
 - [x] **Step 3: 提交**
 
+archived-with: 2026-06-21-extract-translation-service-layer
 ---
 
 ### Task 2: 抽取 pdf_extraction service
@@ -215,6 +218,7 @@ git add pdf_extraction.py tests/test_pdf_extraction.py
 git commit -m "feat: extract pdf_extraction service from translate_page"
 ```
 
+archived-with: 2026-06-21-extract-translation-service-layer
 ---
 
 ### Task 3: 抽取 translation_orchestrator service
@@ -369,6 +373,7 @@ git add translation_orchestrator.py tests/test_translation_orchestrator.py
 git commit -m "feat: extract translation_orchestrator service with TranslationError"
 ```
 
+archived-with: 2026-06-21-extract-translation-service-layer
 ---
 
 ### Task 4: 抽取 sse_stream service
@@ -520,6 +525,7 @@ git add sse_stream.py tests/test_sse_stream.py
 git commit -m "feat: extract sse_stream service with format_sse_event and STAGE_LABELS"
 ```
 
+archived-with: 2026-06-21-extract-translation-service-layer
 ---
 
 ### Task 5: 抽取 glossary_service
@@ -653,6 +659,7 @@ git add glossary_service.py tests/test_glossary_service.py
 git commit -m "feat: extract glossary_service with path resolution and merge"
 ```
 
+archived-with: 2026-06-21-extract-translation-service-layer
 ---
 
 ### Task 6: 抽取 debug_trace 骨架
@@ -827,6 +834,7 @@ git add debug_trace.py tests/test_debug_trace.py
 git commit -m "feat: add debug_trace skeleton interface with simple delegation"
 ```
 
+archived-with: 2026-06-21-extract-translation-service-layer
 ---
 
 ### Task 7: 实现 sse_stream.generate 组合中心
@@ -1152,6 +1160,7 @@ git add sse_stream.py tests/test_sse_stream.py
 git commit -m "feat: implement sse_stream.generate composition center with error handling"
 ```
 
+archived-with: 2026-06-21-extract-translation-service-layer
 ---
 
 ### Task 8: 重构 translate_page 路由
@@ -1319,6 +1328,7 @@ git add routes.py tests/test_routes.py
 git commit -m "refactor: slim translate_page to thin orchestration with service layer"
 ```
 
+archived-with: 2026-06-21-extract-translation-service-layer
 ---
 
 ### Task 9: 全量回归�?lint
