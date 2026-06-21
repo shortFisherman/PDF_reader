@@ -29,10 +29,10 @@
 
 ## 6. 重构 translate_page 路由
 
-- [ ] 6.1 重写 `routes.py:translate_page` 为薄编排：解析请求 + 校验页码（变更A） + 调用 service + 返回 SSE Response
-- [ ] 6.2 确认 `translate_page` 函数体 ≤ 40 行
-- [ ] 6.3 更新 `tests/test_routes.py`：mock 各 service，断言 SSE 流字节级匹配黄金样本
-- [ ] 6.4 运行 `pytest tests/test_routes.py -v` 全绿
+- [x] 6.1 重写 `routes.py:translate_page` 为薄编排：解析请求 + 校验页码（变更A） + 调用 service + 返回 SSE Response
+- [x] 6.2 确认 `translate_page` 函数体 ≤ 40 行
+- [x] 6.3 更新 `tests/test_routes.py`：mock 各 service，断言 SSE 流字节级匹配黄金样本
+- [x] 6.4 运行 `pytest tests/test_routes.py -v` 全绿
 
 ## 7. 全量回归与 lint
 

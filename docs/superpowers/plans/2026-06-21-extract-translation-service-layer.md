@@ -1163,7 +1163,7 @@ git commit -m "feat: implement sse_stream.generate composition center with error
 - Produces: `translate_page` �?40 �?
 **tasks.md ref:** 6.1, 6.2, 6.3, 6.4
 
-- [ ] **Step 1: 重写 `routes.py:translate_page`**
+- [x] **Step 1: 重写 `routes.py:translate_page`**
 
 �?routes.py �?import 部分�?translate_page 函数替换。首先更�?imports（移�?asyncio/queue/threading/tempfile/time/shutil/Path/pymupdf/do_translate_async_stream/merge_glossary_csvs，添加新 service 模块）：
 
@@ -1227,7 +1227,7 @@ def translate_page(page: int):
     )
 ```
 
-- [ ] **Step 2: 更新 `tests/test_routes.py` 中的 mock 路径**
+- [x] **Step 2: 更新 `tests/test_routes.py` 中的 mock 路径**
 
 `test_translate_page_integrates_cumulative_glossary` 当前 mock `routes.build_settings`、`routes.do_translate_async_stream`、`routes.merge_glossary_csvs`。需要更新为 mock 新模块：
 
@@ -1303,16 +1303,16 @@ def test_debug_trace_logger_exists():
     assert trace_logger.level == logging.INFO
 ```
 
-- [ ] **Step 3: 运行路由测试确认通过**
+- [x] **Step 3: 运行路由测试确认通过**
 
 Run: `python -m pytest tests/test_routes.py -v`
 Expected: ALL PASSED（包括更新后�?glossary 集成测试�?debug_trace_logger 测试�?
-- [ ] **Step 4: 确认 translate_page 函数�?�?40 �?*
+- [x] **Step 4: 确认 translate_page 函数�?�?40 �?*
 
 Run: `python -c "import routes, inspect; src = inspect.getsource(routes.translate_page); lines = [l for l in src.split(chr(10)) if l.strip() and not l.strip().startswith('@') and not l.strip().startswith('def ')]; print(f'Body lines: {len(lines)}')"`
 Expected: `Body lines: �?20`
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add routes.py tests/test_routes.py
