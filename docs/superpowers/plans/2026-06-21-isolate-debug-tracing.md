@@ -1,4 +1,4 @@
----
+﻿---
 change: isolate-debug-tracing
 design-doc: docs/superpowers/specs/2026-06-21-isolate-debug-tracing-design.md
 base-ref: 3ac9d463d48d4359bdaaf592aa335df36a89d5c2
@@ -51,7 +51,7 @@ base-ref: 3ac9d463d48d4359bdaaf592aa335df36a89d5c2
 - Consumes: current `debug_trace.log_step`, `debug_trace.log_token_usage`, `debug_trace.setup_file_handler`, `debug_trace.cleanup_file_handler`
 - Produces: `test_full_debug_trace_bytes_identical` -- byte-equivalence test against current manual flow; `test_zero_overhead_no_io` -- confirms zero-overhead when DEBUG=False
 
-- [ ] **Step 1: Write the test for DEBUG=True byte-equivalence regression**
+- [x] **Step 1: Write the test for DEBUG=True byte-equivalence regression**
 
 Append to `tests/test_debug_trace.py`:
 
@@ -148,7 +148,7 @@ def test_zero_overhead_no_io_when_debug_false(tmp_path):
     assert not log_file.exists()
 ```
 
-- [ ] **Step 2: Run test to verify it passes on current code**
+- [x] **Step 2: Run test to verify it passes on current code**
 
 ```powershell
 pytest tests/test_debug_trace.py::test_full_debug_trace_bytes_identical tests/test_debug_trace.py::test_zero_overhead_no_io_when_debug_false -v
@@ -156,7 +156,7 @@ pytest tests/test_debug_trace.py::test_full_debug_trace_bytes_identical tests/te
 
 Expected: Both tests PASS (current `debug_trace.py` already handles these flows correctly).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```powershell
 git add tests/test_debug_trace.py
@@ -175,7 +175,7 @@ git commit -m "test: add byte-equivalence baseline and zero-overhead tests for d
 - Consumes: `config.toml` sections `[debug]` and `[server]`
 - Produces: `config.DEBUG: bool` -- reads `[debug] enabled` first, falls back to `[server] debug`, defaults to `False`
 
-- [ ] **Step 1: Write the test for config.DEBUG resolution**
+- [x] **Step 1: Write the test for config.DEBUG resolution**
 
 Append to `tests/test_debug_trace.py`:
 
@@ -211,7 +211,7 @@ def test_config_debug_falls_back_to_server_debug():
         assert cfg.DEBUG == expected
 ```
 
-- [ ] **Step 2: Run test to verify current behavior**
+- [x] **Step 2: Run test to verify current behavior**
 
 ```powershell
 pytest tests/test_debug_trace.py::test_config_debug_defaults_to_false tests/test_debug_trace.py::test_config_debug_reads_debug_section tests/test_debug_trace.py::test_config_debug_falls_back_to_server_debug -v
@@ -219,7 +219,7 @@ pytest tests/test_debug_trace.py::test_config_debug_defaults_to_false tests/test
 
 Expected: `test_config_debug_falls_back_to_server_debug` FAILS because config.DEBUG is currently hardcoded to `False`.
 
-- [ ] **Step 3: Implement config.DEBUG resolution**
+- [x] **Step 3: Implement config.DEBUG resolution**
 
 Modify `config.py:177`, replace:
 
@@ -240,7 +240,7 @@ def _resolve_debug() -> bool:
 DEBUG: bool = _resolve_debug()
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```powershell
 pytest tests/test_debug_trace.py::test_config_debug_defaults_to_false tests/test_debug_trace.py::test_config_debug_reads_debug_section tests/test_debug_trace.py::test_config_debug_falls_back_to_server_debug -v
@@ -248,7 +248,7 @@ pytest tests/test_debug_trace.py::test_config_debug_defaults_to_false tests/test
 
 Expected: All three PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add config.py tests/test_debug_trace.py
@@ -268,7 +268,7 @@ git commit -m "feat: config.DEBUG reads from [debug] enabled, fallback [server] 
 - Consumes: `sys.argv`
 - Produces: `--debug` CLI flag that overrides `config.DEBUG`
 
-- [ ] **Step 1: Write the test for --debug flag**
+- [x] **Step 1: Write the test for --debug flag**
 
 Create `tests/test_app.py`:
 
@@ -325,7 +325,7 @@ def test_create_app_calls_init_debug():
         mock_init.assert_called_once()
 ```
 
-- [ ] **Step 2: Run test to verify it fails on current code**
+- [x] **Step 2: Run test to verify it fails on current code**
 
 ```powershell
 pytest tests/test_app.py -v
@@ -333,7 +333,7 @@ pytest tests/test_app.py -v
 
 Expected: `test_import_app_does_not_trigger_side_effects` FAILS (current app.py L12-14 applies patches at import time).
 
-- [ ] **Step 3: Implement CLI --debug flag in app.py**
+- [x] **Step 3: Implement CLI --debug flag in app.py**
 
 Replace `app.py` with:
 
@@ -378,7 +378,7 @@ if __name__ == "__main__":
     app.run(host=host, port=port, debug=server_debug)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```powershell
 pytest tests/test_app.py -v
@@ -386,7 +386,7 @@ pytest tests/test_app.py -v
 
 Expected: `test_cli_debug_flag_overrides_config` and `test_cli_no_debug_flag_does_not_override` PASS. The other two tests will still fail until Tasks 4/5 are done -- that's expected.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add app.py tests/test_app.py
@@ -405,7 +405,7 @@ git commit -m "feat: add CLI --debug flag, remove app.py import-time side effect
 - Consumes: `AutomaticTermExtractor` from `babeldoc`
 - Produces: `init_debug(debug_enabled: bool) -> None` -- conditionally patches `AutomaticTermExtractor.extract_terms_from_paragraphs`; `_original_extract` module-level variable holding the original method
 
-- [ ] **Step 1: Write the test for init_debug**
+- [x] **Step 1: Write the test for init_debug**
 
 Append to `tests/test_debug_trace.py`:
 
@@ -444,7 +444,7 @@ def test_init_debug_handles_import_error(monkeypatch):
             mock_warn.assert_called()
 ```
 
-- [ ] **Step 2: Run test to verify it FAILS**
+- [x] **Step 2: Run test to verify it FAILS**
 
 ```powershell
 pytest tests/test_debug_trace.py::test_init_debug_true_patches_extractor tests/test_debug_trace.py::test_init_debug_false_does_not_patch tests/test_debug_trace.py::test_init_debug_handles_import_error -v
@@ -452,7 +452,7 @@ pytest tests/test_debug_trace.py::test_init_debug_true_patches_extractor tests/t
 
 Expected: All three FAIL because `init_debug` doesn't exist yet.
 
-- [ ] **Step 3: Implement monkey-patch migration in debug_trace.py**
+- [x] **Step 3: Implement monkey-patch migration in debug_trace.py**
 
 Add the following imports at the top of `debug_trace.py` (after existing imports):
 
@@ -517,7 +517,7 @@ def init_debug(debug_enabled: bool) -> None:
         _apply_monkey_patches()
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 ```powershell
 pytest tests/test_debug_trace.py::test_init_debug_true_patches_extractor tests/test_debug_trace.py::test_init_debug_false_does_not_patch tests/test_debug_trace.py::test_init_debug_handles_import_error -v
@@ -525,7 +525,7 @@ pytest tests/test_debug_trace.py::test_init_debug_true_patches_extractor tests/t
 
 Expected: All three PASS.
 
-- [ ] **Step 5: Run full debug_trace test suite to check no regressions**
+- [x] **Step 5: Run full debug_trace test suite to check no regressions**
 
 ```powershell
 pytest tests/test_debug_trace.py -v
@@ -533,7 +533,7 @@ pytest tests/test_debug_trace.py -v
 
 Expected: All existing tests still PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add debug_trace.py tests/test_debug_trace.py
@@ -552,7 +552,7 @@ git commit -m "feat: migrate monkey-patch into debug_trace.py, implement init_de
 - Consumes: `config.DEBUG`, `trace_logger`, file system
 - Produces: `@contextmanager debug_session(glossary_path: Path | None, page: int)` -- adds FileHandler on enter with rotation, removes on exit; no-op when DEBUG=False
 
-- [ ] **Step 1: Write the test for debug_session**
+- [x] **Step 1: Write the test for debug_session**
 
 Append to `tests/test_debug_trace.py`:
 
@@ -645,7 +645,7 @@ def test_debug_session_exception_safe(tmp_path):
     assert len(handlers_after) == len(handlers_before)
 ```
 
-- [ ] **Step 2: Run test to verify it FAILS**
+- [x] **Step 2: Run test to verify it FAILS**
 
 ```powershell
 pytest tests/test_debug_trace.py::test_debug_session_creates_and_removes_file_handler tests/test_debug_trace.py::test_debug_session_no_op_when_debug_false tests/test_debug_trace.py::test_debug_session_no_op_when_glossary_path_none tests/test_debug_trace.py::test_debug_session_rotates_existing_log tests/test_debug_trace.py::test_debug_session_exception_safe -v
@@ -653,7 +653,7 @@ pytest tests/test_debug_trace.py::test_debug_session_creates_and_removes_file_ha
 
 Expected: All FAIL because `debug_session` doesn't exist yet.
 
-- [ ] **Step 3: Implement debug_session in debug_trace.py**
+- [x] **Step 3: Implement debug_session in debug_trace.py**
 
 Add after `init_debug()`:
 
@@ -694,7 +694,7 @@ def debug_session(glossary_path: Path | None, page: int):
                 pass
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```powershell
 pytest tests/test_debug_trace.py::test_debug_session_creates_and_removes_file_handler tests/test_debug_trace.py::test_debug_session_no_op_when_debug_false tests/test_debug_trace.py::test_debug_session_no_op_when_glossary_path_none tests/test_debug_trace.py::test_debug_session_rotates_existing_log tests/test_debug_trace.py::test_debug_session_exception_safe -v
@@ -702,11 +702,11 @@ pytest tests/test_debug_trace.py::test_debug_session_creates_and_removes_file_ha
 
 Expected: All five PASS.
 
-- [ ] **Step 5: Add deprecated wrappers for backward compatibility**
+- [x] **Step 5: Add deprecated wrappers for backward compatibility**
 
 Ensure `setup_file_handler` and `cleanup_file_handler` remain but are thin wrappers. Current implementations work as-is since they share the same logic. Verify they still exist -- they do. No change needed for these functions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add debug_trace.py tests/test_debug_trace.py
@@ -725,7 +725,7 @@ git commit -m "feat: implement debug_session context manager in debug_trace.py"
 - Consumes: `config.DEBUG`, `trace_logger`
 - Produces: `log_glossary_merge(action: str, **fields) -> None` -- logs glossary merge events; returns immediately when DEBUG=False
 
-- [ ] **Step 1: Write the test for log_glossary_merge**
+- [x] **Step 1: Write the test for log_glossary_merge**
 
 Append to `tests/test_debug_trace.py`:
 
@@ -750,7 +750,7 @@ def test_log_glossary_merge_no_op_when_debug_false():
             mock_info.assert_not_called()
 ```
 
-- [ ] **Step 2: Run test to verify it FAILS**
+- [x] **Step 2: Run test to verify it FAILS**
 
 ```powershell
 pytest tests/test_debug_trace.py::test_log_glossary_merge_logs_when_debug_true tests/test_debug_trace.py::test_log_glossary_merge_no_op_when_debug_false -v
@@ -758,7 +758,7 @@ pytest tests/test_debug_trace.py::test_log_glossary_merge_logs_when_debug_true t
 
 Expected: Both FAIL because `log_glossary_merge` doesn't exist yet.
 
-- [ ] **Step 3: Implement log_glossary_merge in debug_trace.py**
+- [x] **Step 3: Implement log_glossary_merge in debug_trace.py**
 
 Add after `log_token_usage()`:
 
@@ -770,7 +770,7 @@ def log_glossary_merge(action: str, **fields) -> None:
     trace_logger.info("[glossary %s] %s", action, " ".join(parts))
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```powershell
 pytest tests/test_debug_trace.py::test_log_glossary_merge_logs_when_debug_true tests/test_debug_trace.py::test_log_glossary_merge_no_op_when_debug_false -v
@@ -778,7 +778,7 @@ pytest tests/test_debug_trace.py::test_log_glossary_merge_logs_when_debug_true t
 
 Expected: Both PASS.
 
-- [ ] **Step 5: Run full debug_trace test suite**
+- [x] **Step 5: Run full debug_trace test suite**
 
 ```powershell
 pytest tests/test_debug_trace.py -v
@@ -786,7 +786,7 @@ pytest tests/test_debug_trace.py -v
 
 Expected: All tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add debug_trace.py tests/test_debug_trace.py
@@ -805,7 +805,7 @@ git commit -m "feat: implement log_glossary_merge() in debug_trace.py"
 - Consumes: `debug_trace.debug_session`, `debug_trace.log_glossary_merge`
 - Produces: `generate()` uses `debug_session` context manager instead of manual `setup_file_handler`/`cleanup_file_handler`; uses `log_glossary_merge` instead of `log_step("merge glossary...")`
 
-- [ ] **Step 1: Modify sse_stream.py generate() function**
+- [x] **Step 1: Modify sse_stream.py generate() function**
 
 Replace `sse_stream.py:67` from:
 
@@ -1012,7 +1012,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
 
 Also update the import at top of `sse_stream.py` -- remove `debug_trace.cleanup_file_handler` and `debug_trace.setup_file_handler` if they were imported explicitly (they weren't -- the code uses `debug_trace.setup_file_handler()` and `debug_trace.cleanup_file_handler()` via the module import). No import changes needed.
 
-- [ ] **Step 2: Run sse_stream tests to verify regression**
+- [x] **Step 2: Run sse_stream tests to verify regression**
 
 ```powershell
 pytest tests/test_sse_stream.py -v
@@ -1020,7 +1020,7 @@ pytest tests/test_sse_stream.py -v
 
 Expected: All existing tests PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```powershell
 git add sse_stream.py
@@ -1036,7 +1036,7 @@ git commit -m "refactor: use debug_session context manager and log_glossary_merg
 - Modify: `app.py:6` (remove `from debug_patches import apply_patches`)
 - Test: `tests/test_debug_patches.py` (update import)
 
-- [ ] **Step 1: Update test_debug_patches.py to reference debug_trace.py**
+- [x] **Step 1: Update test_debug_patches.py to reference debug_trace.py**
 
 Replace `tests/test_debug_patches.py` content:
 
@@ -1064,7 +1064,7 @@ def test_debug_patches_apply_patches_idempotent():
         debug_trace.init_debug(True)
 ```
 
-- [ ] **Step 2: Verify app.py no longer imports debug_patches**
+- [x] **Step 2: Verify app.py no longer imports debug_patches**
 
 Check `app.py` -- if it still has `from debug_patches import apply_patches`, remove it (it was already removed in Task 3 Step 3). If not already done, remove line 6:
 
@@ -1072,13 +1072,13 @@ Check `app.py` -- if it still has `from debug_patches import apply_patches`, rem
 from debug_patches import apply_patches
 ```
 
-- [ ] **Step 3: Delete debug_patches.py**
+- [x] **Step 3: Delete debug_patches.py**
 
 ```powershell
 git rm debug_patches.py
 ```
 
-- [ ] **Step 4: Run all tests to check nothing breaks**
+- [x] **Step 4: Run all tests to check nothing breaks**
 
 ```powershell
 pytest tests/test_debug_patches.py tests/test_app.py -v
@@ -1086,7 +1086,7 @@ pytest tests/test_debug_patches.py tests/test_app.py -v
 
 Expected: All tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add tests/test_debug_patches.py app.py
@@ -1102,7 +1102,7 @@ git commit -m "refactor: delete debug_patches.py, migrate tests to debug_trace.p
 - No code changes -- verification only
 - Test: `tests/` (all)
 
-- [ ] **Step 1: Run full test suite**
+- [x] **Step 1: Run full test suite**
 
 ```powershell
 pytest tests/ -v
@@ -1110,7 +1110,7 @@ pytest tests/ -v
 
 Expected: All tests PASS.
 
-- [ ] **Step 2: Run ruff lint**
+- [x] **Step 2: Run ruff lint**
 
 ```powershell
 ruff check
@@ -1118,7 +1118,7 @@ ruff check
 
 Expected: Zero errors.
 
-- [ ] **Step 3: Grep for if config.DEBUG in non-debug_trace files**
+- [x] **Step 3: Grep for if config.DEBUG in non-debug_trace files**
 
 ```powershell
 rg "if config\.DEBUG|config\.DEBUG\s*=" --include="*.py" --glob="!debug_trace.py" --glob="!tests/*"
@@ -1126,7 +1126,7 @@ rg "if config\.DEBUG|config\.DEBUG\s*=" --include="*.py" --glob="!debug_trace.py
 
 Expected: No matches in business code (routes.py, services.py, sse_stream.py, app.py, etc.). May find references in tests or config.py itself.
 
-- [ ] **Step 4: Grep for debug_patches imports**
+- [x] **Step 4: Grep for debug_patches imports**
 
 ```powershell
 rg "debug_patches" --include="*.py"
@@ -1134,7 +1134,7 @@ rg "debug_patches" --include="*.py"
 
 Expected: No matches.
 
-- [ ] **Step 5: Commit final verified state**
+- [x] **Step 5: Commit final verified state**
 
 ```powershell
 git add -A
