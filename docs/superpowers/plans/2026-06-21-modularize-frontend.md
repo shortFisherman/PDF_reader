@@ -49,7 +49,7 @@ docs/
 
 | 文件 | 导出 | 职责 |
 |------|------|------|
-| `dom.js` | `getElements()`, `createPageEl(pageNum, side)`, `calculatePlaceholderHeight(pageWidth, pageHeight)` | DOM 引用缓存 + 页面元素工厂 |
+| `dom.js` | `getElements()`, `createPageEl(pageNum, side, pageWidth, pageHeight)`, `calculatePlaceholderHeight(pageWidth, pageHeight)` | DOM 引用缓存 + 页面元素工厂 |
 | `lazy-loader.js` | `setupIntersectionObserver({ load, unload })` | IntersectionObserver 管理，load/unload 回调由调用方注入 |
 | `scroll-sync.js` | `setupScrollSync({ left, right })`, `setupPageDetection({ container }, onPageChange)` | 滚动同步 + 可见页检测 |
 | `sse-client.js` | `readSSEStream(response, onEvent)` | 纯 SSE 解析，无 DOM 访问 |

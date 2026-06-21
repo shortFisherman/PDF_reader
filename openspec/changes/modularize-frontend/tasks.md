@@ -21,7 +21,7 @@
 
 ## 5. 抽取 dom 模块
 
-- [ ] 5.1 创建 `static/modules/dom.js`，迁移 DOM 元素引用与 `createPageEl`/`calculatePlaceholderHeight`
+- [x] 5.1 创建 `static/modules/dom.js`，迁移 DOM 元素引用与 `createPageEl`/`calculatePlaceholderHeight`
 - [ ] 5.2 手动验证清单：页面元素创建、占位符比例一致
 
 ## 6. 抽取 sse-client 模块
