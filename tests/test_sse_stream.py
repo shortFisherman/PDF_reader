@@ -1,6 +1,9 @@
 import json
+from collections.abc import Iterator
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from sse_stream import format_sse_event
+from sse_stream import GenerateContext, format_sse_event, generate
 
 EXPECTED_PROGRESS_START_SSE = (
     'data: ' + json.dumps({
@@ -108,3 +111,159 @@ def test_format_sse_event_internal_done_returns_none():
 def test_format_sse_event_unknown_type_returns_none():
     evt = {"type": "unknown_type"}
     assert format_sse_event(evt) is None
+
+
+def test_generate_full_flow_byte_level_compatible(tmp_path):
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+
+    events = [
+        {"type": "progress_start", "stage": "layout_analysis", "overall_progress": 0,
+         "stage_current": 0, "stage_total": 0},
+        {"type": "progress_update", "stage": "translating", "overall_progress": 50,
+         "stage_current": 2, "stage_total": 5},
+        {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result,
+         "token_usage": {}},
+    ]
+
+    state = MagicMock()
+    state.glossary_cache_path = None
+    state.replace_page = MagicMock()
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    output_dir = str(tmp_path / "output")
+    single_page_pdf = tmpdir / "page.pdf"
+    single_page_pdf.write_bytes(b"fake pdf")
+
+    ctx = GenerateContext(
+        settings=MagicMock(),
+        single_page_pdf=single_page_pdf,
+        state=state,
+        page=0,
+        glossary_paths=None,
+        tmpdir=tmpdir,
+        output_dir=output_dir,
+    )
+
+    with patch("sse_stream.run_translation", return_value=iter(events)):
+        with patch("sse_stream.debug_trace"):
+            result = list(generate(ctx))
+
+    expected = [
+        EXPECTED_PROGRESS_START_SSE,
+        EXPECTED_PROGRESS_UPDATE_SSE,
+        EXPECTED_FINISH_PROGRESS_SSE,
+        EXPECTED_FINAL_PROGRESS_SSE,
+        EXPECTED_FINAL_FINISH_SSE,
+    ]
+    assert result == expected
+    state.replace_page.assert_called_once_with(str(tmp_path / "translated.pdf"), 0)
+
+
+def test_generate_error_event_stops_stream(tmp_path):
+    events = [
+        {"type": "progress_start", "stage": "layout_analysis"},
+        {"type": "error", "error": "test error"},
+    ]
+
+    state = MagicMock()
+    state.glossary_cache_path = None
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    single_page_pdf = tmpdir / "page.pdf"
+    single_page_pdf.write_bytes(b"fake")
+
+    ctx = GenerateContext(
+        settings=MagicMock(),
+        single_page_pdf=single_page_pdf,
+        state=state,
+        page=0,
+        glossary_paths=None,
+        tmpdir=tmpdir,
+        output_dir=str(tmp_path / "output"),
+    )
+
+    with patch("sse_stream.run_translation", return_value=iter(events)):
+        with patch("sse_stream.debug_trace"):
+            result = list(generate(ctx))
+
+    assert len(result) == 2
+    assert result[0] == EXPECTED_PROGRESS_START_SSE
+    assert result[1] == EXPECTED_ERROR_SSE
+
+
+def test_generate_translation_error_yields_error_event(tmp_path):
+    from translation_orchestrator import TranslationError
+
+    events = [{"type": "progress_start", "stage": "layout_analysis"}]
+
+    state = MagicMock()
+    state.glossary_cache_path = None
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    single_page_pdf = tmpdir / "page.pdf"
+    single_page_pdf.write_bytes(b"fake")
+
+    ctx = GenerateContext(
+        settings=MagicMock(),
+        single_page_pdf=single_page_pdf,
+        state=state,
+        page=0,
+        glossary_paths=None,
+        tmpdir=tmpdir,
+        output_dir=str(tmp_path / "output"),
+    )
+
+    def error_iter() -> Iterator[dict]:
+        yield from events
+        raise TranslationError("thread crashed")
+
+    with patch("sse_stream.run_translation", return_value=error_iter()):
+        with patch("sse_stream.debug_trace"):
+            result = list(generate(ctx))
+
+    assert len(result) == 2
+    assert result[0] == EXPECTED_PROGRESS_START_SSE
+    assert "error" in result[1]
+    assert "thread crashed" in result[1]
+
+
+def test_generate_cleans_up_tmpdir(tmp_path):
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+
+    events = [{"type": "finish", "stage": "generating_pdf", "translate_result": mock_result}]
+
+    state = MagicMock()
+    state.glossary_cache_path = None
+    state.replace_page = MagicMock()
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    (tmpdir / "page.pdf").write_bytes(b"fake")
+    output_dir = str(tmp_path / "output")
+    Path(output_dir).mkdir()
+
+    ctx = GenerateContext(
+        settings=MagicMock(),
+        single_page_pdf=tmpdir / "page.pdf",
+        state=state,
+        page=0,
+        glossary_paths=None,
+        tmpdir=tmpdir,
+        output_dir=output_dir,
+    )
+
+    with patch("sse_stream.run_translation", return_value=iter(events)):
+        with patch("sse_stream.debug_trace"):
+            list(generate(ctx))
+
+    assert not tmpdir.exists()
+    assert not Path(output_dir).exists()
