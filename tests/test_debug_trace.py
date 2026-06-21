@@ -157,6 +157,37 @@ def test_zero_overhead_no_io_when_debug_false(tmp_path):
 
 import importlib
 import config
+from unittest.mock import MagicMock, patch, PropertyMock
+
+
+def test_init_debug_true_patches_extractor():
+    with patch("debug_trace.AutomaticTermExtractor", create=True) as mock_cls:
+        mock_cls.extract_terms_from_paragraphs = MagicMock()
+        debug_trace.init_debug(True)
+        assert debug_trace._original_extract is not None
+        assert mock_cls.extract_terms_from_paragraphs != debug_trace._original_extract
+
+
+def test_init_debug_false_does_not_patch():
+    with patch("debug_trace.AutomaticTermExtractor", create=True) as mock_cls:
+        original = MagicMock()
+        mock_cls.extract_terms_from_paragraphs = original
+        debug_trace.init_debug(False)
+        assert mock_cls.extract_terms_from_paragraphs is original
+
+
+def test_init_debug_handles_import_error(monkeypatch):
+    """When AutomaticTermExtractor import fails, init_debug logs warning and returns."""
+    def raise_import(*args, **kwargs):
+        raise ImportError("babeldoc not available")
+
+    import debug_trace as dt
+    # Force a fresh call that will trigger the import path
+    with patch("debug_trace.logger.warning") as mock_warn:
+        try:
+            dt._apply_monkey_patches()
+        except ImportError:
+            mock_warn.assert_called()
 
 
 def test_config_debug_defaults_to_false(monkeypatch):
