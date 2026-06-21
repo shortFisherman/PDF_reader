@@ -66,7 +66,7 @@ docs/
 **接口：**
 - 产出：`docs/manual-verification-checklist.md` — 10 项行为检查清单，供后续任务逐项回归
 
-- [ ] **Step 1：编写手动验证清单**
+- [x] **Step 1：编写手动验证清单**
 
 ```markdown
 # 前端行为手动验证清单
@@ -128,7 +128,7 @@ docs/
 
 在修改任何代码之前，启动应用并逐项检查上述 10 条行为，记录当前预期行为作为对照基线。
 
-- [ ] **Step 3：提交**
+- [x] **Step 3：提交**
 
 ```bash
 git add docs/manual-verification-checklist.md

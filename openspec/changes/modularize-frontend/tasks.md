@@ -1,6 +1,6 @@
 ## 1. 行为基线与手动验证清单
 
-- [ ] 1.1 编写 `docs/manual-verification-checklist.md`：列出拆分前后需一致的行为（双栏渲染、滚动同步、独立右栏滚动、当前页检测、懒加载缓冲5页、卸载离屏、翻译进度各 stage、prompt 切换、错误显示、open 失败提示）
+- [x] 1.1 编写 `docs/manual-verification-checklist.md`：列出拆分前后需一致的行为（双栏渲染、滚动同步、独立右栏滚动、当前页检测、懒加载缓冲5页、卸载离屏、翻译进度各 stage、prompt 切换、错误显示、open 失败提示）
 - [ ] 1.2 现状手动走一遍清单，记录预期行为作为对照基线
 
 ## 2. 新增后端 /api/stages 端点
