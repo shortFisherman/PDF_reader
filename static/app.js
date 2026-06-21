@@ -156,54 +156,56 @@ async function onTranslateClick() {
         statusTimer = null;
     }
 
-    await translateCurrentPage(currentPage, {
-        prompt: els.promptInput.value.trim() || null,
-        onStageChange(stage, labelText) {
-            els.progressStatusText.textContent = labelText;
-            if (stage === 'finish') {
+    try {
+        await translateCurrentPage(currentPage, {
+            prompt: els.promptInput.value.trim() || null,
+            onStageChange(stage, labelText) {
+                els.progressStatusText.textContent = labelText;
+                if (stage === 'finish') {
+                    els.progressStatusText.classList.add('done');
+                    els.progressStatusText.classList.remove('error');
+                } else {
+                    els.progressStatusText.classList.remove('done', 'error');
+                }
+            },
+            onProgress(percent) {
+                els.progressFill.style.width = `${percent}%`;
+            },
+            onFinish() {
+                els.progressFill.style.width = '100%';
+                els.progressStatusText.textContent = getStageLabel('finish');
                 els.progressStatusText.classList.add('done');
                 els.progressStatusText.classList.remove('error');
-            } else {
-                els.progressStatusText.classList.remove('done', 'error');
-            }
-        },
-        onProgress(percent) {
-            els.progressFill.style.width = `${percent}%`;
-        },
-        onFinish() {
-            els.progressFill.style.width = '100%';
-            els.progressStatusText.textContent = getStageLabel('finish');
-            els.progressStatusText.classList.add('done');
-            els.progressStatusText.classList.remove('error');
-            statusTimer = setTimeout(() => {
+                statusTimer = setTimeout(() => {
+                    els.progressBar.classList.remove('active');
+                    els.progressStatusText.textContent = '';
+                    els.progressStatusText.classList.remove('done', 'error');
+                }, 2000);
+
+                const rightEl = els.rightCol.querySelector(`.page-container[data-page="${currentPage}"]`);
+                if (rightEl) {
+                    unloadPageImage(rightEl);
+                    loadPageImage(rightEl);
+                    rightEl.classList.add('translated');
+                }
+                loadTranslatedState();
+            },
+            onError(message) {
                 els.progressBar.classList.remove('active');
-                els.progressStatusText.textContent = '';
-                els.progressStatusText.classList.remove('done', 'error');
-            }, 2000);
-
-            const rightEl = els.rightCol.querySelector(`.page-container[data-page="${currentPage}"]`);
-            if (rightEl) {
-                unloadPageImage(rightEl);
-                loadPageImage(rightEl);
-                rightEl.classList.add('translated');
-            }
-            loadTranslatedState();
-        },
-        onError(message) {
-            els.progressBar.classList.remove('active');
-            els.progressStatusText.textContent = message;
-            els.progressStatusText.classList.add('error');
-            els.progressStatusText.classList.remove('done');
-            statusTimer = setTimeout(() => {
-                els.progressStatusText.textContent = '';
-                els.progressStatusText.classList.remove('error', 'done');
-            }, 3000);
-        },
-    });
-
-    isTranslating = false;
-    els.translateBtn.disabled = false;
-    els.translateBtn.textContent = 'Translate';
+                els.progressStatusText.textContent = message;
+                els.progressStatusText.classList.add('error');
+                els.progressStatusText.classList.remove('done');
+                statusTimer = setTimeout(() => {
+                    els.progressStatusText.textContent = '';
+                    els.progressStatusText.classList.remove('error', 'done');
+                }, 3000);
+            },
+        });
+    } finally {
+        isTranslating = false;
+        els.translateBtn.disabled = false;
+        els.translateBtn.textContent = 'Translate';
+    }
 }
 
 init();
