@@ -1,0 +1,18 @@
+{
+  "change": "modularize-frontend",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "c7d738938e41ccc4f9f4aa2876fae12242243406fd1fce6820ed76f9ed8fca42",
+  "files": [
+    { "path": "openspec/changes/modularize-frontend/proposal.md", "sha256": "124fe4be94974d373fef0679e4595c3ae35bf5cd46f175ae128ac24f7f766433" },
+    { "path": "openspec/changes/modularize-frontend/design.md", "sha256": "9a62622d3708bf03d0cfb2c9006e7438cd95dcb04be60ce7edde85cbaacd2ff1" },
+    { "path": "openspec/changes/modularize-frontend/tasks.md", "sha256": "4b7ec1693ac9afdf2573764e4275737f6c3d17195c52c7fbc36973b3c5262673" },
+    { "path": "openspec/changes/modularize-frontend/specs/code-quality-foundations/spec.md", "sha256": "8896034a1c5aa23b72137024bc43507437e6095667056604459c78404f33d0d2" },
+    { "path": "openspec/changes/modularize-frontend/specs/dual-column-reading/spec.md", "sha256": "647972124c51ea96473867dc965f064bf93f15f59e662e07b8f8da7def525d7f" },
+    { "path": "openspec/changes/modularize-frontend/specs/frontend-modular-architecture/spec.md", "sha256": "608969dfe9c67813188fa89df172d9b1e6f1842b511e0abe63b6acb101bc5fa5" },
+    { "path": "openspec/changes/modularize-frontend/specs/lazy-loading/spec.md", "sha256": "798e0164e324a1c66f82649a8bd9ac08679aab83b9c770e161df279e5a5e523f" },
+    { "path": "openspec/changes/modularize-frontend/specs/page-translation/spec.md", "sha256": "40eab446970a952647da34cbbe1c67eadd20dd0a077f4e7717284d2c40a01d28" }
+  ]
+}
