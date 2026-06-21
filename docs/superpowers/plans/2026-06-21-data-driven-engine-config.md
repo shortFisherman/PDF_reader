@@ -6,43 +6,35 @@ base-ref: 4952acf8150e5bf8d28623e119015067d9601e9d
 
 # Data-Driven Engine Configuration 实现计划
 
-> **对于 agentic workers：** 必须子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 按任务逐一实现。步骤使用 checkbox（`- [ ]`）语法跟踪。
-
-**目标：** 将 `config.py` 中分散在 8 个子字典（79 条字段映射）和 1 个子字典（10 条 provider 映射）的翻译引擎配置，重构成声明式 `EngineSpec` 注册表，每个引擎一行声明。
-
-**架构：** 在 `config.py` 定义 `EngineSpec` frozen dataclass，包含 `provider`、`settings_cls`、`field_map`、`required_fields`。从现有 `PROVIDER_MAP` + `FIELD_MAP` 机械推导出 10 引擎的 `ENGINE_REGISTRY` 和派生 `PROVIDER_INDEX`。`services.py` 的 `resolve_engine` 和 `build_engine_kwargs` 改造为接收 `EngineSpec` 参数，内部使用 `CONFIG_ATTR_MAP` 映射 unified_name → config 模块属性，运行时校验 `settings_cls.model_fields`。
-
-**技术栈：** Python 3.12+, dataclasses, pdf2zh-next, pytest, ruff
+> **对于 agentic workers�?* 必须子技能：使用 superpowers:subagent-driven-development（推荐）�?superpowers:executing-plans 按任务逐一实现。步骤使�?checkbox（`- [x]`）语法跟踪�?
+**目标�?* �?`config.py` 中分散在 8 个子字典�?9 条字段映射）�?1 个子字典�?0 �?provider 映射）的翻译引擎配置，重构成声明�?`EngineSpec` 注册表，每个引擎一行声明�?
+**架构�?* �?`config.py` 定义 `EngineSpec` frozen dataclass，包�?`provider`、`settings_cls`、`field_map`、`required_fields`。从现有 `PROVIDER_MAP` + `FIELD_MAP` 机械推导�?10 引擎�?`ENGINE_REGISTRY` 和派�?`PROVIDER_INDEX`。`services.py` �?`resolve_engine` �?`build_engine_kwargs` 改造为接收 `EngineSpec` 参数，内部使�?`CONFIG_ATTR_MAP` 映射 unified_name �?config 模块属性，运行时校�?`settings_cls.model_fields`�?
+**技术栈�?* Python 3.12+, dataclasses, pdf2zh-next, pytest, ruff
 
 ## 全局约束
 
 - `config.toml` 字段名和结构不变
-- 运行时引擎选择行为不变（未知 provider 回退到 `OpenAICompatibleSettings`）
-- `api_key` 和 `model` 为必填字段，缺失抛出 `RuntimeError`
+- 运行时引擎选择行为不变（未�?provider 回退�?`OpenAICompatibleSettings`�?- `api_key` �?`model` 为必填字段，缺失抛出 `RuntimeError`
 - `base_url` 为静默可选字段，缺失时不警告
 - 其它可选字段（thinking_mode, reasoning_effort, enable_json_mode, temperature, timeout）配置了值但引擎不支持时 `logger.warning`
-- 引擎 Settings 类字段变更（pdf2zh-next 版本升级）时不注册时报错，而是运行时跳过+警告
-- `FIELD_MAP` 和 `PROVIDER_MAP` 仅被 `services.py` 引用，一起删除
-
+- 引擎 Settings 类字段变更（pdf2zh-next 版本升级）时不注册时报错，而是运行时跳�?警告
+- `FIELD_MAP` �?`PROVIDER_MAP` 仅被 `services.py` 引用，一起删�?
 ---
 
-### 任务 1：等价回归基线
-
-**文件：**
+### 任务 1：等价回归基�?
+**文件�?*
 - 创建：`tests/test_engine_registry.py`
-- 读取：`config.py:40-113`（现有 PROVIDER_MAP + FIELD_MAP）
-- 读取：`services.py:32-69`（现有 resolve_engine + build_engine_kwargs）
-
-**接口：**
+- 读取：`config.py:40-113`（现�?PROVIDER_MAP + FIELD_MAP�?- 读取：`services.py:32-69`（现�?resolve_engine + build_engine_kwargs�?
+**接口�?*
 - 消费：`config.PROVIDER_MAP`（现有），`config.FIELD_MAP`（现有）
 - 消费：`services.resolve_engine`（现有），`services.build_engine_kwargs`（现有）
-- 产出：基线测试，后续任务 2、3 的验证门
+- 产出：基线测试，后续任务 2�? 的验证门
 
-- [ ] **步骤 1：编写等价回归测试文件**
+- [x] **步骤 1：编写等价回归测试文�?*
 
 ```python
 # tests/test_engine_registry.py
-"""等价回归基线：对所有 10 引擎，新旧路径产出一致"""
+"""等价回归基线：对所�?10 引擎，新旧路径产出一�?""
 import config
 from services import resolve_engine, build_engine_kwargs
 
@@ -66,7 +58,7 @@ def test_all_providers_resolve_to_correct_class():
         cls = resolve_engine(provider)
         expected = config.PROVIDER_MAP[provider]
         assert cls is expected, (
-            f"resolve_engine('{provider}') → {cls.__name__}, "
+            f"resolve_engine('{provider}') �?{cls.__name__}, "
             f"expected {expected.__name__}"
         )
 
@@ -105,15 +97,15 @@ def test_all_engines_build_kwargs_structure(monkeypatch):
         )
 ```
 
-- [ ] **步骤 2：运行测试验证在现状代码上通过**
+- [x] **步骤 2：运行测试验证在现状代码上通过**
 
 ```powershell
 python -m pytest tests/test_engine_registry.py -v
 ```
 
-预期：3 个测试全部 PASS（在现有 PROVIDER_MAP + FIELD_MAP + resolve_engine + build_engine_kwargs 上验证基线）
+预期�? 个测试全�?PASS（在现有 PROVIDER_MAP + FIELD_MAP + resolve_engine + build_engine_kwargs 上验证基线）
 
-- [ ] **步骤 3：提交基线测试**
+- [x] **步骤 3：提交基线测�?*
 
 ```bash
 git add tests/test_engine_registry.py
@@ -122,22 +114,19 @@ git commit -m "test: add equivalence regression baseline for engine registry"
 
 ---
 
-### 任务 2：实现 EngineSpec 注册表
+### 任务 2：实�?EngineSpec 注册�?
+**文件�?*
+- 修改：`config.py`（在 `PROVIDER_MAP` 之后新增 EngineSpec + ENGINE_REGISTRY + PROVIDER_INDEX�?- 不删除：`PROVIDER_MAP` �?`FIELD_MAP`（任�?3 再删除）
 
-**文件：**
-- 修改：`config.py`（在 `PROVIDER_MAP` 之后新增 EngineSpec + ENGINE_REGISTRY + PROVIDER_INDEX）
-- 不删除：`PROVIDER_MAP` 和 `FIELD_MAP`（任务 3 再删除）
-
-**接口：**
+**接口�?*
 - 消费：`config.PROVIDER_MAP`（现有，作为推导依据），`config.FIELD_MAP`（现有）
 - 产出：`config.EngineSpec`（dataclass），`config.ENGINE_REGISTRY: list[EngineSpec]`，`config.PROVIDER_INDEX: dict[str, EngineSpec]`
 
-- [ ] **步骤 1：在 `config.py` 定义 `EngineSpec` dataclass 和注册表**
+- [x] **步骤 1：在 `config.py` 定义 `EngineSpec` dataclass 和注册表**
 
-在 `config.py` 的 `PROVIDER_MAP` 定义之后（约第 51 行后）插入以下代码。注意：**不删除** PROVIDER_MAP 和 FIELD_MAP。
-
+�?`config.py` �?`PROVIDER_MAP` 定义之后（约�?51 行后）插入以下代码。注意：**不删�?* PROVIDER_MAP �?FIELD_MAP�?
 ```python
-# config.py —— 在 PROVIDER_MAP 定义之后、FIELD_MAP 定义之前插入
+# config.py —�?�?PROVIDER_MAP 定义之后、FIELD_MAP 定义之前插入
 
 from dataclasses import dataclass
 
@@ -151,7 +140,7 @@ class EngineSpec:
 
 
 def _derive_field_map(engine_class_name: str) -> dict[str, str]:
-    """从现有 FIELD_MAP 机械推导单个引擎的 field_map"""
+    """从现�?FIELD_MAP 机械推导单个引擎�?field_map"""
     result: dict[str, str] = {}
     for unified_name, class_mapping in FIELD_MAP.items():
         if engine_class_name in class_mapping:
@@ -228,23 +217,22 @@ PROVIDER_INDEX: dict[str, EngineSpec] = {
 }
 ```
 
-- [ ] **步骤 2：运行导入测试确认注册表无语法错误**
+- [x] **步骤 2：运行导入测试确认注册表无语法错�?*
 
 ```powershell
 python -c "import config; print(len(config.ENGINE_REGISTRY), 'engines registered'); print(dict(config.PROVIDER_INDEX))"
 ```
 
-预期：输出 `10 engines registered` 和 provider 映射字典
+预期：输�?`10 engines registered` �?provider 映射字典
 
-- [ ] **步骤 3：运行等价回归测试确认旧代码不受影响**
+- [x] **步骤 3：运行等价回归测试确认旧代码不受影响**
 
 ```powershell
 python -m pytest tests/test_engine_registry.py -v
 ```
 
-预期：3 个测试全部 PASS（旧路径未受干扰）
-
-- [ ] **步骤 4：提交注册表实现**
+预期�? 个测试全�?PASS（旧路径未受干扰�?
+- [x] **步骤 4：提交注册表实现**
 
 ```bash
 git add config.py
@@ -253,25 +241,19 @@ git commit -m "feat: add EngineSpec dataclass and ENGINE_REGISTRY"
 
 ---
 
-### 任务 3：重构 services 使用 EngineSpec
+### 任务 3：重�?services 使用 EngineSpec
 
-**文件：**
-- 修改：`services.py:32-110`（resolve_engine, build_engine_kwargs, build_settings）
-- 修改：`config.py`（删除 `PROVIDER_MAP` 和 `FIELD_MAP`）
-- 修改：`tests/test_engine_registry.py`（新增新路径等价性测试）
+**文件�?*
+- 修改：`services.py:32-110`（resolve_engine, build_engine_kwargs, build_settings�?- 修改：`config.py`（删�?`PROVIDER_MAP` �?`FIELD_MAP`�?- 修改：`tests/test_engine_registry.py`（新增新路径等价性测试）
 - 不修改：`tests/test_services.py`（所有现有测试必须无改动通过，提供回归防护）
 
-**接口：**
-- 消费：`config.EngineSpec`（任务 2 产出），`config.PROVIDER_INDEX`
-- 消费：`config.MODEL_PROVIDER`, `config.MODEL_API_KEY`, `config.MODEL`, `config.MODEL_BASE_URL`, 等
-- 产出：`resolve_engine(provider: str) -> EngineSpec`（返回类型从 `type` 变为 `EngineSpec`）
-- 产出：`build_engine_kwargs(spec: EngineSpec) -> dict`（参数从 `engine_cls` 变为 `spec: EngineSpec`）
-- 产出：`build_settings(...)` 内部调用链更新为使用 EngineSpec
+**接口�?*
+- 消费：`config.EngineSpec`（任�?2 产出），`config.PROVIDER_INDEX`
+- 消费：`config.MODEL_PROVIDER`, `config.MODEL_API_KEY`, `config.MODEL`, `config.MODEL_BASE_URL`, �?- 产出：`resolve_engine(provider: str) -> EngineSpec`（返回类型从 `type` 变为 `EngineSpec`�?- 产出：`build_engine_kwargs(spec: EngineSpec) -> dict`（参数从 `engine_cls` 变为 `spec: EngineSpec`�?- 产出：`build_settings(...)` 内部调用链更新为使用 EngineSpec
 
-- [ ] **步骤 1：在 `tests/test_engine_registry.py` 新增新路径等价性测试**
+- [x] **步骤 1：在 `tests/test_engine_registry.py` 新增新路径等价性测�?*
 
-在文件末尾追加以下测试。这些测试比较新旧 `build_engine_kwargs` 路径对 10 引擎的产出是否完全一致，作为迁移正确性的门。
-
+在文件末尾追加以下测试。这些测试比较新�?`build_engine_kwargs` 路径�?10 引擎的产出是否完全一致，作为迁移正确性的门�?
 ```python
 # tests/test_engine_registry.py 追加内容
 
@@ -285,7 +267,7 @@ def test_engine_registry_covers_all_providers():
 
 
 def _old_build_engine_kwargs(engine_cls):
-    """快照当前 build_engine_kwargs 的实现作为对照"""
+    """快照当前 build_engine_kwargs 的实现作为对�?""
     engine_fields = engine_cls.model_fields
     engine_name = engine_cls.__name__
     kwargs = {}
@@ -304,14 +286,14 @@ def _old_build_engine_kwargs(engine_cls):
         if value is not None:
             kwargs[engine_field] = value
         elif unified_name in ("api_key", "model"):
-            raise RuntimeError(f"model.{unified_name} 未配置")
+            raise RuntimeError(f"model.{unified_name} 未配�?)
         elif unified_name == "base_url":
             pass
     return kwargs
 
 
 def _new_build_engine_kwargs(spec):
-    """新路径 build_engine_kwargs，与 services.py 重构后保持一致"""
+    """新路�?build_engine_kwargs，与 services.py 重构后保持一�?""
     CONFIG_ATTR_MAP = {
         "model": "MODEL",
         "api_key": "MODEL_API_KEY",
@@ -330,18 +312,18 @@ def _new_build_engine_kwargs(spec):
         if engine_field not in engine_fields:
             import logging
             logger = logging.getLogger("pdf_reader")
-            logger.warning("引擎 %s 不支持字段 %s，已跳过", spec.provider, engine_field)
+            logger.warning("引擎 %s 不支持字�?%s，已跳过", spec.provider, engine_field)
             continue
         if value is not None:
             kwargs[engine_field] = value
         elif unified_name in spec.required_fields:
-            raise RuntimeError(f"model.{unified_name} 未配置")
+            raise RuntimeError(f"model.{unified_name} 未配�?)
         elif unified_name == "base_url":
             pass
         else:
             import logging
             logger = logging.getLogger("pdf_reader")
-            logger.warning("当前引擎不支持 %s，已忽略", unified_name)
+            logger.warning("当前引擎不支�?%s，已忽略", unified_name)
     return kwargs
 
 
@@ -363,19 +345,18 @@ def test_new_path_matches_old_path(monkeypatch):
         )
 ```
 
-- [ ] **步骤 2：运行新旧路径对比测试，确认新路径实现仍有等价表现**
+- [x] **步骤 2：运行新旧路径对比测试，确认新路径实现仍有等价表�?*
 
 ```powershell
 python -m pytest tests/test_engine_registry.py::test_new_path_matches_old_path -v
 python -m pytest tests/test_engine_registry.py::test_engine_registry_covers_all_providers -v
 ```
 
-预期：`test_new_path_matches_old_path` FAIL（还未实现 `_new_build_engine_kwargs` 对应的真实代码——目的是确认测试存在且可执行），`test_engine_registry_covers_all_providers` PASS
+预期：`test_new_path_matches_old_path` FAIL（还未实�?`_new_build_engine_kwargs` 对应的真实代码——目的是确认测试存在且可执行），`test_engine_registry_covers_all_providers` PASS
 
-- [ ] **步骤 3：重写 `services.py` 的 `resolve_engine`**
+- [x] **步骤 3：重�?`services.py` �?`resolve_engine`**
 
-将 `services.py` 第 32-38 行替换为：
-
+�?`services.py` �?32-38 行替换为�?
 ```python
 def resolve_engine(provider: str) -> config.EngineSpec:  # noqa: ANN201
     spec = config.PROVIDER_INDEX.get(provider)
@@ -392,10 +373,9 @@ def resolve_engine(provider: str) -> config.EngineSpec:  # noqa: ANN201
     return spec
 ```
 
-- [ ] **步骤 4：重写 `services.py` 的 `build_engine_kwargs`**
+- [x] **步骤 4：重�?`services.py` �?`build_engine_kwargs`**
 
-将 `services.py` 第 41-69 行替换为：
-
+�?`services.py` �?41-69 行替换为�?
 ```python
 CONFIG_ATTR_MAP: dict[str, str] = {
     "model": "MODEL",
@@ -418,35 +398,32 @@ def build_engine_kwargs(spec: config.EngineSpec) -> dict:  # noqa: ANN001, ANN20
         value = getattr(config, config_attr, None)
 
         if engine_field not in engine_fields:
-            logger.warning("引擎 %s 不支持字段 %s，已跳过", spec.provider, engine_field)
+            logger.warning("引擎 %s 不支持字�?%s，已跳过", spec.provider, engine_field)
             continue
 
         if value is not None:
             kwargs[engine_field] = value
         elif unified_name in spec.required_fields:
-            raise RuntimeError(f"model.{unified_name} 未配置")
+            raise RuntimeError(f"model.{unified_name} 未配�?)
         elif unified_name == "base_url":
             pass
         else:
-            logger.warning("当前引擎不支持 %s，已忽略", unified_name)
+            logger.warning("当前引擎不支�?%s，已忽略", unified_name)
 
     return kwargs
 ```
 
-- [ ] **步骤 5：更新 `services.py` 的 `build_settings` 调用链**
+- [x] **步骤 5：更�?`services.py` �?`build_settings` 调用�?*
 
-将 `services.py` 第 79-80 行和第 109 行更新为：
-
+�?`services.py` �?79-80 行和�?109 行更新为�?
 ```python
-# 第 79-80 行替换为：
-    spec = resolve_engine(config.MODEL_PROVIDER)
+# �?79-80 行替换为�?    spec = resolve_engine(config.MODEL_PROVIDER)
     engine_kwargs = build_engine_kwargs(spec)
 
-# 第 109 行替换为：
-        translate_engine_settings=spec.settings_cls(**engine_kwargs),
+# �?109 行替换为�?        translate_engine_settings=spec.settings_cls(**engine_kwargs),
 ```
 
-最终 `build_settings` 函数的关键部分如下（仅变更这 3 行，其余不变）：
+最�?`build_settings` 函数的关键部分如下（仅变更这 3 行，其余不变）：
 
 ```python
 def build_settings(
@@ -479,21 +456,18 @@ def build_settings(
     )
 ```
 
-- [ ] **步骤 6：运行等价回归测试确认新旧路径一致**
+- [x] **步骤 6：运行等价回归测试确认新旧路径一�?*
 
 ```powershell
 python -m pytest tests/test_engine_registry.py -v
 ```
 
-预期：全部 PASS（包括 `test_new_path_matches_old_path`）
+预期：全�?PASS（包�?`test_new_path_matches_old_path`�?
+- [x] **步骤 7：删�?`config.py` �?`PROVIDER_MAP` �?`FIELD_MAP`**
 
-- [ ] **步骤 7：删除 `config.py` 的 `PROVIDER_MAP` 和 `FIELD_MAP`**
-
-删除 `config.py` 第 40-113 行（即 `PROVIDER_MAP` 和 `FIELD_MAP` 定义），同时删除 `_derive_field_map` 辅助函数（不再需要）。
-
-`_derive_field_map` 函数在 ENGINE_REGISTRY 推导完成后已无价值（注册表现在直接包含硬编码的 field_map）。将其替换为每个引擎的显式 field_map 字面量——机械推导仅用于注册表编写的正确性保障，运行时不需要 `_derive_field_map`。
-
-因此，所有 10 个 `EngineSpec` 的 `field_map` 参数从 `_derive_field_map("ClassName")` 替换为显式字典。例如：
+删除 `config.py` �?40-113 行（�?`PROVIDER_MAP` �?`FIELD_MAP` 定义），同时删除 `_derive_field_map` 辅助函数（不再需要）�?
+`_derive_field_map` 函数�?ENGINE_REGISTRY 推导完成后已无价值（注册表现在直接包含硬编码�?field_map）。将其替换为每个引擎的显�?field_map 字面量——机械推导仅用于注册表编写的正确性保障，运行时不需�?`_derive_field_map`�?
+因此，所�?10 �?`EngineSpec` �?`field_map` 参数�?`_derive_field_map("ClassName")` 替换为显式字典。例如：
 
 ```python
 ENGINE_REGISTRY: list[EngineSpec] = [
@@ -613,27 +587,22 @@ ENGINE_REGISTRY: list[EngineSpec] = [
 ]
 ```
 
-同时从 `config.py` 中删除 `from dataclasses import dataclass`（如果不需保留的），以及 `_derive_field_map` 函数。
+同时�?`config.py` 中删�?`from dataclasses import dataclass`（如果不需保留的），以�?`_derive_field_map` 函数�?
+- [x] **步骤 8：更�?`tests/test_services.py` 中引�?`PROVIDER_MAP`/`FIELD_MAP` 的测�?*
 
-- [ ] **步骤 8：更新 `tests/test_services.py` 中引用 `PROVIDER_MAP`/`FIELD_MAP` 的测试**
-
-`test_config_provider_map_has_deepseek` 和 `test_config_field_map_api_key_exists` 直接引用已删除的 `config.PROVIDER_MAP` / `config.FIELD_MAP`，需要适配：
-
+`test_config_provider_map_has_deepseek` �?`test_config_field_map_api_key_exists` 直接引用已删除的 `config.PROVIDER_MAP` / `config.FIELD_MAP`，需要适配�?
 ```python
-# 原 test_config_provider_map_has_deepseek 改为：
-def test_config_provider_index_has_deepseek():
+# �?test_config_provider_map_has_deepseek 改为�?def test_config_provider_index_has_deepseek():
     assert "deepseek" in config.PROVIDER_INDEX
     assert config.PROVIDER_INDEX["deepseek"].settings_cls.__name__ == "DeepSeekSettings"
 
-# 原 test_config_field_map_api_key_exists 改为：
-def test_config_deepseek_field_map_api_key():
+# �?test_config_field_map_api_key_exists 改为�?def test_config_deepseek_field_map_api_key():
     spec = config.PROVIDER_INDEX["deepseek"]
     assert "api_key" in spec.field_map
     assert spec.field_map["api_key"] == "deepseek_api_key"
 ```
 
-另外，`test_resolve_engine_deepseek` 的断言从 `resolve_engine("deepseek") is DeepSeekSettings` 改为：
-
+另外，`test_resolve_engine_deepseek` 的断言�?`resolve_engine("deepseek") is DeepSeekSettings` 改为�?
 ```python
 def test_resolve_engine_deepseek(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_PROVIDER", "deepseek")
@@ -644,8 +613,7 @@ def test_resolve_engine_deepseek(mock_config, monkeypatch):
     assert spec.settings_cls is DeepSeekSettings
 ```
 
-`test_resolve_engine_unknown_fallback` 的断言从 `resolve_engine("nonexistent") is OpenAICompatibleSettings` 改为：
-
+`test_resolve_engine_unknown_fallback` 的断言�?`resolve_engine("nonexistent") is OpenAICompatibleSettings` 改为�?
 ```python
 def test_resolve_engine_unknown_fallback(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_PROVIDER", "nonexistent")
@@ -656,8 +624,7 @@ def test_resolve_engine_unknown_fallback(mock_config, monkeypatch):
     assert spec.settings_cls is OpenAICompatibleSettings
 ```
 
-`test_build_engine_kwargs_deepseek` 的第一个参数从 `DeepSeekSettings` 类改为 `EngineSpec`：
-
+`test_build_engine_kwargs_deepseek` 的第一个参数从 `DeepSeekSettings` 类改�?`EngineSpec`�?
 ```python
 def test_build_engine_kwargs_deepseek(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test")
@@ -670,8 +637,7 @@ def test_build_engine_kwargs_deepseek(mock_config, monkeypatch):
     assert kwargs["deepseek_model"] == "deepseek-chat"
 ```
 
-`test_build_engine_kwargs_zhipu_ignores_thinking_mode` 同样改为使用 `EngineSpec`：
-
+`test_build_engine_kwargs_zhipu_ignores_thinking_mode` 同样改为使用 `EngineSpec`�?
 ```python
 def test_build_engine_kwargs_zhipu_ignores_thinking_mode(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_THINKING_MODE", "enabled")
@@ -681,27 +647,26 @@ def test_build_engine_kwargs_zhipu_ignores_thinking_mode(mock_config, monkeypatc
     assert "zhipu_thinking_mode" not in kwargs
 ```
 
-`test_build_engine_kwargs_missing_api_key_raises` 同样：
-
+`test_build_engine_kwargs_missing_api_key_raises` 同样�?
 ```python
 def test_build_engine_kwargs_missing_api_key_raises(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_API_KEY", None)
     monkeypatch.setattr(config, "MODEL", "some-model")
     from services import build_engine_kwargs
     spec = config.PROVIDER_INDEX["deepseek"]
-    with pytest.raises(RuntimeError, match="未配置"):
+    with pytest.raises(RuntimeError, match="未配�?):
         build_engine_kwargs(spec)
 ```
 
-- [ ] **步骤 9：运行全部测试和等价回归**
+- [x] **步骤 9：运行全部测试和等价回归**
 
 ```powershell
 python -m pytest tests/test_engine_registry.py tests/test_services.py -v
 ```
 
-预期：全部 PASS
+预期：全�?PASS
 
-- [ ] **步骤 10：提交重构**
+- [x] **步骤 10：提交重�?*
 
 ```bash
 git add config.py services.py tests/test_services.py tests/test_engine_registry.py
@@ -710,20 +675,16 @@ git commit -m "refactor: migrate to data-driven EngineSpec registry"
 
 ---
 
-### 任务 4：扩展性验证
-
-**文件：**
+### 任务 4：扩展性验�?
+**文件�?*
 - 修改：`tests/test_engine_registry.py`（追加假引擎扩展性测试）
 
-**接口：**
-- 消费：`config.EngineSpec`（任务 2 产出）
-- 消费：`services.build_engine_kwargs(spec: EngineSpec)`（任务 3 产出）
-- 消费：`config.MODEL_API_KEY`, `config.MODEL`
+**接口�?*
+- 消费：`config.EngineSpec`（任�?2 产出�?- 消费：`services.build_engine_kwargs(spec: EngineSpec)`（任�?3 产出�?- 消费：`config.MODEL_API_KEY`, `config.MODEL`
 
-- [ ] **步骤 1：编写扩展性测试**
+- [x] **步骤 1：编写扩展性测�?*
 
-在 `tests/test_engine_registry.py` 末尾追加：
-
+�?`tests/test_engine_registry.py` 末尾追加�?
 ```python
 # tests/test_engine_registry.py 追加内容
 
@@ -792,18 +753,18 @@ def test_fake_engine_optional_field_warns(monkeypatch, caplog):
 
     assert kwargs["minimal_key"] == "sk-minimal"
     assert kwargs["minimal_model"] == "minimal-model"
-    assert any("不支持字段" in record.message for record in caplog.records)
+    assert any("不支持字�? in record.message for record in caplog.records)
 ```
 
-- [ ] **步骤 2：运行扩展性测试**
+- [x] **步骤 2：运行扩展性测�?*
 
 ```powershell
 python -m pytest tests/test_engine_registry.py::test_fake_engine_extensibility tests/test_engine_registry.py::test_fake_engine_optional_field_warns -v
 ```
 
-预期：全部 PASS
+预期：全�?PASS
 
-- [ ] **步骤 3：提交扩展性测试**
+- [x] **步骤 3：提交扩展性测�?*
 
 ```bash
 git add tests/test_engine_registry.py
@@ -814,26 +775,25 @@ git commit -m "test: add extensibility verification for EngineSpec"
 
 ### 任务 5：全量回归与 lint
 
-**文件：**
+**文件�?*
 - 无代码变更（仅运行验证命令）
 
-- [ ] **步骤 1：运行全部测试套件**
+- [x] **步骤 1：运行全部测试套�?*
 
 ```powershell
 python -m pytest tests/ -v
 ```
 
-预期：所有测试 PASS，无 FAIL、无 ERROR
+预期：所有测�?PASS，无 FAIL、无 ERROR
 
-- [ ] **步骤 2：运行 ruff 检查**
+- [x] **步骤 2：运�?ruff 检�?*
 
 ```powershell
 ruff check
 ```
 
-预期：零错误（All checks passed）
-
-- [ ] **步骤 3（可选）：运行 ruff format 检查**
+预期：零错误（All checks passed�?
+- [x] **步骤 3（可选）：运�?ruff format 检�?*
 
 ```powershell
 ruff format --check .
@@ -841,11 +801,11 @@ ruff format --check .
 
 预期：无差异或按项目约定处理
 
-- [ ] **步骤 4：最终确认**
+- [x] **步骤 4：最终确�?*
 
 ```powershell
 git status
 git log --oneline -5
 ```
 
-预期：工作区干净，最近 4 次提交为本次变更的 4 个任务提交
+预期：工作区干净，最�?4 次提交为本次变更�?4 个任务提�?
