@@ -154,3 +154,22 @@ def test_translate_page_out_of_range(app_state, sample_pdf):
         assert resp.status_code == 400
         data = json.loads(resp.data)
         assert data["error"] == "page out of range"
+
+
+def test_get_stages(test_client):
+    resp = test_client.get('/api/stages')
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert len(data) == 5
+    assert data["layout_analysis"] == '\u6b63\u5728\u5206\u6790\u7248\u9762\u2026'
+    assert data["translating"] == '\u6b63\u5728\u7ffb\u8bd1\u2026'
+    assert data["generating_pdf"] == '\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026'
+    assert data["generating_pdf_bilingual"] == '\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026'
+    assert data["finish"] == '\u7ffb\u8bd1\u5b8c\u6210'
+    assert data == {
+        "layout_analysis": '\u6b63\u5728\u5206\u6790\u7248\u9762\u2026',
+        "translating": '\u6b63\u5728\u7ffb\u8bd1\u2026',
+        "generating_pdf": '\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026',
+        "generating_pdf_bilingual": '\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026',
+        "finish": '\u7ffb\u8bd1\u5b8c\u6210',
+    }

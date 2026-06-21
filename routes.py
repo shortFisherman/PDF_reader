@@ -112,6 +112,11 @@ def translated_pages():
     return jsonify({"pages": sorted(list(state.translated_pages))})
 
 
+@bp.route("/api/stages")
+def get_stages():
+    return jsonify(sse_stream.STAGE_LABELS)
+
+
 @bp.app_errorhandler(404)
 def not_found(e):
     return jsonify({"error": "not found"}), 404
