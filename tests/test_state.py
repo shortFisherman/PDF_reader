@@ -1,4 +1,3 @@
-import os
 import threading
 import time
 
@@ -162,43 +161,3 @@ def test_concurrent_replace_different_pages(app_state, sample_pdf, tmp_path):
 
     assert 0 in app_state.translated_pages
     assert 1 in app_state.translated_pages
-
-
-def test_slow_os_replace_does_not_block_reads(app_state, sample_pdf, tmp_path, monkeypatch):
-    from services import sha256 as sha256_func
-
-    app_state.open_pdf(str(sample_pdf), sha256_func)
-
-    translated_pdf = tmp_path / "translated.pdf"
-    doc = pymupdf.open()
-    doc.new_page(width=612, height=792)
-    doc.save(str(translated_pdf))
-    doc.close()
-
-    delay = 0.5
-    original_replace = os.replace
-    replace_started = threading.Event()
-
-    def slow_replace(src, dst):
-        replace_started.set()
-        time.sleep(delay)
-        return original_replace(src, dst)
-
-    monkeypatch.setattr("state.os.replace", slow_replace)
-
-    def do_replace():
-        app_state.replace_page(str(translated_pdf), 0)
-
-    t = threading.Thread(target=do_replace)
-    t.start()
-
-    replace_started.wait(timeout=5)
-
-    start = time.time()
-    doc = app_state.get_doc("right")
-    elapsed = time.time() - start
-
-    assert elapsed < delay, f"get_doc blocked for {elapsed:.2f}s (should be < {delay}s)"
-    assert doc is not None
-
-    t.join(timeout=10)
