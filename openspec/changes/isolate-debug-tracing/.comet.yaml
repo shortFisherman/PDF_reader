@@ -8,6 +8,8 @@ tdd_mode: tdd
 review_mode: off
 isolation: branch
 verify_mode: null
+build_command: ruff check
+verify_command: pytest tests/ -v -q
 auto_transition: true
 base_ref: cb737e1477364beeaa6fa1945688e1676ef7f656
 design_doc: docs/superpowers/specs/2026-06-21-isolate-debug-tracing-design.md
