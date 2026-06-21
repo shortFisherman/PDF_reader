@@ -26,13 +26,13 @@
 
 ## 6. 抽取 sse-client 模块
 
-- [ ] 6.1 创建 `static/modules/sse-client.js`，实现 `readSSEStream(response, onEvent)` 迁移 SSE 读取与 `data: {json}\n\n` 解析
+- [x] 6.1 创建 `static/modules/sse-client.js`，实现 `readSSEStream(response, onEvent)` 迁移 SSE 读取与 `data: {json}\n\n` 解析
 - [ ] 6.2 可选：编写 `tests/test_sse_client.py` 或 JS 纯函数测试验证事件解析
 
 ## 7. 抽取 stages 模块与 translator 模块
 
-- [ ] 7.1 创建 `static/modules/stages.js`：启动时 fetch `/api/stages` 并缓存，fetch 失败回退内置最小副本
-- [ ] 7.2 创建 `static/modules/translator.js`：迁移 `translateCurrentPage` 编排，用 `sse-client` 与 `stages` 模块
+- [x] 7.1 创建 `static/modules/stages.js`：启动时 fetch `/api/stages` 并缓存，fetch 失败回退内置最小副本
+- [x] 7.2 创建 `static/modules/translator.js`：迁移 `translateCurrentPage` 编排，用 `sse-client` 与 `stages` 模块
 - [ ] 7.3 手动验证清单：翻译进度各 stage 标签、段落级进度、完成/错误显示一致
 
 ## 8. 重构 app.js 入口与 index.html
