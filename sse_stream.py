@@ -64,64 +64,65 @@ def format_sse_event(evt: dict) -> str | None:
 
 
 def generate(ctx: GenerateContext) -> Iterator[str]:
-    handler = None
     try:
-        handler = debug_trace.setup_file_handler(ctx.state.glossary_cache_path, ctx.page)
-        debug_trace.log_step("submit translate page %d", ctx.page)
+        with debug_trace.debug_session(ctx.state.glossary_cache_path, ctx.page):
+            debug_trace.log_step("submit translate page %d", ctx.page)
 
-        translate_start = time.time()
-        translate_result = None
-        token_usage_finish = None
+            translate_start = time.time()
+            translate_result = None
+            token_usage_finish = None
 
-        for evt in run_translation(ctx.settings, str(ctx.single_page_pdf)):
-            if not isinstance(evt, dict):
-                yield ""
-                continue
-            if evt.get("type") == "finish":
-                translate_result = evt.get("translate_result")
-                token_usage_finish = evt.get("token_usage", {})
+            for evt in run_translation(ctx.settings, str(ctx.single_page_pdf)):
+                if not isinstance(evt, dict):
+                    yield ""
+                    continue
+                if evt.get("type") == "finish":
+                    translate_result = evt.get("translate_result")
+                    token_usage_finish = evt.get("token_usage", {})
 
-            sse = format_sse_event(evt)
-            if sse is not None:
-                yield sse
+                sse = format_sse_event(evt)
+                if sse is not None:
+                    yield sse
 
-            if evt.get("type") == "error":
+                if evt.get("type") == "error":
+                    return
+
+            if translate_result is None:
+                yield f"data: {json.dumps({'type': 'error', 'error': 'no translation result'})}\n\n"
                 return
 
-        if translate_result is None:
-            yield f"data: {json.dumps({'type': 'error', 'error': 'no translation result'})}\n\n"
-            return
+            debug_trace.log_step("translate page %d done (%.2fs)", ctx.page, time.time() - translate_start)
+            if token_usage_finish:
+                debug_trace.log_token_usage(token_usage_finish)
 
-        debug_trace.log_step("translate page %d done (%.2fs)", ctx.page, time.time() - translate_start)
-        if token_usage_finish:
-            debug_trace.log_token_usage(token_usage_finish)
+            translated_pdf = translate_result.mono_pdf_path
+            if translated_pdf is None and translate_result.dual_pdf_path is not None:
+                translated_pdf = translate_result.dual_pdf_path
 
-        translated_pdf = translate_result.mono_pdf_path
-        if translated_pdf is None and translate_result.dual_pdf_path is not None:
-            translated_pdf = translate_result.dual_pdf_path
+            if translated_pdf is not None:
+                ctx.state.replace_page(str(translated_pdf), ctx.page)
+            else:
+                yield f"data: {json.dumps({'type': 'error', 'error': 'no output PDF'})}\n\n"
+                return
 
-        if translated_pdf is not None:
-            ctx.state.replace_page(str(translated_pdf), ctx.page)
-        else:
-            yield f"data: {json.dumps({'type': 'error', 'error': 'no output PDF'})}\n\n"
-            return
+            cumulative_glossary_file: Path | None = None
+            if ctx.state.glossary_cache_path is not None:
+                cumulative_glossary_file = ctx.state.glossary_cache_path / "cumulative_glossary.csv"
+            merge_start = time.time()
+            merge_after_translate(
+                cumulative_glossary_file,
+                translate_result.auto_extracted_glossary_path,
+            )
+            elapsed = time.time() - merge_start
+            debug_trace.log_glossary_merge(
+                "merge_done", page=ctx.page, elapsed=f"{elapsed:.2f}"
+            )
 
-        cumulative_glossary_file: Path | None = None
-        if ctx.state.glossary_cache_path is not None:
-            cumulative_glossary_file = ctx.state.glossary_cache_path / "cumulative_glossary.csv"
-        debug_trace.log_step("merge glossary for page %d", ctx.page)
-        merge_start = time.time()
-        merge_after_translate(
-            cumulative_glossary_file,
-            translate_result.auto_extracted_glossary_path,
-        )
-        debug_trace.log_step("merge glossary done (%.2fs)", time.time() - merge_start)
-
-        yield "data: " + json.dumps({
-            "type": "progress", "progress": 100,
-            "stage": "finish", "stage_current": 0, "stage_total": 0,
-        }) + "\n\n"
-        yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
+            yield "data: " + json.dumps({
+                "type": "progress", "progress": 100,
+                "stage": "finish", "stage_current": 0, "stage_total": 0,
+            }) + "\n\n"
+            yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
 
     except TranslationError as e:
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
@@ -129,6 +130,5 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
         logging.getLogger("pdf_reader").warning("translate_page generate error", exc_info=True)
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     finally:
-        debug_trace.cleanup_file_handler(handler)
         shutil.rmtree(ctx.tmpdir, ignore_errors=True)
         shutil.rmtree(ctx.output_dir, ignore_errors=True)
