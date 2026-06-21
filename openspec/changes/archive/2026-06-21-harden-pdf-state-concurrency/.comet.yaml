@@ -17,7 +17,7 @@ verification_report: docs/superpowers/reports/2026-06-21-harden-pdf-state-concur
 branch_status: handled
 created_at: 2026-06-20
 verified_at: 2026-06-21
-archived: false
+archived: true
 handoff_context: openspec/changes/harden-pdf-state-concurrency/.comet/handoff/design-context.json
 handoff_hash: b4502fa5041832a416448d3724c083758fb32760cc87df4d50e0a83676dc3ea0
 build_command: "./venv/Scripts/python.exe -m pytest tests/ -q && ./venv/Scripts/python.exe -m ruff check"

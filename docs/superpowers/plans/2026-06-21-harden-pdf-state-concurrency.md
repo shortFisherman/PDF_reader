@@ -2,6 +2,7 @@
 change: harden-pdf-state-concurrency
 design-doc: docs/superpowers/specs/2026-06-21-harden-pdf-state-concurrency-design.md
 base-ref: cb737e1477364beeaa6fa1945688e1676ef7f656
+archived-with: 2026-06-21-harden-pdf-state-concurrency
 ---
 
 # Harden PDF State Concurrency 实现计划
@@ -39,6 +40,7 @@ base-ref: cb737e1477364beeaa6fa1945688e1676ef7f656
 
 无新文件创建。所有变更在现有文件内完成。
 
+archived-with: 2026-06-21-harden-pdf-state-concurrency
 ---
 
 ### Task 1: TDD 安全网 — 编写四个失败特征测试
@@ -268,6 +270,7 @@ git add tests/test_state.py tests/test_routes.py
 git commit -m "test: add failing characterization tests for pdf state concurrency bugs"
 ```
 
+archived-with: 2026-06-21-harden-pdf-state-concurrency
 ---
 
 ### Task 2: 修复 render_page 渲染竞态
@@ -319,6 +322,7 @@ git add state.py
 git commit -m "fix: hold _lock for entire render_page to prevent concurrent close race"
 ```
 
+archived-with: 2026-06-21-harden-pdf-state-concurrency
 ---
 
 ### Task 3: 修复 replace_page 锁内慢 IO 与并发损坏
@@ -411,6 +415,7 @@ git add state.py
 git commit -m "fix: dual-layer lock for replace_page, move os.replace out of main lock"
 ```
 
+archived-with: 2026-06-21-harden-pdf-state-concurrency
 ---
 
 ### Task 4: 修复 translate_page 页码范围校验
@@ -463,6 +468,7 @@ git add routes.py
 git commit -m "fix: validate page range in translate_page, return 400 for out-of-range"
 ```
 
+archived-with: 2026-06-21-harden-pdf-state-concurrency
 ---
 
 ### Task 5: 全量回归与 lint

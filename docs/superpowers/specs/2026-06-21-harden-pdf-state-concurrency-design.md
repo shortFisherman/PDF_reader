@@ -2,6 +2,8 @@
 comet_change: harden-pdf-state-concurrency
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-21-harden-pdf-state-concurrency
+status: final
 ---
 
 # Design: Harden PDF State Concurrency
