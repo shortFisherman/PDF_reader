@@ -223,13 +223,13 @@ git commit -m "feat: add GET /api/stages endpoint returning STAGE_LABELS"
 - 产出：`createPageEl(pageNum, side)` → `HTMLElement`
 - 产出：`calculatePlaceholderHeight(pageWidth, pageHeight)` → `number`（百分比整数）
 
-- [ ] **Step 1：创建 `static/modules/` 目录**
+- [x] **Step 1：创建 `static/modules/` 目录**
 
 ```powershell
 New-Item -ItemType Directory -Path "static\modules" -Force
 ```
 
-- [ ] **Step 2：编写 `dom.js`**
+- [x] **Step 2：编写 `dom.js`**
 
 ```javascript
 let _cache = null;
@@ -316,7 +316,7 @@ git commit -m "feat: extract dom.js module — getElements, createPageEl, calcul
 **接口：**
 - 产出：`setupIntersectionObserver({ load, unload })` → void（创建 IntersectionObserver 并 observe 所有 `.page-container`）
 
-- [ ] **Step 1：编写 `lazy-loader.js`**
+- [x] **Step 1：编写 `lazy-loader.js`**
 
 ```javascript
 const BUFFER = 5;
@@ -341,7 +341,7 @@ export function setupIntersectionObserver({ load, unload }) {
 }
 ```
 
-- [ ] **Step 2：提交**
+- [x] **Step 2：提交**
 
 ```bash
 git add static/modules/lazy-loader.js

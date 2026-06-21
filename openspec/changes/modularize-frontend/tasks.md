@@ -11,12 +11,12 @@
 
 ## 3. 抽取 scroll-sync 模块
 
-- [ ] 3.1 创建 `static/modules/scroll-sync.js`，迁移 `setupScrollSync`/`setupPageDetection`，ES Module export
+- [x] 3.1 创建 `static/modules/scroll-sync.js`，迁移 `setupScrollSync`/`setupPageDetection`，ES Module export
 - [ ] 3.2 手动验证清单：滚动同步、独立滚动、当前页指示器行为一致
 
 ## 4. 抽取 lazy-loader 模块
 
-- [ ] 4.1 创建 `static/modules/lazy-loader.js`，迁移 `setupIntersectionObserver` 与 `loadPageImage`/`unloadPageImage` 的观察逻辑
+- [x] 4.1 创建 `static/modules/lazy-loader.js`，迁移 `setupIntersectionObserver` 与 `loadPageImage`/`unloadPageImage` 的观察逻辑
 - [ ] 4.2 手动验证清单：懒加载缓冲、卸载离屏、1000页性能一致
 
 ## 5. 抽取 dom 模块
