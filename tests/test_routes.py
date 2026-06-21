@@ -136,6 +136,7 @@ def test_translate_page_out_of_range(app_state, sample_pdf):
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
     from flask import Flask
+
     from routes import register_routes
 
     app = Flask(__name__)

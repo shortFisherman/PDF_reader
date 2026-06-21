@@ -1,8 +1,8 @@
 import threading
 import time
+from pathlib import Path
 
 import pymupdf
-from pathlib import Path
 
 from state import AppState
 
@@ -76,7 +76,7 @@ def test_render_page_concurrent_replace_no_crash(app_state, sample_pdf, tmp_path
     render_started = threading.Event()
     render_can_finish = threading.Event()
 
-    def slow_render_func(doc, page_num, dpi):
+    def slow_render_func(doc, page_num, dpi):  # noqa: ANN202, ANN001
         render_started.set()
         render_can_finish.wait(timeout=5)
         page = doc[page_num]
@@ -86,7 +86,7 @@ def test_render_page_concurrent_replace_no_crash(app_state, sample_pdf, tmp_path
     render_result = [None]
     render_error = [None]
 
-    def render_thread():
+    def render_thread():  # noqa: ANN202
         try:
             render_result[0] = app_state.render_page(
                 "right", 0, slow_render_func, 72
@@ -94,7 +94,7 @@ def test_render_page_concurrent_replace_no_crash(app_state, sample_pdf, tmp_path
         except Exception as e:
             render_error[0] = e
 
-    def replace_thread():
+    def replace_thread():  # noqa: ANN202
         render_started.wait(timeout=5)
         app_state.replace_page(str(translated_pdf), 0)
 
@@ -134,7 +134,7 @@ def test_concurrent_replace_different_pages(app_state, sample_pdf, tmp_path):
     barrier = threading.Barrier(2)
     errors = [None, None]
 
-    def replace_page(idx):
+    def replace_page(idx):  # noqa: ANN202, ANN001
         try:
             barrier.wait(timeout=5)
             app_state.replace_page(str(translated_pdfs[idx]), idx)
