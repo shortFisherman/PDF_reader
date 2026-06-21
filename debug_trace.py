@@ -61,6 +61,42 @@ def init_debug(debug_enabled: bool) -> None:
         _apply_monkey_patches()
 
 
+@contextmanager
+def debug_session(glossary_path: Path | None, page: int):
+    if not config.DEBUG or glossary_path is None:
+        yield
+        return
+
+    handler = None
+    try:
+        log_path = glossary_path / "debug_trace.log"
+        if log_path.exists():
+            rotated = glossary_path / (
+                "debug_trace." + time.strftime("%Y%m%d_%H%M%S") + ".log"
+            )
+            shutil.move(str(log_path), str(rotated))
+        file_handler = logging.FileHandler(str(log_path), encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter(
+            "%(asctime)s %(levelname)s:%(name)s:%(message)s"
+        ))
+        trace_logger.addHandler(file_handler)
+        trace_logger.info("=== Debug session start: page %d ===", page)
+        handler = file_handler
+    except Exception:
+        logging.getLogger("pdf_reader").warning(
+            "Failed to create debug_trace.log file handler", exc_info=True
+        )
+    try:
+        yield
+    finally:
+        if handler is not None:
+            try:
+                trace_logger.removeHandler(handler)
+                handler.close()
+            except Exception:
+                pass
+
+
 trace_logger = logging.getLogger("pdf_reader.debug_trace")
 trace_logger.setLevel(logging.INFO)
 if not trace_logger.handlers:

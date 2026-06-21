@@ -212,3 +212,91 @@ def test_config_debug_falls_back_to_server_debug():
     if debug_section is None:
         expected = server_section.get("debug", False)
         assert cfg.DEBUG == expected
+
+
+from pathlib import Path
+
+
+def test_debug_session_creates_and_removes_file_handler(tmp_path):
+    """debug_session creates a log file with rotation, cleans up on exit."""
+    glossary_path = tmp_path / "glossary"
+    glossary_path.mkdir()
+
+    with patch("debug_trace.config") as mock_config:
+        mock_config.DEBUG = True
+
+        with debug_trace.debug_session(glossary_path, page=3):
+            log_file = glossary_path / "debug_trace.log"
+            assert log_file.exists()
+
+        assert debug_trace.trace_logger.handlers == [
+            h for h in debug_trace.trace_logger.handlers
+            if not isinstance(h, logging.FileHandler)
+        ]
+
+
+def test_debug_session_no_op_when_debug_false(tmp_path):
+    """debug_session is a no-op when DEBUG=False."""
+    glossary_path = tmp_path / "glossary"
+    glossary_path.mkdir()
+
+    with patch("debug_trace.config") as mock_config:
+        mock_config.DEBUG = False
+
+        with debug_trace.debug_session(glossary_path, page=3):
+            log_file = glossary_path / "debug_trace.log"
+            assert not log_file.exists()
+
+
+def test_debug_session_no_op_when_glossary_path_none():
+    """debug_session is a no-op when glossary_path is None."""
+    with patch("debug_trace.config") as mock_config:
+        mock_config.DEBUG = True
+
+        with debug_trace.debug_session(None, page=3):
+            pass
+
+
+def test_debug_session_rotates_existing_log(tmp_path):
+    """When debug_trace.log already exists, it gets rotated before new session."""
+    glossary_path = tmp_path / "glossary"
+    glossary_path.mkdir()
+    existing_log = glossary_path / "debug_trace.log"
+    existing_log.write_text("old content", encoding="utf-8")
+
+    with patch("debug_trace.config") as mock_config:
+        mock_config.DEBUG = True
+
+        with debug_trace.debug_session(glossary_path, page=1):
+            new_content = (glossary_path / "debug_trace.log").read_text(encoding="utf-8")
+            assert "=== Debug session start: page 1 ===" in new_content
+
+        rotated_files = list(glossary_path.glob("debug_trace.*.log"))
+        assert len(rotated_files) == 1
+        assert rotated_files[0].read_text(encoding="utf-8") == "old content"
+
+
+def test_debug_session_exception_safe(tmp_path):
+    """debug_session cleans up file handler even when exception occurs."""
+    glossary_path = tmp_path / "glossary"
+    glossary_path.mkdir()
+
+    handlers_before = [
+        h for h in debug_trace.trace_logger.handlers
+        if isinstance(h, logging.FileHandler)
+    ]
+
+    with patch("debug_trace.config") as mock_config:
+        mock_config.DEBUG = True
+
+        try:
+            with debug_trace.debug_session(glossary_path, page=5):
+                raise RuntimeError("simulated crash")
+        except RuntimeError:
+            pass
+
+    handlers_after = [
+        h for h in debug_trace.trace_logger.handlers
+        if isinstance(h, logging.FileHandler)
+    ]
+    assert len(handlers_after) == len(handlers_before)
