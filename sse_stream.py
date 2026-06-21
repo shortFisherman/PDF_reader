@@ -1,5 +1,6 @@
 import json
 import shutil
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,11 +68,14 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
         handler = debug_trace.setup_file_handler(ctx.state.glossary_cache_path, ctx.page)
         debug_trace.log_step("submit translate page %d", ctx.page)
 
-        translate_start = __import__("time").time()
+        translate_start = time.time()
         translate_result = None
         token_usage_finish = None
 
         for evt in run_translation(ctx.settings, str(ctx.single_page_pdf)):
+            if not isinstance(evt, dict):
+                yield ""
+                continue
             if evt.get("type") == "finish":
                 translate_result = evt.get("translate_result")
                 token_usage_finish = evt.get("token_usage", {})
@@ -87,7 +91,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
             yield f"data: {json.dumps({'type': 'error', 'error': 'no translation result'})}\n\n"
             return
 
-        debug_trace.log_step("translate page %d done (%.2fs)", ctx.page, __import__("time").time() - translate_start)
+        debug_trace.log_step("translate page %d done (%.2fs)", ctx.page, time.time() - translate_start)
         if token_usage_finish:
             debug_trace.log_token_usage(token_usage_finish)
 
