@@ -52,7 +52,7 @@ def test_debug_trace_logger_exists():
 
 def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, monkeypatch):
     """build_settings receives cumulative glossary path; merge happens after translation."""
-    from services import sha256 as sha256_func
+    from file_hash import sha256 as sha256_func
 
     # 1. Open PDF, create cumulative glossary
     app_state.open_pdf(str(sample_pdf), sha256_func)
@@ -102,7 +102,7 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     def fake_merge(cumulative, auto):  # noqa: ANN202
         merge_calls.append((str(cumulative), str(auto)))
 
-    monkeypatch.setattr("services.build_settings", fake_build_settings)
+    monkeypatch.setattr("routes.build_settings", fake_build_settings)
     monkeypatch.setattr("translation_orchestrator.do_translate_async_stream", fake_translate_stream)
     monkeypatch.setattr("glossary_service.merge_glossary_csvs", fake_merge)
 
@@ -131,7 +131,7 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
 
 
 def test_translate_page_out_of_range(app_state, sample_pdf):
-    from services import sha256 as sha256_func
+    from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 

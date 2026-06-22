@@ -2,7 +2,7 @@
 from unittest.mock import MagicMock
 
 import config
-from services import build_engine_kwargs, resolve_engine
+from engine_resolver import build_engine_kwargs, resolve_engine
 
 ALL_PROVIDERS = [
     "deepseek",
