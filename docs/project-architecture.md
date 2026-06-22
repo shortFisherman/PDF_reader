@@ -22,7 +22,7 @@
 | **LLM API** | DeepSeek / OpenAI / 智谱 / 硅基流动等 10 种 | 提供翻译能力的 AI 模型 |
 | **前端界面** | 原生 HTML + CSS + JavaScript (ES Modules) | 浏览器中的按钮、页面显示、滚动同步 |
 | **实时推送** | Server-Sent Events (SSE) | 翻译进度从后端推送到前端显示 |
-| **测试** | pytest (111 个测试用例) | 保证代码修改后不坏掉 |
+| **测试** | pytest (106 个测试用例) | 保证代码修改后不坏掉 |
 | **代码检查** | ruff | 检查 Python 代码风格 |
 
 **没有用到的技术（特意避免的）**：Node.js、npm、Webpack、Vite、TypeScript、React、Vue、Electron。整个项目不需要编译/打包步骤，零构建成本。
@@ -38,7 +38,10 @@ PDF_reader/
 ├── config.toml                     #   你的配置文件（API key、模型选择等）
 ├── config.example.toml             #   配置文件模板（详细的参数说明）
 ├── state.py                        # ★ 核心状态管理（线程安全的 PDF 文档持有者）
-├── services.py                     #   纯工具函数（SHA256、渲染页面、组装设置）
+├── file_hash.py                    #   文件 SHA256 哈希计算
+├── engine_resolver.py              #   翻译引擎查找与参数映射
+├── pdf_renderer.py                 #   PDF 页面渲染 + 翻译设置组装
+├── translation_lifecycle.py        #   翻译完成后的持久化 + 术语合并 + 清理
 ├── pdf_extraction.py               #   从原 PDF 中提取单独一页
 ├── translation_orchestrator.py     #   启动异步线程调用 pdf2zh-next 翻译
 ├── sse_stream.py                   #   将翻译进度打包成 SSE 实时推送
@@ -221,17 +224,17 @@ Flask Blueprint 定义了所有前端可以调用的 URL 接口（API）：
 | `GET` | `/api/translated-pages` | 获取已翻译的页面编号列表 |
 | `GET` | `/api/stages` | 获取翻译阶段的中文标签 |
 
-### 7.2 工具函数（`services.py`）
+### 7.2 工具模块（`file_hash.py` / `engine_resolver.py` / `pdf_renderer.py`）
 
-五个纯函数，不持有任何状态，输入确定则输出确定：
+原 `services.py` 的 5 个函数已按职责拆分到 3 个独立模块，每个模块的职责单一、依赖明确：
 
-| 函数 | 作用 |
-|------|------|
-| `sha256(filepath)` | 流式读取文件（8KB 分块），计算 SHA256 哈希 |
-| `render_page(doc, page_num, dpi)` | 将 PDF 一页渲染为 PNG 字节 |
-| `resolve_engine(provider)` | 在引擎注册表中查找指定服务商，未找到则回退到 openai_compatible |
-| `build_engine_kwargs(spec)` | 将配置文件中的通用字段名映射为引擎专属字段名 |
-| `build_settings(...)` | 组装 pdf2zh-next 所需的完整翻译参数（SettingsModel） |
+| 模块 | 函数 | 作用 |
+|------|------|------|
+| `file_hash.py` | `sha256(filepath)` | 流式读取文件（8KB 分块），计算 SHA256 哈希 |
+| `engine_resolver.py` | `resolve_engine(provider)` | 在引擎注册表中查找指定服务商，未找到则回退到 openai_compatible |
+| `engine_resolver.py` | `build_engine_kwargs(spec)` | 将配置文件中的通用字段名映射为引擎专属字段名 |
+| `pdf_renderer.py` | `render_page(doc, page_num, dpi)` | 将 PDF 一页渲染为 PNG 字节 |
+| `pdf_renderer.py` | `build_settings(...)` | 组装 pdf2zh-next 所需的完整翻译参数（SettingsModel） |
 
 ### 7.3 PDF 单页提取（`pdf_extraction.py`）
 
@@ -293,19 +296,33 @@ data: {"type":"progress","progress":100,"stage":"finish","stage_current":0,"stag
 data: {"type":"finish","progress":100}
 ```
 
-**`generate(ctx)` 的完整生命周期**：
+**`generate(ctx)` 的流程**（翻译后的持久化工作已委托给 `translation_lifecycle.py`）：
 
 ```
 1. 进入 debug_session 上下文（开启调试日志）
 2. 调用 run_translation()，逐个接收翻译事件
 3. 每个事件用 format_sse_event() 转成 SSE 文本，yield 出去
 4. 翻译完成后：
-   a. state.replace_page() —— 将翻译结果写入 right.pdf
-   b. merge_after_translate() —— 合并术语表
-   c. yield progress:100 + finish 事件
-5. finally: 清理临时目录
-6. 任何异常都会被 catch，yield error 事件
+   a. finish_translation() 被调用 —— 委托给 translation_lifecycle.py
+      ├─ replace_page() —— 将翻译结果写入 right.pdf
+      ├─ merge_after_translate() —— 合并术语表
+      └─ 清理临时目录
+   b. yield progress:100 + finish 事件
+5. 任何异常都会被 catch，yield error 事件
 ```
+
+### 7.5b 翻译生命周期（`translation_lifecycle.py`） — 新增模块
+
+从 `sse_stream.py` 的 `generate()` 中抽取出的后处理逻辑，负责翻译完成后的三项工作：
+
+```
+finish_translation(translate_result, replace_page, glossary_cache_path, tmpdir, output_dir)
+   ├─ 1. 将翻译结果页面写入 right.pdf（调用传入的 replace_page 回调）
+   ├─ 2. 合并自动提取的术语到累积术语表
+   └─ 3. 清理单页 PDF 和翻译输出的临时目录
+```
+
+设计意图：`sse_stream.py` 回归纯 SSE 格式化职责，不再直接操作 `AppState` 或调用 `shutil.rmtree`。
 
 ### 7.6 术语表系统（`glossary_service.py` + `glossary_merger.py`）
 
@@ -593,21 +610,21 @@ IntersectionObserver 触发 → 视口内的页面开始请求图片
   │          ├─ 生成双语对照 PDF (dual)
   │          └─ → SSE: progress:95, stage:generating_pdf  + finish 事件
   │
-  ├─ 阶段 2: 翻译完成后的处理
-  │   ├─ state.replace_page(mono_pdf_path, 5)
-  │   │   ├─ 获取锁
-  │   │   ├─ 删除 right_doc 第 5 页（旧页）
-  │   │   ├─ 插入翻译好的第 5 页
-  │   │   ├─ 保存并原子替换 right.pdf
-  │   │   ├─ 重新打开 right_doc
-  │   │   ├─ _translated_pages.add(5)
-  │   │   └─ 释放锁
-  │   ├─ merge_after_translate(cumulative_glossary, auto_extracted_glossary)
-  │   │   多数投票合并术语
+  ├─ 阶段 2: 翻译完成后的处理（委托给 `translation_lifecycle.py`）
+  │   ├─ finish_translation(translate_result, replace_page回调, glossary_cache_path, tmpdir, output_dir)
+  │   │   ├─ replace_page(translated_pdf) ← 回调（页面号已在 routes.py 中预绑定）
+  │   │   │   ├─ 获取锁
+  │   │   │   ├─ 删除 right_doc 第 5 页（旧页）
+  │   │   │   ├─ 插入翻译好的第 5 页
+  │   │   │   ├─ 保存并原子替换 right.pdf
+  │   │   │   ├─ 重新打开 right_doc
+  │   │   │   ├─ _translated_pages.add(5)
+  │   │   │   └─ 释放锁
+  │   │   ├─ merge_after_translate(cumulative_glossary, auto_extracted_glossary)
+  │   │   │   多数投票合并术语
+  │   │   └─ 清理临时目录 A 和 B
   │   ├─ → SSE: progress:100, stage:finish
   │   └─ → SSE: type:finish
-  │
-  └─ finally: 删除临时目录 A 和 B
   │
   ▼
 [前端 translator.js] readSSEStream 处理每个 SSE 事件
@@ -674,12 +691,14 @@ IntersectionObserver 触发 → 视口内的页面开始请求图片
 
 8. **零开销调试系统**：所有调试函数以 `if config.DEBUG: return` 开头。生产环境下代码直接跳过，没有任何性能损失。
 
+9. **模块化按职责拆分**：原 `services.py` 的 5 个函数按职责分入 4 个独立模块（`file_hash.py` / `engine_resolver.py` / `pdf_renderer.py` / `translation_lifecycle.py`）。`sse_stream.py` 的 `generate()` 回归纯 SSE 格式化，翻译后处理委托给 `translation_lifecycle.py`。`GenerateContext` 不再持有整个 `AppState`，只传递所需的最小接口。
+
 ---
 
 ## 十一、如何运行测试
 
 ```powershell
-# 运行所有 111 个测试
+# 运行所有 106 个测试
 pytest tests/ -v
 
 # 只运行某个测试文件
@@ -699,14 +718,16 @@ ruff check .
 |-----------|-------------|
 | 更换 AI 翻译模型 | 修改 `config.toml` 中的 `[model]` 配置块 |
 | 新增一个 AI 服务商 | 在 `config.py` 的 `ENGINE_REGISTRY` 中加一行 `EngineSpec` |
+| 修改引擎参数映射逻辑 | 修改 `engine_resolver.py` |
+| 修改 PDF 渲染方式 | 修改 `pdf_renderer.py` |
+| 修改翻译完成后的后处理 | 修改 `translation_lifecycle.py` |
 | 修改翻译阶段显示的文字 | 修改 `sse_stream.py` 中的 `STAGE_LABELS` 字典 |
 | 调整界面样式 | 修改 `static/style.css` |
 | 改变缓存的存储位置 | 修改 `config.toml` 中的 `pdf_reader.cache_dir` |
 | 修改工具栏行为 | 修改 `static/app.js` |
-| 改变翻译渲染分辨率 | 修改 `config.toml` 中的 `pdf_reader.dpi`（越高越清晰但越慢） |
-| 开启调试日志 | `python app.py --debug` 或在 `config.toml` 中设 `[debug] enabled = true` |
+| 改变翻译渲染分辨率 | 修改 `config.toml` 中的 `pdf_reader.dpi` |
+| 开启调试日志 | `python app.py --debug` 或 `config.toml` 中 `[debug] enabled = true` |
 | 修改术语表合并策略 | 修改 `glossary_merger.py` 中的 `merge_glossary_csvs()` |
-| 调整懒加载缓冲范围 | 修改 `static/modules/lazy-loader.js` 中 `BUFFER` 常量 |
 
 ---
 
