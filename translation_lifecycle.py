@@ -3,6 +3,7 @@ import shutil
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import debug_trace
 from glossary_service import merge_after_translate
@@ -11,7 +12,7 @@ logger = logging.getLogger("pdf_reader")
 
 
 def finish_translation(
-    translate_result,
+    translate_result: Any,
     replace_page: Callable[[str], None],
     glossary_cache_path: Path | None,
     tmpdir: Path,
