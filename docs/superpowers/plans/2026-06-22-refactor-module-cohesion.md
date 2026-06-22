@@ -56,7 +56,7 @@ base-ref: e1a8f51bd5869e368cb0b8bf4e28b95fa2299ff1
 **Interfaces:**
 - Produces: `sha256(filepath: str) -> str`
 
-- [ ] **Step 1: Create file_hash.py with sha256()**
+- [x] **Step 1: Create file_hash.py with sha256()**
 
 ```python
 import hashlib
@@ -70,12 +70,12 @@ def sha256(filepath: str) -> str:
     return h.hexdigest()
 ```
 
-- [ ] **Step 2: Verify the new module is importable**
+- [x] **Step 2: Verify the new module is importable**
 
 Run: `python -c "from file_hash import sha256; print(sha256)"`
 Expected: `<function sha256 at 0x...>`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add file_hash.py
@@ -94,7 +94,7 @@ git commit -m "refactor: extract sha256() into file_hash.py"
 - Produces: `build_engine_kwargs(spec: config.EngineSpec) -> dict`
 - Produces: `CONFIG_ATTR_MAP: dict[str, str]`
 
-- [ ] **Step 1: Create engine_resolver.py**
+- [x] **Step 1: Create engine_resolver.py**
 
 Copy verbatim from `services.py` lines 1-2, 10-12, 31-80 (imports + functions). New file:
 
@@ -157,12 +157,12 @@ def build_engine_kwargs(spec: config.EngineSpec) -> dict:  # noqa: ANN001, ANN20
     return kwargs
 ```
 
-- [ ] **Step 2: Verify import**
+- [x] **Step 2: Verify import**
 
 Run: `python -c "from engine_resolver import resolve_engine, build_engine_kwargs, CONFIG_ATTR_MAP; print(CONFIG_ATTR_MAP['model'])"`
 Expected: `MODEL`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add engine_resolver.py
@@ -180,7 +180,7 @@ git commit -m "refactor: extract engine resolution into engine_resolver.py"
 - Produces: `render_page(doc: pymupdf.Document, page_num: int, dpi: int) -> bytes`
 - Produces: `build_settings(single_page_pdf: str, user_prompt: str | None = None, output_dir: str | None = None, glossary_paths: list[str] | None = None) -> SettingsModel`
 
-- [ ] **Step 1: Create pdf_renderer.py**
+- [x] **Step 1: Create pdf_renderer.py**
 
 Copy verbatim the remaining imports + `render_page()` + `build_settings()` from `services.py`:
 
@@ -247,11 +247,11 @@ def build_settings(
     )
 ```
 
-- [ ] **Step 2: Verify import**
+- [x] **Step 2: Verify import**
 
 Run: `python -c "from pdf_renderer import render_page, build_settings; print(render_page, build_settings)"`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add pdf_renderer.py
@@ -265,7 +265,7 @@ git commit -m "refactor: extract PDF rendering and settings into pdf_renderer.py
 **Files:**
 - Modify: `routes.py:17-22`
 
-- [ ] **Step 1: Replace imports in routes.py**
+- [x] **Step 1: Replace imports in routes.py**
 
 Old lines 17-22:
 ```python
@@ -287,7 +287,7 @@ from file_hash import sha256
 from pdf_renderer import build_settings, render_page
 ```
 
-- [ ] **Step 2: Update routes.py line 94 — replace `services.build_settings(` with `build_settings(`**
+- [x] **Step 2: Update routes.py line 94 — replace `services.build_settings(` with `build_settings(`**
 
 In `translate_page()`, line 94 currently:
 ```python
@@ -298,12 +298,12 @@ Replace with:
     settings = build_settings(
 ```
 
-- [ ] **Step 3: Verify no remaining `services.` references in routes.py**
+- [x] **Step 3: Verify no remaining `services.` references in routes.py**
 
 Run: `python -c "content=open('routes.py').read(); assert 'services.' not in content, 'Found remaining services. reference'; print('OK')"`
 Expected: `OK`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add routes.py
@@ -319,7 +319,7 @@ git commit -m "refactor: update routes.py imports to new modules"
 
 `state.py` does not import from `services` directly. `sha256` and `render_page` are passed as parameters to `open_pdf()` and `render_page()`. Only tests need import updates (Task 6).
 
-- [ ] **Step 1: Confirm state.py has no import of services**
+- [x] **Step 1: Confirm state.py has no import of services**
 
 ```bash
 grep -n "services" state.py
@@ -337,7 +337,7 @@ Expected: no matches.
 - Modify: `tests/test_engine_registry.py`
 - DELETE: `services.py`
 
-- [ ] **Step 1: Update test_services.py imports**
+- [x] **Step 1: Update test_services.py imports**
 
 Line 8 — top-level import:
 ```python
@@ -364,7 +364,7 @@ from services import build_engine_kwargs
 from engine_resolver import build_engine_kwargs
 ```
 
-- [ ] **Step 2: Update test_state.py imports**
+- [x] **Step 2: Update test_state.py imports**
 
 Lines 20, 31, 43, 58:
 ```python
@@ -382,7 +382,7 @@ from services import sha256 as sha256_func
 from file_hash import sha256 as sha256_func
 ```
 
-- [ ] **Step 3: Update test_routes.py imports**
+- [x] **Step 3: Update test_routes.py imports**
 
 Lines 55, 134:
 ```python
@@ -392,7 +392,7 @@ from services import sha256 as sha256_func
 from file_hash import sha256 as sha256_func
 ```
 
-- [ ] **Step 3.5: Update test_routes.py monkeypatch target (line 105)**
+- [x] **Step 3.5: Update test_routes.py monkeypatch target (line 105)**
 
 The `test_translate_page_integrates_cumulative_glossary` test monkeypatches `services.build_settings`:
 
@@ -403,7 +403,7 @@ The `test_translate_page_integrates_cumulative_glossary` test monkeypatches `ser
     monkeypatch.setattr("pdf_renderer.build_settings", fake_build_settings)
 ```
 
-- [ ] **Step 4: Update test_engine_registry.py import**
+- [x] **Step 4: Update test_engine_registry.py import**
 
 Line 5:
 ```python
@@ -413,18 +413,18 @@ from services import build_engine_kwargs, resolve_engine
 from engine_resolver import build_engine_kwargs, resolve_engine
 ```
 
-- [ ] **Step 5: Delete services.py**
+- [x] **Step 5: Delete services.py**
 
 ```bash
 git rm services.py
 ```
 
-- [ ] **Step 6: Run full test suite — Group 1 gate**
+- [x] **Step 6: Run full test suite — Group 1 gate**
 
 Run: `pytest tests/ -v`
 Expected: all 111 tests pass. If any fail, fix the import in the failing test and re-run.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tests/
@@ -441,7 +441,7 @@ git commit -m "refactor: update test imports and delete services.py"
 **Interfaces:**
 - Produces: `finish_translation(translate_result, replace_page: Callable[[str], None], glossary_cache_path: Path | None, tmpdir: Path, output_dir: str) -> None`
 
-- [ ] **Step 1: Create translation_lifecycle.py**
+- [x] **Step 1: Create translation_lifecycle.py**
 
 ```python
 import logging
@@ -489,11 +489,11 @@ def finish_translation(
 
 **Note:** The `page=-1` in `log_glossary_merge` is intentional — the page number is lost at this layer since `replace_page` is a pre-bound callable. The debug log is informational; this does not affect behavior.
 
-- [ ] **Step 2: Verify import**
+- [x] **Step 2: Verify import**
 
 Run: `python -c "from translation_lifecycle import finish_translation; print(finish_translation)"`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add translation_lifecycle.py
@@ -511,7 +511,7 @@ git commit -m "refactor: create translation_lifecycle.py with finish_translation
 - Consumes: `finish_translation` from `translation_lifecycle`
 - Changes: GenerateContext drops `state: AppState`, gains `replace_page: Callable[[str], None]` + `glossary_cache_path: Path | None`
 
-- [ ] **Step 1: Update imports in sse_stream.py**
+- [x] **Step 1: Update imports in sse_stream.py**
 
 Old imports (lines 1-14):
 ```python
@@ -547,7 +547,7 @@ from translation_lifecycle import finish_translation
 from translation_orchestrator import TranslationError, run_translation
 ```
 
-- [ ] **Step 2: Replace GenerateContext dataclass**
+- [x] **Step 2: Replace GenerateContext dataclass**
 
 Old (lines 25-33):
 ```python
@@ -576,7 +576,7 @@ class GenerateContext:
     output_dir: str
 ```
 
-- [ ] **Step 3: Replace generate() function**
+- [x] **Step 3: Replace generate() function**
 
 Replace the entire `generate()` function (lines 66-134) with:
 
@@ -636,7 +636,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
 
 `finish_translation` handles `replace_page` + `merge_after_translate` + tmpdir cleanup. `generate()` focuses only on SSE event formatting and forwarding. `import shutil` is removed from sse_stream.py since cleanup lives in the lifecycle module. The `test_generate_cleans_up_tmpdir` test still passes because `finish_translation` calls `rmtree` on the success path.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add sse_stream.py
@@ -650,7 +650,7 @@ git commit -m "refactor: delegate post-translation work to finish_translation(),
 **Files:**
 - Modify: `routes.py:80-106` (translate_page function)
 
-- [ ] **Step 1: Update translate_page() — GenerateContext construction**
+- [x] **Step 1: Update translate_page() — GenerateContext construction**
 
 Lines 98-101 — old:
 ```python
@@ -676,12 +676,12 @@ New:
 
 **Note:** `replace_page` is passed as a lambda that binds `page` — this way the lifecycle module doesn't need to know about page numbers, matching the narrower interface.
 
-- [ ] **Step 2: Verify routes.py imports correctly**
+- [x] **Step 2: Verify routes.py imports correctly**
 
 Run: `python -c "import py_compile; py_compile.compile('routes.py', doraise=True)"`
 Expected: no output (successful compile).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add routes.py
@@ -695,7 +695,7 @@ git commit -m "refactor: routes constructs GenerateContext from state fields"
 **Files:**
 - Modify: `tests/test_sse_stream.py`
 
-- [ ] **Step 1: Update all GenerateContext constructions**
+- [x] **Step 1: Update all GenerateContext constructions**
 
 Every test that creates `GenerateContext(state=state, ...)` must change to `GenerateContext(replace_page=..., glossary_cache_path=...)`.
 
@@ -748,7 +748,7 @@ For tests that use `state.glossary_cache_path = glossary_cache` (e.g., `test_gen
     )
 ```
 
-- [ ] **Step 2: Update assertions that reference `state.replace_page`**
+- [x] **Step 2: Update assertions that reference `state.replace_page`**
 
 In `test_generate_full_flow_byte_level_compatible` (line 164):
 ```python
@@ -760,17 +760,17 @@ In `test_generate_full_flow_byte_level_compatible` (line 164):
 
 **Important:** This is a test assertion change because the interface changed: `replace_page` in GenerateContext is now `Callable[[str], None]` (no page parameter). The lambda in routes.py binds the page. The test should verify the one-argument call.
 
-- [ ] **Step 3: Run tests to verify Group 2**
+- [x] **Step 3: Run tests to verify Group 2**
 
 Run: `pytest tests/test_sse_stream.py tests/test_routes.py -v`
 Expected: all tests pass. If any fail, fix and re-run.
 
-- [ ] **Step 4: Run full test suite — Group 2 gate**
+- [x] **Step 4: Run full test suite — Group 2 gate**
 
 Run: `pytest tests/ -v`
 Expected: all 111 tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/test_sse_stream.py
@@ -785,7 +785,7 @@ git commit -m "test: adapt sse_stream tests to new GenerateContext interface"
 - Modify: `glossary_service.py:1-17`
 - Modify: `tests/test_glossary_service.py`
 
-- [ ] **Step 1: Modify resolve_glossary_paths() signature**
+- [x] **Step 1: Modify resolve_glossary_paths() signature**
 
 In `glossary_service.py`, change lines 1-17:
 
@@ -831,7 +831,7 @@ def resolve_glossary_paths(cache_path: Path | None) -> list[str] | None:
 
 **Changes:** Removed `from state import AppState`, changed parameter from `state: AppState` to `cache_path: Path | None`.
 
-- [ ] **Step 1.5: Update routes.py call site**
+- [x] **Step 1.5: Update routes.py call site**
 
 In `translate_page()` (routes.py line 93), update the call to pass `state.glossary_cache_path` instead of `state`:
 
@@ -842,7 +842,7 @@ In `translate_page()` (routes.py line 93), update the call to pass `state.glossa
     glossary_paths = glossary_service.resolve_glossary_paths(state.glossary_cache_path)
 ```
 
-- [ ] **Step 2: Update test_glossary_service.py tests**
+- [x] **Step 2: Update test_glossary_service.py tests**
 
 Each test currently passes `state = MagicMock(); state.glossary_cache_path = ...` then calls `resolve_glossary_paths(state)`. Change to pass the path directly:
 
@@ -886,17 +886,17 @@ Each test currently passes `state = MagicMock(); state.glossary_cache_path = ...
     assert resolve_glossary_paths(cache_dir) is None
 ```
 
-- [ ] **Step 3: Run tests to verify Group 3**
+- [x] **Step 3: Run tests to verify Group 3**
 
 Run: `pytest tests/test_glossary_service.py -v`
 Expected: all tests pass.
 
-- [ ] **Step 4: Run full test suite — Group 3 gate**
+- [x] **Step 4: Run full test suite — Group 3 gate**
 
 Run: `pytest tests/ -v`
 Expected: all 111 tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add glossary_service.py tests/test_glossary_service.py
@@ -911,7 +911,7 @@ git commit -m "refactor: narrow glossary_service interface to cache_path instead
 - Modify: `debug_trace.py:117-148`
 - Modify: `tests/test_debug_trace.py`
 
-- [ ] **Step 1: Delete setup_file_handler and cleanup_file_handler from debug_trace.py**
+- [x] **Step 1: Delete setup_file_handler and cleanup_file_handler from debug_trace.py**
 
 Delete lines 117-148 (the two standalone functions):
 ```python
@@ -925,7 +925,7 @@ def cleanup_file_handler(handler: logging.FileHandler | None) -> None:
 
 **Note:** These functions have zero external callers — only `test_debug_trace.py` references them. `debug_session` (lines 62-99 of the same file) already contains the identical logic inline. No production code calls `setup_file_handler` or `cleanup_file_handler`; sse_stream.py uses `debug_session` directly.
 
-- [ ] **Step 2: Update test_debug_trace.py**
+- [x] **Step 2: Update test_debug_trace.py**
 
 Delete test functions that test the removed standalone functions:
 - `test_setup_file_handler_returns_none_when_no_glossary_path` (lines 32-36)
@@ -987,17 +987,17 @@ New:
                 debug_trace.log_token_usage({"main": {"total": 100}})
 ```
 
-- [ ] **Step 3: Run tests to verify Group 4**
+- [x] **Step 3: Run tests to verify Group 4**
 
 Run: `pytest tests/test_debug_trace.py tests/test_debug_patches.py -v`
 Expected: all tests pass.
 
-- [ ] **Step 4: Run full test suite — Group 4 gate**
+- [x] **Step 4: Run full test suite — Group 4 gate**
 
 Run: `pytest tests/ -v`
 Expected: all 111 tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add debug_trace.py tests/test_debug_trace.py
@@ -1008,28 +1008,28 @@ git commit -m "refactor: merge setup/cleanup handlers into debug_session, delete
 
 ### Task 13: Final verification
 
-- [ ] **Step 1: Run ruff check**
+- [x] **Step 1: Run ruff check**
 
 ```bash
 ruff check .
 ```
 Expected: zero errors, zero warnings.
 
-- [ ] **Step 2: Run full test suite**
+- [x] **Step 2: Run full test suite**
 
 ```bash
 pytest tests/ -v
 ```
 Expected: all 111 tests pass.
 
-- [ ] **Step 3: Verify services.py is deleted**
+- [x] **Step 3: Verify services.py is deleted**
 
 ```bash
 test -f services.py && echo "ERROR: services.py still exists" || echo "OK"
 ```
 Expected: `OK`
 
-- [ ] **Step 4: Commit final state if any changes remain**
+- [x] **Step 4: Commit final state if any changes remain**
 
 ```bash
 git status
