@@ -1,16 +1,14 @@
 import json
 import logging
-import shutil
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 from pdf2zh_next import SettingsModel
 
 import debug_trace
-from glossary_service import merge_after_translate
-from state import AppState
+from translation_lifecycle import finish_translation
 from translation_orchestrator import TranslationError, run_translation
 
 STAGE_LABELS = {
@@ -26,7 +24,8 @@ STAGE_LABELS = {
 class GenerateContext:
     settings: SettingsModel
     single_page_pdf: Path
-    state: AppState
+    replace_page: Callable[[str], None]
+    glossary_cache_path: Path | None
     page: int
     glossary_paths: list[str] | None
     tmpdir: Path
@@ -65,7 +64,7 @@ def format_sse_event(evt: dict) -> str | None:
 
 def generate(ctx: GenerateContext) -> Iterator[str]:
     try:
-        with debug_trace.debug_session(ctx.state.glossary_cache_path, ctx.page):
+        with debug_trace.debug_session(ctx.glossary_cache_path, ctx.page):
             debug_trace.log_step("submit translate page %d", ctx.page)
 
             translate_start = time.time()
@@ -95,27 +94,12 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
             if token_usage_finish:
                 debug_trace.log_token_usage(token_usage_finish)
 
-            translated_pdf = translate_result.mono_pdf_path
-            if translated_pdf is None and translate_result.dual_pdf_path is not None:
-                translated_pdf = translate_result.dual_pdf_path
-
-            if translated_pdf is not None:
-                ctx.state.replace_page(str(translated_pdf), ctx.page)
-            else:
-                yield f"data: {json.dumps({'type': 'error', 'error': 'no output PDF'})}\n\n"
-                return
-
-            cumulative_glossary_file: Path | None = None
-            if ctx.state.glossary_cache_path is not None:
-                cumulative_glossary_file = ctx.state.glossary_cache_path / "cumulative_glossary.csv"
-            merge_start = time.time()
-            merge_after_translate(
-                cumulative_glossary_file,
-                translate_result.auto_extracted_glossary_path,
-            )
-            elapsed = time.time() - merge_start
-            debug_trace.log_glossary_merge(
-                "merge_done", page=ctx.page, elapsed=f"{elapsed:.2f}"
+            finish_translation(
+                translate_result,
+                ctx.replace_page,
+                ctx.glossary_cache_path,
+                ctx.tmpdir,
+                ctx.output_dir,
             )
 
             yield "data: " + json.dumps({
@@ -129,6 +113,3 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
     except Exception as e:
         logging.getLogger("pdf_reader").warning("translate_page generate error", exc_info=True)
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-    finally:
-        shutil.rmtree(ctx.tmpdir, ignore_errors=True)
-        shutil.rmtree(ctx.output_dir, ignore_errors=True)
