@@ -1,5 +1,7 @@
 workflow: full
-phase: build
+phase: verify
+build_command: ruff check .
+verify_command: pytest tests/
 context_compression: off
 build_mode: subagent-driven-development
 build_pause: null
@@ -7,13 +9,13 @@ subagent_dispatch: confirmed
 tdd_mode: direct
 review_mode: off
 isolation: branch
-verify_mode: null
+verify_mode: full
 auto_transition: true
 base_ref: e1a8f51bd5869e368cb0b8bf4e28b95fa2299ff1
 design_doc: docs/superpowers/specs/2026-06-22-refactor-module-cohesion-design.md
 plan: docs/superpowers/plans/2026-06-22-refactor-module-cohesion.md
 verify_result: pending
-verification_report: null
+verification_report: docs/superpowers/reports/2026-06-22-refactor-module-cohesion-verify.md
 branch_status: pending
 created_at: 2026-06-22
 verified_at: null
