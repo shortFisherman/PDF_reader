@@ -3,9 +3,7 @@
 ## Purpose
 
 Maintain a CSV-based glossary of source-to-target term mappings for consistent translation across pages. The glossary is delegated to BabelDOC's Hyperscan-based matching and LLM prompt injection system through pdf2zh-next.
-
 ## Requirements
-
 ### Requirement: CSV-based glossary file
 
 The system SHALL support a CSV glossary file (`glossary.csv`) containing source-to-target term mappings for consistent translation.
@@ -47,3 +45,18 @@ The system SHALL delegate glossary matching and prompt injection to BabelDOC's g
 
 - **WHEN** the source page contains terms that match glossary entries
 - **THEN** BabelDOC SHALL inject those terms into the LLM prompt as a markdown table with instruction to prefer glossary translations
+
+### Requirement: Glossary service parameter interface
+
+The glossary service module's `resolve_glossary_paths` function SHALL accept `Path | None` as its input parameter for cache path resolution instead of depending on the full `AppState` type. The merge function SHALL remain unchanged, accepting `Path | None` for both cumulative and auto-extracted paths.
+
+#### Scenario: Resolve glossary paths from cache path
+
+- **WHEN** `resolve_glossary_paths(cache_path)` is called with a valid Path
+- **THEN** the function SHALL return `[str(cache_path / "cumulative_glossary.csv")]` if the file exists and is non-empty, or `None` otherwise
+
+#### Scenario: Resolve glossary paths with None input
+
+- **WHEN** `resolve_glossary_paths(None)` is called
+- **THEN** the function SHALL return `None`
+

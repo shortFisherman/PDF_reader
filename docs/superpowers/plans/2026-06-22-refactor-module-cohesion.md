@@ -2,6 +2,7 @@
 change: refactor-module-cohesion
 design-doc: docs/superpowers/specs/2026-06-22-refactor-module-cohesion-design.md
 base-ref: e1a8f51bd5869e368cb0b8bf4e28b95fa2299ff1
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 # Refactor Module Cohesion Implementation Plan
@@ -23,6 +24,7 @@ base-ref: e1a8f51bd5869e368cb0b8bf4e28b95fa2299ff1
 - New modules must not introduce circular imports (one-way: routes → lifecycle → state)
 - Only import paths are adjusted; function signatures stay identical except where design doc explicitly changes them: GenerateContext fields, glossary_service resolve_glossary_paths param, finish_translation signature
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ## File Structure
@@ -46,6 +48,7 @@ base-ref: e1a8f51bd5869e368cb0b8bf4e28b95fa2299ff1
 | `tests/test_routes.py` | **MODIFY** | `from services import sha256` → `from file_hash import sha256` |
 | `tests/test_engine_registry.py` | **MODIFY** | `from services import ...` → `from engine_resolver import ...` |
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 1: Create file_hash.py — extract sha256()
@@ -82,6 +85,7 @@ git add file_hash.py
 git commit -m "refactor: extract sha256() into file_hash.py"
 ```
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 2: Create engine_resolver.py — extract engine resolution
@@ -169,6 +173,7 @@ git add engine_resolver.py
 git commit -m "refactor: extract engine resolution into engine_resolver.py"
 ```
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 3: Create pdf_renderer.py — extract PDF rendering and settings building
@@ -258,6 +263,7 @@ git add pdf_renderer.py
 git commit -m "refactor: extract PDF rendering and settings into pdf_renderer.py"
 ```
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 4: Update routes.py imports
@@ -310,6 +316,7 @@ git add routes.py
 git commit -m "refactor: update routes.py imports to new modules"
 ```
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 5: Verify state.py needs no changes
@@ -326,6 +333,7 @@ grep -n "services" state.py
 ```
 Expected: no matches.
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 6: Update all test imports + delete services.py
@@ -431,6 +439,7 @@ git add tests/
 git commit -m "refactor: update test imports and delete services.py"
 ```
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 7: Create translation_lifecycle.py
@@ -500,6 +509,7 @@ git add translation_lifecycle.py
 git commit -m "refactor: create translation_lifecycle.py with finish_translation()"
 ```
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 8: Modify sse_stream.py — narrow GenerateContext and delegate to lifecycle
@@ -643,6 +653,7 @@ git add sse_stream.py
 git commit -m "refactor: delegate post-translation work to finish_translation(), narrow GenerateContext"
 ```
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 9: Modify routes.py — construct GenerateContext from state fields
@@ -688,6 +699,7 @@ git add routes.py
 git commit -m "refactor: routes constructs GenerateContext from state fields"
 ```
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 10: Update test_sse_stream.py — adapt to new GenerateContext
@@ -777,6 +789,7 @@ git add tests/test_sse_stream.py
 git commit -m "test: adapt sse_stream tests to new GenerateContext interface"
 ```
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 11: Narrow glossary_service interface
@@ -903,6 +916,7 @@ git add glossary_service.py tests/test_glossary_service.py
 git commit -m "refactor: narrow glossary_service interface to cache_path instead of AppState"
 ```
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 12: Eliminate debug_trace.py duplication
@@ -1004,6 +1018,7 @@ git add debug_trace.py tests/test_debug_trace.py
 git commit -m "refactor: merge setup/cleanup handlers into debug_session, delete duplicates"
 ```
 
+archived-with: 2026-06-22-refactor-module-cohesion
 ---
 
 ### Task 13: Final verification

@@ -2,6 +2,8 @@
 comet_change: refactor-module-cohesion
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-22-refactor-module-cohesion
+status: final
 ---
 
 # Refactor Module Cohesion — Technical Design

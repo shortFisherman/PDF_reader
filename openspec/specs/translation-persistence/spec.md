@@ -3,12 +3,10 @@
 ## Purpose
 
 Persist translation state across sessions by maintaining a right.pdf file keyed on the original PDF's SHA256 hash. Translated pages replace their counterpart in right.pdf, while untranslated pages remain as copies of the original. Reopening the same PDF restores all prior translations.
-
 ## Requirements
-
 ### Requirement: Right.pdf as translation state
 
-The system SHALL maintain a right.pdf file that stores the current translation state, where translated pages contain translated content and untranslated pages contain the original content.
+The system SHALL maintain a right.pdf file that stores the current translation state, where translated pages contain translated content and untranslated pages contain the original content. The page replacement operation SHALL be invoked by the translation lifecycle module, which receives the necessary callable context from the route layer rather than accessing AppState directly.
 
 #### Scenario: First open creates right.pdf
 
@@ -23,7 +21,7 @@ The system SHALL maintain a right.pdf file that stores the current translation s
 #### Scenario: Translation updates right.pdf
 
 - **WHEN** a page is translated
-- **THEN** the system SHALL replace the corresponding page in right.pdf with the translated output and save the file
+- **THEN** the translation lifecycle module SHALL invoke the page replacement operation, which replaces the corresponding page in right.pdf with the translated output and saves the file
 
 ### Requirement: SHA256-based cache identification
 
@@ -52,3 +50,4 @@ The system SHALL save right.pdf using full rewrite mode (not incremental) after 
 
 - **WHEN** right.pdf is modified (a page is inserted or replaced)
 - **THEN** the system SHALL call `pymupdf.Document.save()` without incremental mode to fully rewrite and compact the file
+
