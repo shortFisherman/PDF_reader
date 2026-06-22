@@ -1,8 +1,8 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Glossary service parameter interface
 
-The glossary service module SHALL accept `Path | None` as its input parameter for cache path resolution instead of depending on the full `AppState` type. The merge function SHALL remain unchanged, accepting `Path | None` for both cumulative and auto-extracted paths.
+The glossary service module's `resolve_glossary_paths` function SHALL accept `Path | None` as its input parameter for cache path resolution instead of depending on the full `AppState` type. The merge function SHALL remain unchanged, accepting `Path | None` for both cumulative and auto-extracted paths.
 
 #### Scenario: Resolve glossary paths from cache path
 
