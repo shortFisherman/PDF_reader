@@ -29,31 +29,6 @@ def test_log_step_logs_when_debug_true():
             mock_info.assert_called_once_with("[step] test step %d", 1)
 
 
-def test_setup_file_handler_returns_none_when_no_glossary_path():
-    with patch("debug_trace.config") as mock_config:
-        mock_config.DEBUG = True
-        result = debug_trace.setup_file_handler(None, 0)
-        assert result is None
-
-
-def test_setup_file_handler_returns_none_when_debug_false():
-    with patch("debug_trace.config") as mock_config:
-        mock_config.DEBUG = False
-        result = debug_trace.setup_file_handler(Path("/some/path"), 0)
-        assert result is None
-
-
-def test_cleanup_file_handler_none_is_noop():
-    debug_trace.cleanup_file_handler(None)
-
-
-def test_cleanup_file_handler_removes_and_closes():
-    handler = MagicMock(spec=logging.FileHandler)
-    with patch.object(debug_trace.trace_logger, "removeHandler") as mock_remove:
-        debug_trace.cleanup_file_handler(handler)
-        mock_remove.assert_called_once_with(handler)
-    handler.close.assert_called_once()
-
 
 def test_log_token_usage_no_op_when_empty():
     with patch("debug_trace.config") as mock_config:
@@ -92,15 +67,12 @@ def test_full_debug_trace_bytes_identical(tmp_path):
         with patch("debug_trace.config") as mock_config:
             mock_config.DEBUG = True
 
-            handler = debug_trace.setup_file_handler(glossary_path, page=1)
-
-            debug_trace.log_step("submit translate page %d", 1)
-            debug_trace.log_step("translate page %d done (%.2fs)", 1, 1.23)
-            debug_trace.log_token_usage({"main": {"total": 100}, "term": {"total": 50}})
-            debug_trace.log_step("merge glossary for page %d", 1)
-            debug_trace.log_step("merge glossary done (%.2fs)", 0.02)
-
-            debug_trace.cleanup_file_handler(handler)
+            with debug_trace.debug_session(glossary_path, page=1):
+                debug_trace.log_step("submit translate page %d", 1)
+                debug_trace.log_step("translate page %d done (%.2fs)", 1, 1.23)
+                debug_trace.log_token_usage({"main": {"total": 100}, "term": {"total": 50}})
+                debug_trace.log_step("merge glossary for page %d", 1)
+                debug_trace.log_step("merge glossary done (%.2fs)", 0.02)
     finally:
         debug_trace.trace_logger.removeHandler(stream_handler)
         for h in original_handlers:
@@ -122,7 +94,7 @@ def test_full_debug_trace_bytes_identical(tmp_path):
 
 
 def test_zero_overhead_no_io_when_debug_false(tmp_path):
-    """DEBUG=False: log_step, log_token_usage, setup_file_handler produce no IO."""
+    """DEBUG=False: log_step, log_token_usage produce no IO with debug_session."""
     glossary_path = tmp_path / "glossary"
     glossary_path.mkdir()
 
@@ -139,10 +111,9 @@ def test_zero_overhead_no_io_when_debug_false(tmp_path):
         with patch("debug_trace.config") as mock_config:
             mock_config.DEBUG = False
 
-            handler = debug_trace.setup_file_handler(glossary_path, page=1)
-            debug_trace.log_step("submit translate page %d", 1)
-            debug_trace.log_token_usage({"main": {"total": 100}})
-            debug_trace.cleanup_file_handler(handler)
+            with debug_trace.debug_session(glossary_path, page=1):
+                debug_trace.log_step("submit translate page %d", 1)
+                debug_trace.log_token_usage({"main": {"total": 100}})
     finally:
         debug_trace.trace_logger.removeHandler(stream_handler)
         for h in original_handlers:
