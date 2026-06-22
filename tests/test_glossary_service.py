@@ -1,20 +1,16 @@
 import csv
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from glossary_service import merge_after_translate, resolve_glossary_paths
 
 
 def test_resolve_glossary_paths_returns_none_when_no_cache():
-    state = MagicMock()
-    state.glossary_cache_path = None
-    assert resolve_glossary_paths(state) is None
+    assert resolve_glossary_paths(None) is None
 
 
 def test_resolve_glossary_paths_returns_none_when_no_cumulative_file():
-    state = MagicMock()
-    state.glossary_cache_path = Path("/nonexistent")
-    assert resolve_glossary_paths(state) is None
+    assert resolve_glossary_paths(Path("/nonexistent")) is None
 
 
 def test_resolve_glossary_paths_returns_path_when_cumulative_exists(tmp_path):
@@ -26,9 +22,7 @@ def test_resolve_glossary_paths_returns_path_when_cumulative_exists(tmp_path):
         w.writerow(["source", "target"])
         w.writerow(["hello", "你好"])
 
-    state = MagicMock()
-    state.glossary_cache_path = cache_dir
-    result = resolve_glossary_paths(state)
+    result = resolve_glossary_paths(cache_dir)
     assert result == [str(cumulative)]
 
 
@@ -38,9 +32,7 @@ def test_resolve_glossary_paths_returns_none_when_cumulative_empty(tmp_path):
     cumulative = cache_dir / "cumulative_glossary.csv"
     cumulative.write_text("")
 
-    state = MagicMock()
-    state.glossary_cache_path = cache_dir
-    assert resolve_glossary_paths(state) is None
+    assert resolve_glossary_paths(cache_dir) is None
 
 
 def test_merge_after_translate_delegates_to_merger(tmp_path):

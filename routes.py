@@ -90,7 +90,7 @@ def translate_page(page: int):
     tmpdir = Path(tempfile.mkdtemp())
     output_dir = tempfile.mkdtemp(dir=str(config.CACHE_DIR))
     single_page_pdf = pdf_extraction.extract_single_page(state.left_doc, page, tmpdir)
-    glossary_paths = glossary_service.resolve_glossary_paths(state)
+    glossary_paths = glossary_service.resolve_glossary_paths(state.glossary_cache_path)
     settings = build_settings(
         str(single_page_pdf), user_prompt,
         output_dir=output_dir, glossary_paths=glossary_paths,
