@@ -96,8 +96,14 @@ def translate_page(page: int):
         output_dir=output_dir, glossary_paths=glossary_paths,
     )
     ctx = sse_stream.GenerateContext(
-        settings=settings, single_page_pdf=single_page_pdf, state=state,
-        page=page, glossary_paths=glossary_paths, tmpdir=tmpdir, output_dir=output_dir,
+        settings=settings,
+        single_page_pdf=single_page_pdf,
+        replace_page=lambda path: state.replace_page(path, page),
+        glossary_cache_path=state.glossary_cache_path,
+        page=page,
+        glossary_paths=glossary_paths,
+        tmpdir=tmpdir,
+        output_dir=output_dir,
     )
     return Response(
         stream_with_context(sse_stream.generate(ctx)),
