@@ -129,9 +129,8 @@ def test_generate_full_flow_byte_level_compatible(tmp_path):
          "token_usage": {}},
     ]
 
-    state = MagicMock()
-    state.glossary_cache_path = None
-    state.replace_page = MagicMock()
+    replace_page = MagicMock()
+    glossary_cache_path = None
 
     tmpdir = tmp_path / "tmp"
     tmpdir.mkdir()
@@ -142,7 +141,8 @@ def test_generate_full_flow_byte_level_compatible(tmp_path):
     ctx = GenerateContext(
         settings=MagicMock(),
         single_page_pdf=single_page_pdf,
-        state=state,
+        replace_page=replace_page,
+        glossary_cache_path=glossary_cache_path,
         page=0,
         glossary_paths=None,
         tmpdir=tmpdir,
@@ -161,7 +161,7 @@ def test_generate_full_flow_byte_level_compatible(tmp_path):
         EXPECTED_FINAL_FINISH_SSE,
     ]
     assert result == expected
-    state.replace_page.assert_called_once_with(str(tmp_path / "translated.pdf"), 0)
+    replace_page.assert_called_once_with(str(tmp_path / "translated.pdf"))
 
 
 def test_generate_error_event_stops_stream(tmp_path):
@@ -170,8 +170,8 @@ def test_generate_error_event_stops_stream(tmp_path):
         {"type": "error", "error": "test error"},
     ]
 
-    state = MagicMock()
-    state.glossary_cache_path = None
+    replace_page = MagicMock()
+    glossary_cache_path = None
 
     tmpdir = tmp_path / "tmp"
     tmpdir.mkdir()
@@ -181,7 +181,8 @@ def test_generate_error_event_stops_stream(tmp_path):
     ctx = GenerateContext(
         settings=MagicMock(),
         single_page_pdf=single_page_pdf,
-        state=state,
+        replace_page=replace_page,
+        glossary_cache_path=glossary_cache_path,
         page=0,
         glossary_paths=None,
         tmpdir=tmpdir,
@@ -202,8 +203,8 @@ def test_generate_translation_error_yields_error_event(tmp_path):
 
     events = [{"type": "progress_start", "stage": "layout_analysis"}]
 
-    state = MagicMock()
-    state.glossary_cache_path = None
+    replace_page = MagicMock()
+    glossary_cache_path = None
 
     tmpdir = tmp_path / "tmp"
     tmpdir.mkdir()
@@ -213,7 +214,8 @@ def test_generate_translation_error_yields_error_event(tmp_path):
     ctx = GenerateContext(
         settings=MagicMock(),
         single_page_pdf=single_page_pdf,
-        state=state,
+        replace_page=replace_page,
+        glossary_cache_path=glossary_cache_path,
         page=0,
         glossary_paths=None,
         tmpdir=tmpdir,
@@ -242,9 +244,8 @@ def test_generate_cleans_up_tmpdir(tmp_path):
 
     events = [{"type": "finish", "stage": "generating_pdf", "translate_result": mock_result}]
 
-    state = MagicMock()
-    state.glossary_cache_path = None
-    state.replace_page = MagicMock()
+    replace_page = MagicMock()
+    glossary_cache_path = None
 
     tmpdir = tmp_path / "tmp"
     tmpdir.mkdir()
@@ -255,7 +256,8 @@ def test_generate_cleans_up_tmpdir(tmp_path):
     ctx = GenerateContext(
         settings=MagicMock(),
         single_page_pdf=tmpdir / "page.pdf",
-        state=state,
+        replace_page=replace_page,
+        glossary_cache_path=glossary_cache_path,
         page=0,
         glossary_paths=None,
         tmpdir=tmpdir,
@@ -297,9 +299,8 @@ def test_generate_merges_glossary_with_str_auto_path(tmp_path):
          "token_usage": {}},
     ]
 
-    state = MagicMock()
-    state.glossary_cache_path = glossary_cache
-    state.replace_page = MagicMock()
+    replace_page = MagicMock()
+    glossary_cache_path = glossary_cache
 
     tmpdir = tmp_path / "tmp"
     tmpdir.mkdir()
@@ -310,7 +311,8 @@ def test_generate_merges_glossary_with_str_auto_path(tmp_path):
     ctx = GenerateContext(
         settings=MagicMock(),
         single_page_pdf=single_page_pdf,
-        state=state,
+        replace_page=replace_page,
+        glossary_cache_path=glossary_cache_path,
         page=0,
         glossary_paths=None,
         tmpdir=tmpdir,
@@ -341,9 +343,8 @@ def test_generate_passes_through_keepalive_empty_string(tmp_path):
          "token_usage": {}},
     ]
 
-    state = MagicMock()
-    state.glossary_cache_path = None
-    state.replace_page = MagicMock()
+    replace_page = MagicMock()
+    glossary_cache_path = None
 
     tmpdir = tmp_path / "tmp"
     tmpdir.mkdir()
@@ -354,7 +355,8 @@ def test_generate_passes_through_keepalive_empty_string(tmp_path):
     ctx = GenerateContext(
         settings=MagicMock(),
         single_page_pdf=single_page_pdf,
-        state=state,
+        replace_page=replace_page,
+        glossary_cache_path=glossary_cache_path,
         page=0,
         glossary_paths=None,
         tmpdir=tmpdir,
