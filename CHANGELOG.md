@@ -1,5 +1,32 @@
 # 更新日志
 
+## 2026-06-22 — 模块内聚性重构
+
+### `refactor-module-cohesion`
+
+**解决 `services.py` 杂物堆、`sse_stream.py` 职责越界、接口耦合过大等问题：**
+
+| 改动 | 说明 |
+|------|------|
+| `services.py` → **删除** | 5 个函数按职责拆分到 4 个新模块 |
+| `file_hash.py` — **新增** | `sha256()` 纯文件哈希，无其他模块依赖 |
+| `engine_resolver.py` — **新增** | `resolve_engine()` + `build_engine_kwargs()` + `CONFIG_ATTR_MAP` |
+| `pdf_renderer.py` — **新增** | `render_page()` + `build_settings()` |
+| `translation_lifecycle.py` — **新增** | `finish_translation()` — 翻译后持久化、术语合并、清理 |
+| `sse_stream.py` — **修改** | `GenerateContext` 不再持有 `AppState`，后处理委托给 `translation_lifecycle` |
+| `glossary_service.py` — **修改** | `resolve_glossary_paths(state: AppState)` → `resolve_glossary_paths(cache_path: Path | None)` |
+| `debug_trace.py` — **修改** | 删除 `setup_file_handler` / `cleanup_file_handler` 重复函数，合并入 `debug_session` |
+
+**关键设计决策：**
+- `GenerateContext` 从持有整个 `AppState` 缩小为 `replace_page: Callable` + `glossary_cache_path: Path | None`，页面号在 routes.py 中由 lambda 预绑定
+- `translation_lifecycle.finish_translation()` 承担 replace_page + merge_after_translate + rmtree，`sse_stream.generate()` 回归纯 SSE 格式化
+- 逐组推进 + 逐组测试：4 个任务组各以 `pytest tests/ -v` 为安全门
+- 13 个子代理分派执行，14 个 commit
+
+**测试：** 106 个测试全通过，ruff 零错误
+
+---
+
 ## 2026-06-21 — 大规模优化重构
 
 ### A. 强化 PDF 状态并发安全 (`harden-pdf-state-concurrency`)
@@ -104,10 +131,10 @@ ENGINE_REGISTRY = [EngineSpec(...), ...]  # 10 引擎，各一行
 
 | 指标 | 重构前 | 重构后 |
 |------|--------|--------|
-| 后端模块 | 7 | 11 |
+| 后端模块 | 7 | 14 |
 | 前端模块 | 1 | 7 |
-| 单元测试 | 45 | 111 |
-| OpenSpec specs | 9 | 14 |
-| routes.py 最大函数 | 230 行 | ~20 行 |
+| 单元测试 | 45 | 106 |
+| OpenSpec specs | 9 | 17 |
+| routes.py 最大函数 | 230 行 | ~30 行 |
 | 引擎配置新增成本 | ~10 处修改 | 1 行 |
 | 调试副作用 | import 时触发 | CLI/config 驱动 |
