@@ -17,9 +17,9 @@ from flask import (
 import config
 import glossary_service
 import pdf_extraction
-import services
 import sse_stream
-from services import render_page, sha256
+from file_hash import sha256
+from pdf_renderer import build_settings, render_page
 
 bp = Blueprint("main", __name__)
 
@@ -91,7 +91,7 @@ def translate_page(page: int):
     output_dir = tempfile.mkdtemp(dir=str(config.CACHE_DIR))
     single_page_pdf = pdf_extraction.extract_single_page(state.left_doc, page, tmpdir)
     glossary_paths = glossary_service.resolve_glossary_paths(state)
-    settings = services.build_settings(
+    settings = build_settings(
         str(single_page_pdf), user_prompt,
         output_dir=output_dir, glossary_paths=glossary_paths,
     )
