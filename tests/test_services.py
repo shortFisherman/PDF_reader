@@ -6,7 +6,8 @@ import pytest
 
 import config
 from file_hash import sha256
-from pdf_renderer import build_settings, render_page
+from pdf_renderer import render_page
+from translation_settings import build_settings
 
 
 def test_sha256_consistent():

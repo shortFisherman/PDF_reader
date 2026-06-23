@@ -19,7 +19,8 @@ import glossary_service
 import pdf_extraction
 import sse_stream
 from file_hash import sha256
-from pdf_renderer import build_settings, render_page
+from pdf_renderer import render_page
+from translation_settings import build_settings
 
 bp = Blueprint("main", __name__)
 
