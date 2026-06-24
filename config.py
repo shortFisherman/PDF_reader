@@ -17,14 +17,17 @@ from pdf2zh_next.config.translate_engine_model import (
 )
 
 CONFIG_PATH = Path(__file__).parent / "config.toml"
-with open(CONFIG_PATH, "rb") as f:
-    CONFIG = tomllib.load(f)
+try:
+    with open(CONFIG_PATH, "rb") as f:
+        CONFIG = tomllib.load(f)
+except FileNotFoundError:
+    CONFIG = {}
 
-model_cfg = CONFIG["model"]
-MODEL_PROVIDER = model_cfg["provider"]
+model_cfg = CONFIG.get("model", {})
+MODEL_PROVIDER = model_cfg.get("provider", "openai_compatible")
 _raw_api_key = os.environ.get("MODEL_API_KEY", model_cfg.get("api_key", ""))
 MODEL_API_KEY = (_raw_api_key or "").strip()
-MODEL = model_cfg["model"]
+MODEL = model_cfg.get("model", "")
 MODEL_BASE_URL = model_cfg.get("base_url") or None
 
 MODEL_THINKING_MODE = model_cfg.get("thinking_mode")
@@ -168,11 +171,11 @@ PROVIDER_INDEX: dict[str, EngineSpec] = {
     spec.provider: spec for spec in ENGINE_REGISTRY
 }
 
-DPI = CONFIG["pdf_reader"]["dpi"]
-CACHE_DIR = Path(CONFIG["pdf_reader"]["cache_dir"]).resolve()
+DPI = CONFIG.get("pdf_reader", {}).get("dpi", 200)
+CACHE_DIR = Path(CONFIG.get("pdf_reader", {}).get("cache_dir", "cache")).resolve()
 GLOSSARY_PATH = Path(__file__).parent / "docs" / "glossary.csv"
-TRANSLATION_LANG_IN = CONFIG["translation"]["lang_in"]
-TRANSLATION_LANG_OUT = CONFIG["translation"]["lang_out"]
+TRANSLATION_LANG_IN = CONFIG.get("translation", {}).get("lang_in", "en")
+TRANSLATION_LANG_OUT = CONFIG.get("translation", {}).get("lang_out", "zh")
 
 def _resolve_debug() -> bool:
     debug_section = CONFIG.get("debug")
