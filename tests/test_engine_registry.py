@@ -47,7 +47,7 @@ def test_resolve_engine_rejects_default_api_key(monkeypatch):
         assert "api_key" in str(e)
 
 
-def test_all_providers_resolve_to_correct_class():
+def test_all_providers_resolve_to_correct_class(mock_config):
     for provider in ALL_PROVIDERS:
         spec = resolve_engine(provider)
         expected = config.PROVIDER_INDEX[provider].settings_cls
@@ -57,7 +57,7 @@ def test_all_providers_resolve_to_correct_class():
         )
 
 
-def test_unknown_provider_falls_back_to_openai_compatible():
+def test_unknown_provider_falls_back_to_openai_compatible(mock_config):
     spec = resolve_engine("nonexistent_provider_xyz")
     from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
     assert spec.settings_cls is OpenAICompatibleSettings
