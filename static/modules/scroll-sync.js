@@ -50,27 +50,17 @@ export function createSettleGate(leftEl, rightEl) {
 export function setupScrollSync({ left, right }) {
     let syncing = false;
 
-    left.addEventListener('scroll', () => {
+    function sync(src, dst) {
         if (syncing) return;
-        const f = left.scrollHeight <= left.clientHeight ? 0
-            : left.scrollTop / (left.scrollHeight - left.clientHeight);
+        const f = src.scrollHeight <= src.clientHeight ? 0
+            : src.scrollTop / (src.scrollHeight - src.clientHeight);
         syncing = true;
-        requestAnimationFrame(() => {
-            right.scrollTop = f * (right.scrollHeight - right.clientHeight);
-            syncing = false;
-        });
-    });
+        dst.scrollTop = f * (dst.scrollHeight - dst.clientHeight);
+        setTimeout(() => { syncing = false; }, 0);
+    }
 
-    right.addEventListener('scroll', () => {
-        if (syncing) return;
-        const f = right.scrollHeight <= right.clientHeight ? 0
-            : right.scrollTop / (right.scrollHeight - right.clientHeight);
-        syncing = true;
-        requestAnimationFrame(() => {
-            left.scrollTop = f * (left.scrollHeight - left.clientHeight);
-            syncing = false;
-        });
-    });
+    left.addEventListener('scroll', () => sync(left, right));
+    right.addEventListener('scroll', () => sync(right, left));
 }
 
 export function setupPageDetection({ container, settle }, onPageChange) {
