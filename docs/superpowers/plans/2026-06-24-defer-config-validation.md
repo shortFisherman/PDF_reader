@@ -2,6 +2,7 @@
 change: defer-config-validation
 design-doc: docs/superpowers/specs/2026-06-24-defer-config-validation-design.md
 base-ref: e34a27dd34922e1a85484d76ee7ee44f9d42c8ee
+archived-with: 2026-06-24-defer-config-validation
 ---
 
 # defer-config-validation 实施计划
@@ -18,6 +19,7 @@ base-ref: e34a27dd34922e1a85484d76ee7ee44f9d42c8ee
 - 必需配置（MODEL、MODEL_API_KEY）的校验推迟�?`resolve_engine` 首次消费�?- 已正确配置的环境运行时行为完全不�?- 测试套件可在�?`config.toml` 的全新克隆中运行
 - 不改 `config.toml` �?schema，不引入配置对象、懒加载 property、依赖注入等架构改�?- `ruff check .` �?`pytest -q` 必须全过
 
+archived-with: 2026-06-24-defer-config-validation
 ---
 
 ### Task 1: config.py 容错加载 + 防御性访�?
@@ -98,6 +100,7 @@ Expected: 107+ tests pass（因移除导入期校验，�?`config.toml` 环境�
 git add config.py; git commit -m "feat: guarded config access �?no crash when config.toml is missing"
 ```
 
+archived-with: 2026-06-24-defer-config-validation
 ---
 
 ### Task 2: 删除导入期校�?+ 新增延迟校验函数
@@ -140,6 +143,7 @@ Expected: All checks pass.
 git add config.py; git commit -m "feat: defer config validation to _validate_required_config()"
 ```
 
+archived-with: 2026-06-24-defer-config-validation
 ---
 
 ### Task 3: engine_resolver.py 接入延迟校验
@@ -189,6 +193,7 @@ Expected: All checks pass.
 git add engine_resolver.py; git commit -m "feat: call _validate_required_config() at resolve_engine entry"
 ```
 
+archived-with: 2026-06-24-defer-config-validation
 ---
 
 ### Task 4: 测试 �?调整 conftest + 新增延迟校验测试
@@ -366,6 +371,7 @@ Expected: 5 passed.
 git add tests/conftest.py tests/test_config_deferred.py; git commit -m "test: add deferred config validation tests"
 ```
 
+archived-with: 2026-06-24-defer-config-validation
 ---
 
 ### Task 5: 回归测试 �?现有测试全过
@@ -416,6 +422,7 @@ git log --oneline -5
 ```
 
 Expected: 3 �?commit（config 改造、engine_resolver 接入、测试），无未暂存变更�?
+archived-with: 2026-06-24-defer-config-validation
 ---
 
 ### 自审清单

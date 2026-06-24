@@ -1,0 +1,13 @@
+{
+  "change": "fix-initial-load-and-sync-lag",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "85b844394fc920ca2b82f959ab54e0711e214c950cac45a22bf9f6db0794309a",
+  "files": [
+    { "path": "openspec/changes/fix-initial-load-and-sync-lag/proposal.md", "sha256": "ca8adb7e7f1ea9b3dbcadcc1b14944113c7f7cb73f30b6cef4e269f5a819a105" },
+    { "path": "openspec/changes/fix-initial-load-and-sync-lag/design.md", "sha256": "e23d91089e45108341143eee7c2cb7d6188840e61811708a53ad0b5aba27a890" },
+    { "path": "openspec/changes/fix-initial-load-and-sync-lag/tasks.md", "sha256": "e10ba077201bf7a9f812adf6e1105b13f727dc063b34361d7ff68f3b4d20915c" }
+  ]
+}

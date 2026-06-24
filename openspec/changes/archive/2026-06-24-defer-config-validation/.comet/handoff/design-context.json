@@ -1,0 +1,14 @@
+{
+  "change": "defer-config-validation",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "b1e70f086256c982038fafa74837756cbe0c45bbfa18a4c9040c56f98a574646",
+  "files": [
+    { "path": "openspec/changes/defer-config-validation/proposal.md", "sha256": "25948b8f6c317b138aef25a4712d486659f8c806234dcb795e968eb39dc8575f" },
+    { "path": "openspec/changes/defer-config-validation/design.md", "sha256": "b0f7aaf4a59f9f4090028176683ebb97d7f50a15cfd4510ba454cc2eab48b4b6" },
+    { "path": "openspec/changes/defer-config-validation/tasks.md", "sha256": "125d237d8ae2ec16d1c7c8bfe492544cf47eb8f2ba5438074e26891176347dbe" },
+    { "path": "openspec/changes/defer-config-validation/specs/engine-config/spec.md", "sha256": "f0268b641b717ab7b4ab2246dabc5eb2aa94d2718f1e2d1af3aa413cd7c26af3" }
+  ]
+}
