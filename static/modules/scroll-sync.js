@@ -81,7 +81,7 @@ export function setupPageDetection({ container }, onPageChange) {
 }
 
 // === Tests for createSettleGate ===
-{
+if (typeof window !== 'undefined' && window.__TEST_CREATE_SETTLE_GATE__) {
     if (typeof createSettleGate !== 'function') {
         console.error('FAIL: createSettleGate is not defined');
         console.log('0 passed, 3 FAILED (RED phase)');
@@ -142,6 +142,7 @@ export function setupPageDetection({ container }, onPageChange) {
             }, 50);
             setTimeout(() => {
                 assert(callCount === 1, 'Test 2: Callback should fire only once after final settle');
+                assert(gate2.isScrollSettled() === true, 'Test 2: After settle, isScrollSettled should be true');
                 gate2.dispose();
                 pending--;
                 done(pending);
@@ -163,3 +164,4 @@ export function setupPageDetection({ container }, onPageChange) {
         }
     }
 }
+
