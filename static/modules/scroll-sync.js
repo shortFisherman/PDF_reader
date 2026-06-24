@@ -45,13 +45,25 @@ export function setupScrollSync({ left, right }) {
     let syncing = false;
 
     left.addEventListener('scroll', () => {
-        if (!syncing) {
-            syncing = true;
-            right.scrollTop = left.scrollTop;
-            requestAnimationFrame(() => {
-                syncing = false;
-            });
-        }
+        if (syncing) return;
+        const f = left.scrollHeight <= left.clientHeight ? 0
+            : left.scrollTop / (left.scrollHeight - left.clientHeight);
+        syncing = true;
+        requestAnimationFrame(() => {
+            right.scrollTop = f * (right.scrollHeight - right.clientHeight);
+            syncing = false;
+        });
+    });
+
+    right.addEventListener('scroll', () => {
+        if (syncing) return;
+        const f = right.scrollHeight <= right.clientHeight ? 0
+            : right.scrollTop / (right.scrollHeight - right.clientHeight);
+        syncing = true;
+        requestAnimationFrame(() => {
+            left.scrollTop = f * (left.scrollHeight - left.clientHeight);
+            syncing = false;
+        });
     });
 }
 
