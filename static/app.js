@@ -14,6 +14,8 @@ let promptVisible = false;
 let statusTimer = null;
 
 let els;
+let io = null;
+let settle = null;
 
 function init() {
     els = getElements();
@@ -33,6 +35,9 @@ function init() {
 }
 
 async function openPdf() {
+    if (io) { io.observer.disconnect(); io = null; }
+    if (settle) { settle.dispose(); settle = null; }
+
     const path = els.pdfPathInput.value.trim();
     if (!path) return;
 
@@ -71,9 +76,9 @@ async function openPdf() {
         els.appView.classList.remove('hidden');
         els.toolbar.classList.remove('hidden');
 
-        const settle = createSettleGate(els.leftCol, els.rightCol);
+        settle = createSettleGate(els.leftCol, els.rightCol);
 
-        setupIntersectionObserver({
+        io = setupIntersectionObserver({
             load: loadPageImage,
             unload: unloadPageImage,
             settle,

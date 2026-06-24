@@ -15,7 +15,6 @@ export function createSettleGate(leftEl, rightEl) {
         timer = setTimeout(() => {
             settled = true;
             const cbs = [...callbacks];
-            callbacks.length = 0;
             cbs.forEach(cb => cb());
         }, SETTLE_MS);
     }

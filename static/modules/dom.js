@@ -58,7 +58,6 @@ export function createPageEl(pageNum, side, pageWidth, pageHeight) {
     placeholder.className = 'page-placeholder';
     placeholder.style.paddingBottom = `${ph}%`;
     placeholder.textContent = `Page ${pageNum + 1}`;
-    placeholder.dataset.loaded = 'false';
     container.appendChild(placeholder);
 
     return container;
