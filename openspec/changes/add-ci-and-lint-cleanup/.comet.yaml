@@ -8,7 +8,7 @@ subagent_dispatch: confirmed
 tdd_mode: direct
 review_mode: off
 isolation: branch
-verify_mode: null
+verify_mode: full
 auto_transition: true
 base_ref: e34a27dd34922e1a85484d76ee7ee44f9d42c8ee
 design_doc: docs/superpowers/specs/2026-06-25-ci-and-lint-cleanup-design.md
