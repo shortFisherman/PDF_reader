@@ -19,6 +19,6 @@ build_command: echo ok
 verify_command: echo ok
 created_at: 2026-06-24
 verified_at: 2026-06-24
-archived: false
+archived: true
 handoff_context: openspec/changes/fix-lazy-load-scroll/.comet/handoff/design-context.json
 handoff_hash: b9d637040898e267be8fa522583207370b7889e01c915ff68b0df8cde1bedb2e

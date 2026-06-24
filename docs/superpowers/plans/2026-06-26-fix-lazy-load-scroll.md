@@ -2,6 +2,7 @@
 change: fix-lazy-load-scroll
 design-doc: docs/superpowers/specs/2026-06-26-fix-lazy-load-scroll-design.md
 base-ref: 1affb4f4ccd72d552240ff2289e8cfcad837935f
+archived-with: 2026-06-24-fix-lazy-load-scroll
 ---
 
 # Implementation Plan — 修复前端懒加载与滚动同步

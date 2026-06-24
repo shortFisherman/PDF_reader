@@ -2,6 +2,8 @@
 comet_change: fix-lazy-load-scroll
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-24-fix-lazy-load-scroll
+status: final
 ---
 
 # Design Doc — 修复前端懒加载与滚动同步
