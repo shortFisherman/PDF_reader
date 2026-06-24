@@ -113,6 +113,8 @@ function loadPageImage(container) {
 }
 
 function unloadPageImage(container) {
+    if (container.dataset.loaded !== 'true') return;
+
     const img = container.querySelector('img');
     if (!img) return;
 
@@ -121,9 +123,9 @@ function unloadPageImage(container) {
     const ph = calculatePlaceholderHeight(pageWidth, pageHeight);
     placeholder.style.paddingBottom = `${ph}%`;
     placeholder.textContent = `Page ${parseInt(container.dataset.page) + 1}`;
-    placeholder.dataset.loaded = 'false';
 
     img.replaceWith(placeholder);
+    container.dataset.loaded = 'false';
 }
 
 async function loadTranslatedState() {
