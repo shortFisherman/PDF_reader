@@ -79,7 +79,7 @@ async function openPdf() {
             settle,
         });
         setupScrollSync({ left: els.leftCol, right: els.rightCol });
-        setupPageDetection({ container: els.leftCol }, onPageChange);
+        setupPageDetection({ container: els.leftCol, settle }, onPageChange);
         loadTranslatedState();
     } catch (e) {
         els.fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">Network error: ${e.message}</p>`);
