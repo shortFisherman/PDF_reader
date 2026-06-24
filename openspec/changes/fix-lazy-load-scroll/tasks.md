@@ -19,7 +19,7 @@
 - [x] 4.1 重写 `lazy-loader.js`：`IntersectionObserver` 的 `rootMargin` 缩小为约 2 页高度；回调中仅在 `isScrollSettled()` 为真时放行 `load`，否则记录待加载集合不发起请求
 - [x] 4.2 实现「落点加载」：稳定后遍历待加载集合与当前视口，仅对视口内 + 缓冲的页面调用 `load`，扫过但已离开的待加载项被丢弃
 - [x] 4.3 实现延迟卸载：`unload` 改为「离开缓冲且文档稳定后」才执行，复用 1.x 的同一稳定闸门，杜绝边界 `load→unload→load` 振荡
-- [ ] 4.4 在 `app.js` 的 `loadPageImage` 把加载状态守卫迁移到 `page-container`（`dataset.loaded`），不依赖会被删除的占位；`<img>` 在 `onload` 前不替换占位
+- [x] 4.4 在 `app.js` 的 `loadPageImage` 把加载状态守卫迁移到 `page-container`（`dataset.loaded`），不依赖会被删除的占位；`<img>` 在 `onload` 前不替换占位
 - [ ] 4.5 在 `app.js` 的 `unloadPageImage` 复位 `page-container.dataset.loaded='false'`；确保已加载页不被重复请求
 
 ## 5. 验证
