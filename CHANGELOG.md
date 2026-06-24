@@ -1,5 +1,35 @@
 # 更新日志
 
+## 2026-06-24 — 修复懒加载与滚动同步
+
+### `fix-lazy-load-scroll`
+
+**现象：** 三个前端交互缺陷严重影响大文档可读性：(1) 拖滚动条长距离跳转淹没 ~500 次 `/api/page/*` 请求；(2) 左右两栏单向绝对 scrollTop 同步导致错位，图片加载后高度跳变出现"一边塞两页"；(3) 翻页边界 `load→unload→load` 振荡与重复请求。
+
+**根因：** 懒加载与滚动同步的脆弱设计——IO 即时加载无去抖、单向绝对值同步不兼容双栏高度差、加载卸载无统一闸门。
+
+**修复（16 任务，5 组）：**
+
+| 组 | 说明 | 文件 |
+|---|---|---|
+| 1 | 滚动稳定闸门（150ms settle gate） | `scroll-sync.js`, `app.js` |
+| 2 | CSS `width:100%` 消除布局跳变 | `style.css`, `dom.js` |
+| 3 | 双向按比例滚动同步（rAF + syncing 防回环） | `scroll-sync.js` |
+| 4 | 懒加载重构：IO 降级为候选标记器 + 落点加载 + 延迟卸载（RECLAIM_DISTANCE=10）+ 容器级 `dataset.loaded` 守卫 | `lazy-loader.js`, `app.js` |
+| 5 | 手动回归验证 | — |
+
+**架构核心：** 引入 settle gate 统一收敛所有 load/unload/page-detection 到滚动停止后执行。IO 观察者不再直接调用 load/unload，改为仅标记 `pendingLoad`/`pendingReclaim` 候选集；settle 扫描时仅对视口 ±2 页加载，扫过页丢弃；离开视口 >10 页且在 settle 后确认才卸载。
+
+**关键参数：** `SETTLE_MS=150`, `BUF=2`, `RECLAIM_DISTANCE=10`, IO `rootMargin=200%`
+
+**执行方式：** subagent-driven development，每任务 TDD（RED→GREEN）+ spec review + quality review，最终审查发现并修复 settle gate 回调一次性失效的 critical bug。
+
+**delta spec：** lazy-loading +2 added / +3 modified，dual-column-reading +3 modified
+
+**测试：** JS inline tests 57 个全通过，前端手动回归 4 场景
+
+---
+
 ## 2026-06-23 — 修复术语累计功能失效 + 拆分 pdf_renderer.py 双重职责
 
 ### `fix-glossary-merge-bom` — 术语累计失效修复

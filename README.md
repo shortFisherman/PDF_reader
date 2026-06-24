@@ -269,11 +269,13 @@ class EngineSpec:
 
 `engine_resolver.py` 中 `resolve_engine()` + `build_engine_kwargs()` 遍历 `spec.field_map` 动态构造参数，新增引擎仅需在 `ENGINE_REGISTRY` 追加一行 `EngineSpec`。
 
-### 滚动同步
+### 滚动同步与懒加载
 
-- 左栏 `scroll` 事件 → `requestAnimationFrame` → 设置右栏 `scrollTop`
-- 右栏独立滚动不影响左栏
-- IntersectionObserver 5 页缓冲区，离屏图片自动卸载
+- **滚动稳定闸门**：~150ms 去抖，所有 load/unload/page-detection 统一收敛到滚动停止后执行
+- **双向按比例同步**：左右任一栏滚动 → `scrollTop/(scrollHeight-clientHeight)` 比例 → rAF 内同步另一栏，`syncing` 标志防回环
+- **落点加载**：IntersectionObserver 降级为候选标记器（200% 缓冲区），settle 后仅加载视口 ±2 页，扫过页丢弃不请求
+- **延迟卸载**：离开视口 >10 页且在 settle 后确认，才卸载图片，杜绝边界 `load→unload→load` 振荡
+- **容器级加载守卫**：`page-container.dataset.loaded` 持久标记，`<img>` 在 `onload` 前不替换占位，加载前后高度不变
 
 ### 调试追踪
 
@@ -308,3 +310,4 @@ class EngineSpec:
 | 6月21日 | 大规模优化重构（5 项变更）：① 线程安全强化（渲染全程持锁 + 页码校验）② 翻译服务层抽取（routes 薄化，6 个独立服务模块）③ 数据驱动引擎注册表（EngineSpec 声明式配置）④ 调试追踪隔离（debug_trace.py 统一、config 驱动、零侵入）⑤ 前端模块化（ES Module 拆分为 6 模块 + /api/stages 统一标签），111 测试 |
 | 6月22日 | 模块内聚性重构：`services.py` 拆分为 4 个独立模块（`file_hash.py` / `engine_resolver.py` / `pdf_renderer.py` / `translation_lifecycle.py`），`GenerateContext` 接口缩小，`glossary_service` 参数类型缩小为 `Path`，`debug_trace.py` 消除重复代码，106 测试 |
 | 6月23日 | 拆分 `pdf_renderer.py` 双重职责：`build_settings()` 迁入新模块 `translation_settings.py`，`pdf_renderer.py` 回归单一职责（PDF 渲染），106 测试 |
+| 6月24日 | 修复懒加载与滚动同步三大缺陷：① 落点加载（长距跳转请求 ≤~5）② 双向按比例同步 ③ 消除翻页边界振荡。新增 settle gate + 候选标记 IO + 延迟卸载 + 容器级守卫，16 任务 subagent-driven 执行 |
