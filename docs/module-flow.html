@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF_reader · 模块交互流程图</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif; margin: 0; padding: 32px 40px; background: #fafafa; color: #222; line-height: 1.6; }
+  h1 { font-weight: 600; margin: 0 0 6px; }
+  p.lead { color: #666; max-width: 900px; margin: 6px 0 28px; }
+  .legend { margin-bottom: 28px; font-size: 13px; color: #555; }
+  .legend span { display: inline-block; padding: 4px 14px; border-radius: 4px; margin-right: 8px; border: 1px solid rgba(0,0,0,.08); }
+  section { margin-bottom: 40px; }
+  h2 { font-size: 18px; font-weight: 600; margin: 0 0 4px; border-left: 4px solid #1565c0; padding-left: 10px; }
+  p.desc { color: #666; font-size: 14px; margin: 4px 0 14px; }
+  .card { background: #fff; border: 1px solid #e3e3e3; border-radius: 10px; padding: 20px; overflow: auto; }
+  .mermaid { display: flex; justify-content: center; }
+  .note { margin-top: 24px; font-size: 12px; color: #888; }
+</style>
+</head>
+<body>
+<h1>双语 PDF 阅读器 — 模块交互流程图</h1>
+<p class="lead">按四条链路分别绘制，避免单图过密。实线 → 表示直接调用 / 数据流；虚线 ⇢ 表示异步事件 / 反馈。</p>
+<div class="legend">
+  <span style="background:#e3f2fd">前端</span>
+  <span style="background:#fff3e0">入口 / 配置</span>
+  <span style="background:#f3e5f5">路由层</span>
+  <span style="background:#e0f7fa">状态管理</span>
+  <span style="background:#e8f5e9">服务层</span>
+  <span style="background:#fce4ec">外部依赖</span>
+</div>
+
+<section>
+  <h2>① 启动链路 — app.py 装配</h2>
+  <p desc>程序入口创建 Flask app，初始化调试追踪，实例化 AppState 并注册路由。</p>
+  <div class="card"><div class="mermaid">
+flowchart LR
+  CLI["--debug CLI 参数"] --> app_py
+  app_py["app.py<br/>create_app()"] -->|init_debug| debug["debug_trace.py<br/>init_debug()"]
+  app_py -->|new AppState| AppState["state.py<br/>AppState (单锁)"]
+  app_py -->|register_routes| routes["routes.py<br/>Blueprint"]
+  config["config.py<br/>EngineSpec / ENGINE_REGISTRY<br/>config.toml"] -.全局配置.-> debug
+  config -.全局配置.-> AppState
+  classDef entry fill:#fff3e0,stroke:#ef6c00,color:#bf360c
+  classDef state fill:#e0f7fa,stroke:#00838f,color:#006064
+  classDef route fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c
+  class app_py,config,debug entry
+  class AppState state
+  class routes route
+  </div></div>
+</section>
+
+<section>
+  <h2>② 打开 PDF — POST /api/open</h2>
+  <p desc>前端提交路径 → 路由调用 state.open_pdf → 计算哈希、复制原件到缓存、打开左右文档。</p>
+  <div class="card"><div class="mermaid">
+flowchart LR
+  app_js["app.js (前端)"] -->|POST /api/open| r_open["routes.py<br/>open_pdf()"]
+  r_open -->|state.open_pdf| AppState["state.py<br/>AppState.open_pdf()"]
+  AppState -->|计算哈希| file_hash["file_hash.py<br/>sha256()"]
+  AppState -->|复制原件·打开左右文档| cache[("cache/sha256/<br/>right.pdf")]
+  AppState --> pymupdf["pymupdf (MuPDF)"]
+  AppState -.页数/尺寸/哈希.-> r_open -.JSON.-> app_js
+  classDef browser fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+  classDef route fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c
+  classDef state fill:#e0f7fa,stroke:#00838f,color:#006064
+  classDef service fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+  classDef external fill:#fce4ec,stroke:#c2185b,color:#880e4f
+  class app_js browser
+  class r_open route
+  class AppState state
+  class file_hash service
+  class cache,pymupdf external
+  </div></div>
+</section>
+
+<section>
+  <h2>③ 渲染页面 — GET /api/page/&lt;side&gt;/&lt;page&gt;</h2>
+  <p desc>前端请求某页 PNG → 路由持锁委托 pdf_renderer 渲染 → 返回图片字节。</p>
+  <div class="card"><div class="mermaid">
+flowchart LR
+  lazy["lazy-loader.js<br/>IntersectionObserver"] -->|按需请求| app_js["app.js (前端)"]
+  app_js -->|GET /api/page| r_page["routes.py<br/>get_page()"]
+  r_page -->|state.render_page 持锁| AppState["state.py<br/>AppState.render_page()"]
+  AppState --> pdf_render["pdf_renderer.py<br/>render_page()"]
+  pdf_render --> pymupdf["pymupdf → PNG"]
+  r_page -.PNG bytes.-> app_js
+  classDef browser fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+  classDef route fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c
+  classDef state fill:#e0f7fa,stroke:#00838f,color:#006064
+  classDef service fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+  classDef external fill:#fce4ec,stroke:#c2185b,color:#880e4f
+  class lazy,app_js browser
+  class r_page route
+  class AppState state
+  class pdf_render service
+  class pymupdf external
+  </div></div>
+</section>
+
+<section>
+  <h2>④ 翻译流程 — POST /api/translate/&lt;page&gt;</h2>
+  <p desc>核心链路，6 个子步骤：抽取单页 → 解析术语表 → 组装参数 → 构造上下文 → SSE 流式翻译 → 完成后持久化。</p>
+  <div class="card"><div class="mermaid">
+flowchart LR
+  translator["translator.js (前端)"] -->|POST /api/translate| r_translate["routes.py<br/>translate_page()"]
+
+  r_translate -->|"1 抽取单页 PDF"| pdf_extract["pdf_extraction.py<br/>extract_single_page()"]
+  pdf_extract --> pymupdf1["pymupdf"]
+
+  r_translate -->|"2 解析累积术语表"| glossary["glossary_service.py<br/>resolve_glossary_paths()"]
+  glossary --> cache1[("cache/sha256/<br/>cumulative_glossary.csv")]
+
+  r_translate -->|"3 组装翻译参数"| trans_settings["translation_settings.py<br/>build_settings()"]
+  trans_settings --> engine_res["engine_resolver.py<br/>resolve_engine()<br/>build_engine_kwargs()"]
+  engine_res -.EngineSpec.-> config["config.py<br/>ENGINE_REGISTRY"]
+
+  r_translate -->|"4 构造 GenerateContext<br/>5 stream_with_context"| sse["sse_stream.py<br/>generate()"]
+
+  sse -->|run_translation| orchestrator["translation_orchestrator.py<br/>asyncio 线程 + 事件队列"]
+  orchestrator -->|do_translate_async_stream| pdf2zh["pdf2zh_next (BabelDOC)"]
+  pdf2zh -->|调用| llm["LLM API"]
+  orchestrator -.进度事件入队.-> sse
+  sse -.format_sse_event.-> sse_client["sse-client.js (前端)"]
+  sse -.SSE 流.-> sse_client
+  orchestrator -.TranslationError 传播.-> sse
+
+  sse -->|debug_session| debug["debug_trace.py"]
+  sse -->|"6 finish_translation"| lifecycle["translation_lifecycle.py"]
+  lifecycle -->|replace_page| AppState["state.py<br/>AppState.replace_page()"]
+  AppState -->|覆盖 right.pdf 第 N 页| cache2[("cache/sha256/<br/>right.pdf")]
+  lifecycle -->|merge_after_translate| glossary_merge["glossary_service.py →<br/>glossary_merger.py<br/>多数投票去重"]
+  glossary_merge -->|写回| cache1
+  lifecycle -->|清理 tmpdir/output_dir| cleanup["临时目录清理"]
+  lifecycle -->|log_glossary_merge| debug
+  sse_client -.刷新右栏图片.-> translator
+
+  classDef browser fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+  classDef route fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c
+  classDef state fill:#e0f7fa,stroke:#00838f,color:#006064
+  classDef service fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+  classDef external fill:#fce4ec,stroke:#c2185b,color:#880e4f
+  class translator,sse_client browser
+  class r_translate route
+  class AppState state
+  class pdf_extract,glossary,trans_settings,engine_res,sse,orchestrator,lifecycle,glossary_merge service
+  class pymupdf1,pdf2zh,llm,cache1,cache2,debug,cleanup,config external
+  </div></div>
+</section>
+
+<p class="note">源码基于当前主干绘制。每张图聚焦一条链路，节点与连线大幅减少，便于阅读。如需导出 SVG/PNG 或调整布局可进一步调整。</p>
+<script>mermaid.initialize({ startOnLoad: true, flowchart: { htmlLabels: true, curve: 'basis' }, securityLevel: 'loose' });</script>
+</body>
+</html>
