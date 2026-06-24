@@ -19,34 +19,6 @@ The system SHALL load page images only when the page is near the browser viewpor
 - **WHEN** the user drags the scrollbar from page 1 toward page 500, sweeping many pages through the buffer
 - **THEN** the system SHALL NOT issue page requests for the swept intermediate pages, and after scrolling settles SHALL load only the pages in the landing viewport plus buffer (≤ ~5 requests)
 
-### Requirement: Symmetric debounced unload
-
-The system SHALL NOT unload a page image the instant it leaves the buffer. Unloading SHALL be deferred until the scroll-settled state is reached AND the page remains outside the viewport and buffer. The load/unload decision SHALL share a single scroll-settled gate so that boundary jitter cannot trigger a load→unload→load cycle.
-
-#### Scenario: Page temporarily leaves buffer during a slow scroll
-
-- **WHEN** a loaded page briefly crosses outside the buffer during continued scrolling and re-enters within one settle interval
-- **THEN** the system SHALL NOT unload and reload it (no oscillation, no duplicate request)
-
-#### Scenario: Scroll-away unloading after settle
-
-- **WHEN** a loaded page remains more than 10 pages away from the viewport after the document settles
-- **THEN** the system MAY unload its image to free memory, replacing it with a placeholder whose load state is reset
-
-### Requirement: Container-level load state guards
-
-The system SHALL track the loaded state on the `page-container` element (e.g. `dataset.loaded`), not on the placeholder. The `<img>` SHALL not replace the placeholder until `onload` fires, so an in-flight image never causes a height change or duplicate load. A page with `dataset.loaded === 'true'` SHALL NOT be re-requested.
-
-#### Scenario: Duplicate load suppression
-
-- **WHEN** an already-loaded page re-enters the buffer
-- **THEN** the system SHALL NOT issue another request for that page
-
-#### Scenario: Image load does not change layout
-
-- **WHEN** a page image finishes loading
-- **THEN** the placeholder SHALL be replaced by the `<img>` without changing the page-container's rendered height
-
 ### Requirement: IntersectionObserver implementation
 
 The system SHALL use the browser's IntersectionObserver API to detect which page elements are near the viewport, implemented in the `lazy-loader` module. The observer's `rootMargin` SHALL define a small buffer (approximately 2 page-heights), smaller than the prior 5-page buffer to reduce landing-page request volume.
@@ -74,3 +46,33 @@ The system SHALL support PDF documents with up to 1000 pages without degrading b
 
 - **WHEN** total loaded images exceed 50 pages
 - **THEN** the system SHALL unload images furthest from the viewport (after settle) to stay within memory limits
+
+## ADDED Requirements
+
+### Requirement: Symmetric debounced unload
+
+The system SHALL NOT unload a page image the instant it leaves the buffer. Unloading SHALL be deferred until the scroll-settled state is reached AND the page remains outside the viewport and buffer. The load/unload decision SHALL share a single scroll-settled gate so that boundary jitter cannot trigger a load→unload→load cycle.
+
+#### Scenario: Page temporarily leaves buffer during a slow scroll
+
+- **WHEN** a loaded page briefly crosses outside the buffer during continued scrolling and re-enters within one settle interval
+- **THEN** the system SHALL NOT unload and reload it (no oscillation, no duplicate request)
+
+#### Scenario: Scroll-away unloading after settle
+
+- **WHEN** a loaded page remains more than 10 pages away from the viewport after the document settles
+- **THEN** the system MAY unload its image to free memory, replacing it with a placeholder whose load state is reset
+
+### Requirement: Container-level load state guards
+
+The system SHALL track the loaded state on the `page-container` element (e.g. `dataset.loaded`), not on the placeholder. The `<img>` SHALL not replace the placeholder until `onload` fires, so an in-flight image never causes a height change or duplicate load. A page with `dataset.loaded === 'true'` SHALL NOT be re-requested.
+
+#### Scenario: Duplicate load suppression
+
+- **WHEN** an already-loaded page re-enters the buffer
+- **THEN** the system SHALL NOT issue another request for that page
+
+#### Scenario: Image load does not change layout
+
+- **WHEN** a page image finishes loading
+- **THEN** the placeholder SHALL be replaced by the `<img>` without changing the page-container's rendered height
