@@ -1,23 +1,28 @@
-# Task 3 Report：抽取 dom.js 模块
+## Task 3 Report: engine_resolver.py 接入延迟校验
 
-## 状态：DONE
+**Status:** Complete
 
-## 完成内容
+**Commit:** `e5f474d` — `feat: call _validate_required_config() at resolve_engine entry`
 
-1. 创建了 `static/modules/` 目录
-2. 编写了 `static/modules/dom.js`，严格按 brief 中的代码实现：
-   - `getElements()` — DOM 元素缓存查询，返回 13 个元素的引用集合
-   - `calculatePlaceholderHeight(pageWidth, pageHeight)` — 根据宽高比计算占位高度百分比，默认 600
-   - `createPageEl(pageNum, side, pageWidth, pageHeight)` — 创建带占位符的页面容器 DOM 元素
-3. Node.js 语法检查通过：`node -c` 无错误输出
+### Changes
 
-## 提交
+| File | Change |
+|------|--------|
+| `engine_resolver.py:20` | Added `config._validate_required_config()` at `resolve_engine` entry |
+| `tests/test_engine_registry.py` | Added 3 new TDD tests (missing model, missing api_key, default api_key) |
+| `tests/test_services.py:174-177` | Updated pre-existing `test_build_settings_missing_api_key_raises` — now expects `ValueError` (from earlier validation) instead of `RuntimeError` |
 
-- Commit: `6d77392` — `feat: extract dom.js module — getElements, createPageEl, calculatePlaceholderHeight`
-- 1 file changed, 65 insertions(+)
+### Tests
 
-## 自审
+- **110 passed**, 0 failed
+- `ruff check .` — All checks passed
 
-- 代码与 brief 完全一致（逐字符比对）
-- 语法有效（Node.js 检查通过）
-- 导出接口与 brief 描述的接口完全匹配
+### TDD Cycle
+
+1. **RED** — 3 new tests failed because `resolve_engine` didn't call validation yet
+2. **GREEN** — Added single line `config._validate_required_config()` at function entry
+3. **REFACTOR** — None needed; minimal change
+
+### Concerns
+
+- None. The pre-existing `test_build_settings_missing_api_key_raises` was updated to reflect that validation now happens at `resolve_engine` entry (raising `ValueError`) rather than later in `build_engine_kwargs` (which previously raised `RuntimeError`). This is the intended behavioral shift.
