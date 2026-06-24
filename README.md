@@ -14,7 +14,7 @@
 - **大 PDF 支持**：IntersectionObserver 懒加载，1000 页不卡顿
 - **翻译进度**：SSE 实时推送翻译进度条及阶段标签
 - **调试追踪**：`--debug` CLI 开关 + `config.toml` 配置驱动，全链路日志记录术语提取 LLM 交互、翻译各步骤耗时；调试逻辑完全隔离，零侵入业务代码
-- **后端服务层模块化**：14 个独立模块，单一职责，低耦合高内聚。`services.py` 已拆分为 `file_hash.py` / `engine_resolver.py` / `pdf_renderer.py`，翻译后处理抽取为 `translation_lifecycle.py`
+- **后端服务层模块化**：15 个独立模块，单一职责，低耦合高内聚。`services.py` 已拆分为 `file_hash.py` / `engine_resolver.py` / `pdf_renderer.py`，翻译后处理抽取为 `translation_lifecycle.py`，翻译参数组装抽取为 `translation_settings.py`
 - **数据驱动引擎**：声明式 `EngineSpec` + `ENGINE_REGISTRY`（`engine_resolver.py`），新增引擎仅需一行配置
 - **线程安全**：渲染全程持锁，杜绝竞态；翻译端点页码校验防越界；106 个测试确保变更安全
 
@@ -40,7 +40,8 @@ PDF_reader/
 ├── state.py                      # AppState 类（单锁线程安全状态管理）
 ├── file_hash.py                  # SHA256 文件哈希计算
 ├── engine_resolver.py            # 翻译引擎查找与参数映射
-├── pdf_renderer.py               # PDF 页面渲染 + 翻译设置构建
+├── pdf_renderer.py               # PDF 页面渲染（PyMuPDF → PNG）
+├── translation_settings.py       # 组装 pdf2zh-next 翻译参数
 ├── translation_lifecycle.py      # 翻译完成后的持久化、术语合并、清理
 ├── pdf_extraction.py             # 单页 PDF 抽取
 ├── translation_orchestrator.py   # 翻译编排（asyncio 线程 + 事件队列）
@@ -233,7 +234,8 @@ enabled = true
 - `translation_lifecycle.py` — 翻译完成后的持久化（replace_page + 术语合并 + 临时目录清理）
 - `file_hash.py` — SHA256 文件哈希
 - `engine_resolver.py` — 翻译引擎查找与参数映射
-- `pdf_renderer.py` — PDF 页面渲染 + pdf2zh-next 设置组装
+- `pdf_renderer.py` — PDF 页面渲染（PyMuPDF → PNG 字节）
+- `translation_settings.py` — 组装 pdf2zh-next 翻译参数（SettingsModel）
 - `glossary_service.py` — 术语表路径解析 + 翻译后合并
 - `debug_trace.py` — 条件调试追踪（零侵入业务代码）
 
@@ -305,3 +307,4 @@ class EngineSpec:
 | 6月20日 | 全链路调试追踪：monkey-patch 术语提取器，Logger `pdf_reader.debug_trace` 双输出（console + 文件），翻译各步骤耗时日志，debug_trace.log 自动轮转，45 测试 |
 | 6月21日 | 大规模优化重构（5 项变更）：① 线程安全强化（渲染全程持锁 + 页码校验）② 翻译服务层抽取（routes 薄化，6 个独立服务模块）③ 数据驱动引擎注册表（EngineSpec 声明式配置）④ 调试追踪隔离（debug_trace.py 统一、config 驱动、零侵入）⑤ 前端模块化（ES Module 拆分为 6 模块 + /api/stages 统一标签），111 测试 |
 | 6月22日 | 模块内聚性重构：`services.py` 拆分为 4 个独立模块（`file_hash.py` / `engine_resolver.py` / `pdf_renderer.py` / `translation_lifecycle.py`），`GenerateContext` 接口缩小，`glossary_service` 参数类型缩小为 `Path`，`debug_trace.py` 消除重复代码，106 测试 |
+| 6月23日 | 拆分 `pdf_renderer.py` 双重职责：`build_settings()` 迁入新模块 `translation_settings.py`，`pdf_renderer.py` 回归单一职责（PDF 渲染），106 测试 |

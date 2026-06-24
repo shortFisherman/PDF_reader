@@ -14,7 +14,7 @@ def write_csv(path: Path, rows: list[tuple[str, str]]) -> None:
 
 
 def read_csv(path: Path) -> list[tuple[str, str]]:
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         return [(row["source"], row["target"]) for row in reader]
 
@@ -91,6 +91,32 @@ def test_auto_file_missing_does_not_create_cumulative():
         assert not cumulative_path.exists()
         merge_glossary_csvs(cumulative_path, auto_path)
         assert not cumulative_path.exists()
+    finally:
+        import shutil
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_bom_encoded_auto_glossary_is_merged():
+    """babeldoc writes auto-extracted glossary with utf-8-sig (BOM) and 3 columns.
+    The merger must handle the BOM so 'source' lookups don't silently fail."""
+    tmpdir = Path(tempfile.mkdtemp())
+    try:
+        cumulative_path = tmpdir / "cumulative.csv"
+        auto_path = tmpdir / "auto.csv"
+
+        with open(auto_path, "w", newline="", encoding="utf-8-sig") as f:
+            w = csv.DictWriter(f, fieldnames=["source", "target", "tgt_lng"], doublequote=True)
+            w.writeheader()
+            w.writerow({"source": "AD", "target": "特应性皮炎", "tgt_lng": "zh"})
+            w.writerow({"source": "panel", "target": "专家组", "tgt_lng": "zh"})
+
+        merge_glossary_csvs(cumulative_path, auto_path)
+
+        rows = read_csv(cumulative_path)
+        assert len(rows) == 2
+        source_to_target = dict(rows)
+        assert source_to_target["AD"] == "特应性皮炎"
+        assert source_to_target["panel"] == "专家组"
     finally:
         import shutil
         shutil.rmtree(tmpdir, ignore_errors=True)

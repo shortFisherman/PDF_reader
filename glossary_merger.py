@@ -8,13 +8,14 @@ logger = logging.getLogger("pdf_reader")
 
 def merge_glossary_csvs(cumulative_path: Path, auto_extracted_path: Path) -> None:
     if not auto_extracted_path.exists():
+        logger.warning("auto-extracted glossary file not found: %s", auto_extracted_path)
         return
 
     source_targets: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     if cumulative_path.exists():
         try:
-            with open(cumulative_path, newline="", encoding="utf-8") as f:
+            with open(cumulative_path, newline="", encoding="utf-8-sig") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     source = row.get("source", "").strip()
@@ -25,7 +26,7 @@ def merge_glossary_csvs(cumulative_path: Path, auto_extracted_path: Path) -> Non
             logger.warning("Failed to read cumulative glossary, starting fresh", exc_info=True)
 
     try:
-        with open(auto_extracted_path, newline="", encoding="utf-8") as f:
+        with open(auto_extracted_path, newline="", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             for row in reader:
                 source = row.get("source", "").strip()

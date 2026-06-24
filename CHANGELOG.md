@@ -1,5 +1,40 @@
 # 更新日志
 
+## 2026-06-23 — 修复术语累计功能失效 + 拆分 pdf_renderer.py 双重职责
+
+### `fix-glossary-merge-bom` — 术语累计失效修复
+
+**现象：** 翻译论文后从不生成 `cumulative_glossary.csv`，跨页术语一致性功能完全失效。调试日志显示术语提取正常运行（消耗 token），但合并步骤 `elapsed=0.00`（空操作）。
+
+**根因：** BOM 编码不匹配。babeldoc 用 `utf-8-sig`（带 BOM 头）写入自动提取的术语表 CSV，但 `glossary_merger.py` 用 `utf-8`（不处理 BOM）读取。BOM 字符 `\ufeff` 粘到第一列名上，`csv.DictReader` 看到的是 `\ufeffsource` 而非 `source`，`row.get("source")` 全部返回 `None`，所有术语被静默丢弃，`source_targets` 为空导致不写文件。
+
+**修复：**
+| 文件 | 改动 |
+|------|------|
+| `glossary_merger.py` | 两处 CSV 读取编码 `utf-8` → `utf-8-sig`（剥离 BOM，对无 BOM 文件安全） |
+| `glossary_merger.py` | 术语文件未找到时补 warning 日志（原静默返回） |
+| `glossary_service.py` | 跳过合并时补 warning 日志，输出两路径值便于排查 |
+| `tests/test_glossary_merger.py` | 新增 `test_bom_encoded_auto_glossary_is_merged` 回归测试，模拟 babeldoc 真实输出格式（BOM + 3 列 `source,target,tgt_lng`） |
+
+**测试：** 107 个测试全通过，ruff 零错误
+
+---
+
+## 2026-06-23 — 拆分 pdf_renderer.py 双重职责
+
+### `split-pdf-renderer`
+
+`pdf_renderer.py` 包含两个无关函数：`render_page()`（渲染 PNG）和 `build_settings()`（组装翻译参数）。拆分为独立模块：
+
+| 改动 | 说明 |
+|------|------|
+| `translation_settings.py` — **新增** | 迁入 `build_settings()`，负责组装 pdf2zh-next 翻译参数 |
+| `pdf_renderer.py` — **精简** | 删除 `build_settings()` 及相关 import，回归单一职责：PDF 页面渲染 |
+| `routes.py` — **修改** | import 从 `pdf_renderer` 改为 `translation_settings` |
+| `tests/test_services.py` — **修改** | 同上 |
+
+---
+
 ## 2026-06-22 — 模块内聚性重构
 
 ### `refactor-module-cohesion`
