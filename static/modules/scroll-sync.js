@@ -92,7 +92,7 @@ export function setupPageDetection({ container, settle }, onPageChange) {
 if (typeof window !== 'undefined' && window.__TEST_CREATE_SETTLE_GATE__) {
     if (typeof createSettleGate !== 'function') {
         console.error('FAIL: createSettleGate is not defined');
-        console.log('0 passed, 3 FAILED (RED phase)');
+        console.log('0 passed, 4 FAILED (RED phase)');
     } else {
         let passCount = 0;
         let failCount = 0;
@@ -117,7 +117,7 @@ if (typeof window !== 'undefined' && window.__TEST_CREATE_SETTLE_GATE__) {
             }
         }
 
-        let pending = 3;
+        let pending = 4;
 
         // Test 1: After scroll, isScrollSettled() returns false; after 150ms, returns true and callback fires
         {
@@ -169,6 +169,22 @@ if (typeof window !== 'undefined' && window.__TEST_CREATE_SETTLE_GATE__) {
                 pending--;
                 done(pending);
             }, 200);
+        }
+
+        // Test 4: trigger() immediately invokes callbacks without waiting for settle timer
+        {
+            const left = document.createElement('div');
+            const right = document.createElement('div');
+            const gate4 = createSettleGate(left, right);
+            let called = false;
+            gate4.onSettle(() => { called = true; });
+            assert(called === false, 'Test 4: Before trigger, callback should NOT have been called');
+            gate4.trigger();
+            assert(called === true, 'Test 4: After trigger, callback should be called synchronously');
+            assert(gate4.isScrollSettled() === true, 'Test 4: After trigger, should be settled');
+            gate4.dispose();
+            pending--;
+            done(pending);
         }
     }
 }

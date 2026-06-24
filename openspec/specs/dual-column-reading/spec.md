@@ -6,7 +6,7 @@ Display original and translated PDF page images side-by-side in two synchronized
 ## Requirements
 ### Requirement: Two synchronized scrollable columns
 
-The system SHALL display original and translated PDF pages side by side in two vertically scrollable columns. Scroll synchronization SHALL be **bidirectional and proportional**: scrolling either column SHALL synchronize the other column to the same fractional scroll position, computed as `scrollTop / (scrollHeight - clientHeight)`. Synchronization SHALL be throttled with `requestAnimationFrame` and guarded by a `syncing` flag to prevent feedback loops. The `scroll-sync` frontend module SHALL own this logic.
+The system SHALL display original and translated PDF pages side by side in two vertically scrollable columns. Scroll synchronization SHALL be **bidirectional and proportional**: scrolling either column SHALL synchronize the other column to the same fractional scroll position, computed as `scrollTop / (scrollHeight - clientHeight)`. Synchronization SHALL set the destination `scrollTop` synchronously within the source scroll event handler (no frame deferral), with a `syncing` flag reset via `setTimeout(0)` to prevent feedback loops. The `scroll-sync` frontend module SHALL own this logic.
 
 #### Scenario: Initial layout
 
@@ -16,12 +16,12 @@ The system SHALL display original and translated PDF pages side by side in two v
 #### Scenario: Left-driven proportional sync
 
 - **WHEN** the user scrolls the left column to a fractional position `f` (0 ≤ f ≤ 1)
-- **THEN** the right column SHALL synchronize to the same fractional position `f` within one animation frame, regardless of small differences in total scrollable height
+- **THEN** the right column SHALL synchronize to the same fractional position `f` synchronously (no frame deferral), regardless of small differences in total scrollable height
 
 #### Scenario: Right-driven proportional sync
 
 - **WHEN** the user scrolls the right column independently to a fractional position `f`
-- **THEN** the left column SHALL synchronize to the same fractional position `f` within one animation frame (replacing the prior left-only behavior)
+- **THEN** the left column SHALL synchronize to the same fractional position `f` synchronously (no frame deferral), regardless of small differences in total scrollable height (replacing the prior left-only behavior)
 
 #### Scenario: No sync feedback loop
 

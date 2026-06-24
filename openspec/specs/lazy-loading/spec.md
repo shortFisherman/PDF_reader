@@ -8,10 +8,12 @@ Support 1000-page PDFs without degrading browser performance by loading page ima
 
 The system SHALL load page images only when the page is near the browser viewport AND the document is not actively being scrolled by a drag/fast gesture. Loading SHALL be gated by a "scroll-settled" state: a scroll event marks the document unstable and resets a settle timer (~150ms); images are loaded only after the timer fires (document stable). While unstable, the lazy-loader SHALL record pages needing load but SHALL NOT issue requests for pages merely swept past. The IntersectionObserver logic SHALL reside in the `lazy-loader` frontend module.
 
-#### Scenario: Initial page load
+The settle gate SHALL expose a `trigger()` method that immediately invokes all registered `onSettle` callbacks synchronously, without starting the settle timer. On initial render, the system SHALL call `trigger()` once after the intersection observer is set up, so that viewport-buffered pages load without requiring a scroll event.
 
-- **WHEN** the dual-column view first renders
-- **THEN** only page images within the viewport plus a small buffer (approximately 2 pages above and below) SHALL be loaded
+#### Scenario: Initial page load without scroll
+
+- **WHEN** the dual-column view first renders after a PDF is opened
+- **THEN** the system SHALL perform one immediate settle scan (via `trigger()`) and SHALL load page images within the viewport plus a small buffer (approximately 2 pages above and below), without requiring the user to scroll
 
 #### Scenario: Scroll reveals new pages while reading
 
