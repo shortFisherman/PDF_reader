@@ -1,5 +1,5 @@
 workflow: full
-phase: build
+phase: verify
 context_compression: off
 build_mode: subagent-driven-development
 build_pause: null
@@ -7,7 +7,7 @@ subagent_dispatch: confirmed
 tdd_mode: tdd
 review_mode: off
 isolation: branch
-verify_mode: null
+verify_mode: full
 auto_transition: true
 base_ref: 1affb4f4ccd72d552240ff2289e8cfcad837935f
 design_doc: docs/superpowers/specs/2026-06-26-fix-lazy-load-scroll-design.md
