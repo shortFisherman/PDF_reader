@@ -2,6 +2,7 @@
 change: add-ci-and-lint-cleanup
 design-doc: docs/superpowers/specs/2026-06-25-ci-and-lint-cleanup-design.md
 base-ref: 0e9d5324b9897b23090f2e680ebec0f7c8a62957
+archived-with: 2026-06-24-add-ci-and-lint-cleanup
 ---
 
 # CI 与 Lint 清理 实施方案
@@ -23,6 +24,7 @@ base-ref: 0e9d5324b9897b23090f2e680ebec0f7c8a62957
 - `ANN401`（动态类型表达式）保持忽略，不删除
 - config.toml 缺失时测试必须通过（conftest.py 已有 `mock_config` fixture）
 
+archived-with: 2026-06-24-add-ci-and-lint-cleanup
 ---
 
 ## 文件结构
@@ -39,6 +41,7 @@ ruff.toml         (修改) — 第 6 行：从 ignore 列表移除 ANN101 和 AN
 | `ruff.toml` | 项目级 ruff 检查规则配置，控制哪些规则启用、哪些规则忽略 |
 | `.github/workflows/ci.yml` | CI 流水线：checkout → 安装依赖 → ruff lint → pytest |
 
+archived-with: 2026-06-24-add-ci-and-lint-cleanup
 ---
 
 ### 任务 1：清理 ruff 废弃规则
@@ -90,6 +93,7 @@ git add ruff.toml
 git commit -m "chore: 从 ruff ignore 列表中移除已废弃的 ANN101/ANN102 规则"
 ```
 
+archived-with: 2026-06-24-add-ci-and-lint-cleanup
 ---
 
 ### 任务 2：创建 GitHub Actions CI 流水线
@@ -185,6 +189,7 @@ git add .github/workflows/ci.yml
 git commit -m "feat: 添加 GitHub Actions CI 流水线（lint + test, windows-latest）"
 ```
 
+archived-with: 2026-06-24-add-ci-and-lint-cleanup
 ---
 
 ### 任务 3：端到端验证
@@ -234,6 +239,7 @@ git push
 
 **预期输出：** CI 恢复为 ✅ 绿色通过。
 
+archived-with: 2026-06-24-add-ci-and-lint-cleanup
 ---
 
 ## 回滚方案

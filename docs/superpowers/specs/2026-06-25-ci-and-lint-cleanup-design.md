@@ -2,6 +2,8 @@
 comet_change: add-ci-and-lint-cleanup
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-24-add-ci-and-lint-cleanup
+status: final
 ---
 
 # CI and Lint Cleanup — Technical Design
