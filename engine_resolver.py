@@ -17,6 +17,7 @@ CONFIG_ATTR_MAP: dict[str, str] = {
 
 
 def resolve_engine(provider: str) -> config.EngineSpec:  # noqa: ANN201
+    config._validate_required_config()
     spec = config.PROVIDER_INDEX.get(provider)
     if spec is None:
         logger.info("Provider '%s' not found, falling back to OpenAI Compatible", provider)

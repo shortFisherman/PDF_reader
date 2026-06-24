@@ -173,7 +173,7 @@ def test_build_settings_unsupported_field_ignored(mock_config, monkeypatch):
 
 def test_build_settings_missing_api_key_raises(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_API_KEY", None)
-    with pytest.raises(RuntimeError, match="未配置"):
+    with pytest.raises(ValueError, match="api_key"):
         build_settings("dummy.pdf")
 
 

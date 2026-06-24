@@ -18,6 +18,35 @@ ALL_PROVIDERS = [
 ]
 
 
+def test_resolve_engine_rejects_missing_model(monkeypatch):
+    monkeypatch.setattr(config, "MODEL", "")
+    try:
+        resolve_engine("deepseek")
+        assert False, "Expected ValueError for missing MODEL"
+    except ValueError as e:
+        assert "model" in str(e)
+
+
+def test_resolve_engine_rejects_missing_api_key(monkeypatch):
+    monkeypatch.setattr(config, "MODEL", "test-model")
+    monkeypatch.setattr(config, "MODEL_API_KEY", "")
+    try:
+        resolve_engine("deepseek")
+        assert False, "Expected ValueError for missing API key"
+    except ValueError as e:
+        assert "api_key" in str(e)
+
+
+def test_resolve_engine_rejects_default_api_key(monkeypatch):
+    monkeypatch.setattr(config, "MODEL", "test-model")
+    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-your-api-key-placeholder")
+    try:
+        resolve_engine("deepseek")
+        assert False, "Expected ValueError for default API key"
+    except ValueError as e:
+        assert "api_key" in str(e)
+
+
 def test_all_providers_resolve_to_correct_class():
     for provider in ALL_PROVIDERS:
         spec = resolve_engine(provider)
