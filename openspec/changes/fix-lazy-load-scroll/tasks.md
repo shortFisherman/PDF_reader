@@ -12,7 +12,7 @@
 
 - [x] 3.1 重写 `scroll-sync.js` 的 `setupScrollSync`：左右任一栏 `scroll` → 计算源栏比例 `scrollTop/(scrollHeight-clientHeight)` → `requestAnimationFrame` 内设目标栏同比例 `scrollTop`，并以 `syncing` 标志阻止回环
 - [x] 3.2 处理 `scrollHeight === clientHeight`（无滚动空间）的退化情况，避免除零（比例视为 0）
-- [ ] 3.3 `setupPageDetection` 的页码检测改造为在「稳定」后计算一次，避免拖动途中频繁刷新 page-indicator 抖动；保留「占视口>50% 的页」为当前页逻辑
+- [x] 3.3 `setupPageDetection` 的页码检测改造为在「稳定」后计算一次，避免拖动途中频繁刷新 page-indicator 抖动；保留「占视口>50% 的页」为当前页逻辑
 
 ## 4. 懒加载重构（落点加载 + 去抖卸载 + 容器级守卫）
 
