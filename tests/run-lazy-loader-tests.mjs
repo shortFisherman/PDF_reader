@@ -29,6 +29,7 @@ const mockConsole = {
 
 jsdomWindow.__TEST_SETUP_INTERSECTION_OBSERVER__ = true;
 jsdomWindow.__TEST_SETTLE_SCAN__ = true;
+jsdomWindow.__TEST_DELAYED_RECLAIM__ = true;
 
 code = code.replace(/^export\s+function\b/gm, 'function');
 code = code.replace(/^export\s+const\b/gm, 'const');
@@ -47,7 +48,7 @@ console.log('=== Test Output ===');
 for (const log of logs) console.log(log);
 for (const err of errors) console.error(err);
 
-if (globalThis.__SETUP_IO_TESTS_DONE__ && globalThis.__SETTLE_SCAN_TESTS_DONE__) {
+if (globalThis.__SETUP_IO_TESTS_DONE__ && globalThis.__SETTLE_SCAN_TESTS_DONE__ && globalThis.__DELAYED_RECLAIM_TESTS_DONE__) {
     const allText = [...logs, ...errors].join('\n');
     if (allText.includes('FAILED') || allText.includes('FAIL:')) {
         console.log('\nFAIL');
@@ -60,6 +61,7 @@ if (globalThis.__SETUP_IO_TESTS_DONE__ && globalThis.__SETTLE_SCAN_TESTS_DONE__)
     const missing = [];
     if (!globalThis.__SETUP_IO_TESTS_DONE__) missing.push('__SETUP_IO_TESTS_DONE__');
     if (!globalThis.__SETTLE_SCAN_TESTS_DONE__) missing.push('__SETTLE_SCAN_TESTS_DONE__');
+    if (!globalThis.__DELAYED_RECLAIM_TESTS_DONE__) missing.push('__DELAYED_RECLAIM_TESTS_DONE__');
     console.log('\nINCOMPLETE (' + missing.join(', ') + ' not set)');
     process.exit(1);
 }

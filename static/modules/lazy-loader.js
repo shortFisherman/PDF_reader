@@ -1,4 +1,5 @@
 const BUF = 2;
+const RECLAIM_DISTANCE = 10;
 
 function isWithinViewportBuffer(container, bufPages) {
     const col = container.closest('.column');
@@ -42,6 +43,12 @@ export function setupIntersectionObserver({ load, unload, settle }) {
             pendingLoad.delete(container);
             if (isWithinViewportBuffer(container, BUF)) {
                 load(container);
+            }
+        }
+        for (const container of [...pendingReclaim]) {
+            pendingReclaim.delete(container);
+            if (!isWithinViewportBuffer(container, RECLAIM_DISTANCE)) {
+                unload(container);
             }
         }
     });
@@ -160,6 +167,137 @@ if (typeof window !== 'undefined' && window.__TEST_SETUP_INTERSECTION_OBSERVER__
     }
 }
 
+// === Tests for delayed reclaim (Task 4.3) ===
+if (typeof window !== 'undefined' && window.__TEST_DELAYED_RECLAIM__) {
+    if (typeof setupIntersectionObserver !== 'function') {
+        console.error('FAIL: setupIntersectionObserver is not defined');
+        console.log('0 passed, 0 FAILED (RED phase)');
+    } else {
+        let passCount = 0;
+        let failCount = 0;
+
+        function assert(cond, msg) {
+            if (cond) {
+                passCount++;
+            } else {
+                failCount++;
+                console.error('FAIL: ' + msg);
+            }
+        }
+
+        // Test: RECLAIM_DISTANCE = 10 constant exists
+        assert(
+            typeof RECLAIM_DISTANCE !== 'undefined' && RECLAIM_DISTANCE === 10,
+            'Test 0: RECLAIM_DISTANCE is defined and equals 10'
+        );
+
+        const col = document.createElement('div');
+        col.className = 'column';
+        document.body.appendChild(col);
+
+        const nearContainer = document.createElement('div');
+        nearContainer.className = 'page-container';
+        nearContainer.dataset.page = '0';
+        nearContainer.dataset.side = 'left';
+        col.appendChild(nearContainer);
+
+        const farContainer = document.createElement('div');
+        farContainer.className = 'page-container';
+        farContainer.dataset.page = '1';
+        farContainer.dataset.side = 'right';
+        col.appendChild(farContainer);
+
+        // Viewport: top=0, bottom=600
+        const colGBCR = { top: 0, bottom: 600, left: 0, right: 400, width: 400, height: 600 };
+        // Each container is 400px tall
+        // RECLAIM_DISTANCE = 10, so buffer edge at viewBottom + 10*400 = 600 + 4000 = 4600
+        // far-away page starts at 4601 (top=4601, bottom=5001) — beyond buffer
+        // near-viewport page at top=4000, bottom=4400 — within buffer
+        const nearGBCR = { top: 4000, bottom: 4400, left: 0, right: 400, width: 400, height: 400 };
+        const farGBCR = { top: 4601, bottom: 5001, left: 0, right: 400, width: 400, height: 400 };
+
+        col.getBoundingClientRect = () => colGBCR;
+        nearContainer.getBoundingClientRect = () => nearGBCR;
+        farContainer.getBoundingClientRect = () => farGBCR;
+
+        const OriginalIO = globalThis.IntersectionObserver;
+        let capturedCallback = null;
+
+        globalThis.IntersectionObserver = function (cb, opts) {
+            capturedCallback = cb;
+            this.observe = function () {};
+            this.unobserve = function () {};
+            this.disconnect = function () {};
+        };
+
+        let settledCb = null;
+        const mockSettle = {
+            isScrollSettled: () => true,
+            onSettle: (cb) => { settledCb = cb; },
+        };
+
+        let loadCallCount = 0;
+        let unloadCallCount = 0;
+        const unloadedContainers = [];
+        const mockLoad = () => { loadCallCount++; };
+        const mockUnload = (container) => { unloadCallCount++; unloadedContainers.push(container); };
+
+        try {
+            const result = setupIntersectionObserver({
+                load: mockLoad,
+                unload: mockUnload,
+                settle: mockSettle,
+            });
+
+            assert(settledCb !== null, 'Test 1: settle.onSettle was registered');
+
+            // Put both containers in pendingReclaim
+            result.pendingReclaim.add(nearContainer);
+            result.pendingReclaim.add(farContainer);
+            // Also add a page to pendingLoad to verify it gets emptied too
+            const dummyLoad = document.createElement('div');
+            dummyLoad.className = 'page-container';
+            dummyLoad.dataset.page = '2';
+            dummyLoad.dataset.side = 'left';
+            col.appendChild(dummyLoad);
+            dummyLoad.getBoundingClientRect = () => ({ top: 100, bottom: 500, left: 0, right: 400, width: 400, height: 400 });
+            result.pendingLoad.add(dummyLoad);
+
+            // Fire settle
+            settledCb();
+
+            // Test 2: Far-away page was unloaded
+            assert(unloadedContainers.includes(farContainer), 'Test 2: far-away container was unloaded');
+
+            // Test 3: Near-viewport page was NOT unloaded
+            assert(!unloadedContainers.includes(nearContainer), 'Test 3: near-viewport container was NOT unloaded');
+
+            // Test 4: Both pendingLoad and pendingReclaim emptied after settle
+            assert(result.pendingLoad.size === 0, 'Test 4a: pendingLoad empty after settle scan');
+            assert(result.pendingReclaim.size === 0, 'Test 4b: pendingReclaim empty after settle scan');
+
+            // Test 5: RECLAIM_DISTANCE = 10 is used in setupIntersectionObserver
+            const fnSrc = setupIntersectionObserver.toString();
+            assert(fnSrc.includes('RECLAIM_DISTANCE'), 'Test 5: setupIntersectionObserver references RECLAIM_DISTANCE');
+
+            // Clean up dummy
+            col.removeChild(dummyLoad);
+        } catch (e) {
+            assert(false, 'Exception: ' + e.message);
+        }
+
+        globalThis.IntersectionObserver = OriginalIO;
+        document.body.removeChild(col);
+
+        if (failCount === 0) {
+            console.log('All ' + passCount + ' tests PASSED');
+        } else {
+            console.log(passCount + ' passed, ' + failCount + ' FAILED');
+        }
+        globalThis.__DELAYED_RECLAIM_TESTS_DONE__ = true;
+    }
+}
+
 // === Tests for settle scan (Task 4.2) ===
 if (typeof window !== 'undefined' && window.__TEST_SETTLE_SCAN__) {
     if (typeof setupIntersectionObserver !== 'function') {
@@ -256,7 +394,7 @@ if (typeof window !== 'undefined' && window.__TEST_SETTLE_SCAN__) {
 
             assert(result.pendingLoad.size === 0, 'Test 5: pendingLoad is empty after settle scan');
 
-            assert(result.pendingReclaim.has(outOfViewContainer), 'Test 6: pendingReclaim was NOT touched');
+            assert(result.pendingReclaim.size === 0, 'Test 6: pendingReclaim is empty after settle scan');
         } catch (e) {
             assert(false, 'Exception: ' + e.message);
         }
