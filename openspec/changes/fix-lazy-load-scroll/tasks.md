@@ -6,7 +6,7 @@
 ## 2. 图片尺寸与占位对齐（消除布局偏移）
 
 - [x] 2.1 在 `style.css` 将 `.page-container img` 由 `max-width: 100%` 改为 `width: 100%`，使图片宽恒等于容器宽、高度由页比例决定，加载前后高度不变
-- [ ] 2.2 核对 `dom.js` 的 `calculatePlaceholderHeight`（`padding-bottom:%`）与图片 `width:100%/height:auto` 在同一页宽下高度一致；若有差异修正占位比例计算
+- [x] 2.2 核对 `dom.js` 的 `calculatePlaceholderHeight`（`padding-bottom:%`）与图片 `width:100%/height:auto` 在同一页宽下高度一致；若有差异修正占位比例计算
 
 ## 3. 双向按比例滚动同步
 

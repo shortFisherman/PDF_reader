@@ -1,10 +1,11 @@
 # Subagent Progress — fix-lazy-load-scroll
 
 ## Current
-- **Task**: 2.2 — Verify placeholder height alignment
+- **Task**: 1.1 — Create scroll settle gate in scroll-sync.js
 - **Stage**: implementing
-- **Plan text**: `- [ ] 2.2 核对 dom.js 的 calculatePlaceholderHeight...`
-- **OpenSpec text**: `- [ ] 2.2 核对 dom.js 的 calculatePlaceholderHeight（padding-bottom:%）与图片 width:100%/height:auto 在同一页宽下高度一致；若有差异修正占位比例计算`
+- **Plan text**: `- [ ] 1.1 在 scroll-sync.js 新增共享的「滚动稳定」闸门...`
+- **OpenSpec text**: `- [ ] 1.1 在 scroll-sync.js 新增共享的「滚动稳定」闸门：监听左栏（及右栏）scroll 事件，置 unstable 并重置 ~150ms 定时器，到期置 stable，导出 isScrollSettled()/onSettle(cb) 供懒加载模块消费`
 
 ## Completed
-- Task 2.1: ✅ spec-compliant, quality-approved (3844102 fix: change page-container img to width:100%)
+- Task 2.1: ✅ spec-compliant, quality-approved (3844102 fix: CSS width fix)
+- Task 2.2: ✅ verified (analysis-only, no code changes)
