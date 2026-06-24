@@ -1,5 +1,31 @@
 # 更新日志
 
+## 2026-06-24 — 修复初始加载不触发 & 滚动同步拖拽感
+
+### `fix-initial-load-and-sync-lag`
+
+**现象：** `fix-lazy-load-scroll` 引入的 settle gate（150ms 去抖）带来两个回归：(1) 打开 PDF 后不做任何操作，页面始终不加载，必须手动滚动才会触发；(2) 双栏滚动同步用 `requestAnimationFrame` 延迟 1 帧，拖动时有明显滞后/拖拽感。
+
+**根因：**
+- **(1)** settle gate 的 `onSettle` 回调仅在 scroll 事件驱动下触发。初始无 scroll → timer 不启动 → IO 标记的 `pendingLoad` 永远不被扫描。随后用 `setTimeout(0)` + `trigger()` 尝试修复，但 `setTimeout` 在浏览器事件循环中可能先于 IntersectionObserver 回调触发（rendering update 可被跳过）→ `pendingLoad` 仍为空 → 空扫。
+- **(2)** `setupScrollSync` 用 `requestAnimationFrame` 将对侧 `scrollTop` 赋值推迟到下一帧，连续拖动时每帧晚 1 帧 (~16ms) → 视觉拖拽感。
+
+**修复：**
+
+| # | 说明 | 文件 |
+|---|------|------|
+| 1 | 初始加载：`setupIntersectionObserver` 内用 `requestAnimationFrame` 做直接视口扫描，绕过 settle gate，不依赖 IO 时序 | `lazy-loader.js`, `app.js` |
+| 2 | 滚动同步：rAF 替换为同步 `scrollTop` 赋值 + `setTimeout(0)` 解锁反回环 guard | `scroll-sync.js` |
+| 3 | 内联测试 & delta spec 更新 | `scroll-sync.js`, `lazy-loading/spec.md`, `dual-column-reading/spec.md` |
+
+**关键决策：** 初始加载不用 settle scan 路径，改在 `lazy-loader.js` 内以 rAF 直接扫描 `getBoundingClientRect`——此时布局已计算、几何可信，与 IO 回调时序完全解耦。`trigger()` 方法保留但不再用于初始加载。
+
+**delta spec：** lazy-loading +1 added，dual-column-reading +3 modified
+
+**测试：** 107/107 Python tests pass，4 个 settle gate inline tests
+
+---
+
 ## 2026-06-24 — 修复懒加载与滚动同步
 
 ### `fix-lazy-load-scroll`
