@@ -3,7 +3,7 @@ line-length = 120
 
 [lint]
 select = ["E", "F", "I", "UP", "ANN"]
-ignore = ["ANN101", "ANN102", "ANN401"]
+ignore = ["ANN401"]
 
 [lint.per-file-ignores]
 "app.py" = ["ANN201"]
