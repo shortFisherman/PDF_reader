@@ -1,14 +1,18 @@
 # Subagent Progress — fix-lazy-load-scroll
 
 ## Current
-- **Task**: 3.3 — Page detection on settle
-- **Stage**: implementing
-- **Plan text**: `- [ ] 3.3 setupPageDetection 的页码检测改造为在「稳定」后计算一次...`
-- **OpenSpec text**: `- [ ] 3.3 setupPageDetection 的页码检测改造为在「稳定」后计算一次，避免拖动途中频繁刷新 page-indicator 抖动；保留「占视口>50% 的页」为当前页逻辑`
+- **Stage**: final-review
+- **All implementation tasks complete**
 
-## Completed
+## Completed Tasks
 - Task 2.1: ✅ (3844102)
 - Task 2.2: ✅ (analysis-only)
 - Task 1.1: ✅ (76fd540)
 - Task 1.2: ✅ (3d859b3)
 - Task 3.1+3.2: ✅ (49a3ac5)
+- Task 3.3: ✅ (7e1f04f)
+- Task 4.1: ✅ (4a06088)
+- Task 4.2: ✅ (94209ad)
+- Task 4.3: ✅ (14f46ac)
+- Task 4.4: ✅ (d3731a5)
+- Task 4.5: ✅ (3a0d155)
