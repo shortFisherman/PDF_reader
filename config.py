@@ -36,11 +36,6 @@ MODEL_ENABLE_JSON_MODE = model_cfg.get("enable_json_mode")
 MODEL_TEMPERATURE = model_cfg.get("temperature")
 MODEL_TIMEOUT = model_cfg.get("timeout")
 
-if not MODEL_API_KEY or MODEL_API_KEY.startswith("sk-your-api-key"):
-    raise ValueError("请设置 model.api_key 或环境变量 MODEL_API_KEY")
-if not MODEL:
-    raise ValueError("请设置 model.model")
-
 @dataclass(frozen=True)
 class EngineSpec:
     provider: str
@@ -176,6 +171,13 @@ CACHE_DIR = Path(CONFIG.get("pdf_reader", {}).get("cache_dir", "cache")).resolve
 GLOSSARY_PATH = Path(__file__).parent / "docs" / "glossary.csv"
 TRANSLATION_LANG_IN = CONFIG.get("translation", {}).get("lang_in", "en")
 TRANSLATION_LANG_OUT = CONFIG.get("translation", {}).get("lang_out", "zh")
+
+def _validate_required_config() -> None:
+    if not MODEL:
+        raise ValueError("请设置 model.model")
+    if not MODEL_API_KEY or MODEL_API_KEY.startswith("sk-your-api-key"):
+        raise ValueError("请设置 model.api_key 或环境变量 MODEL_API_KEY")
+
 
 def _resolve_debug() -> bool:
     debug_section = CONFIG.get("debug")
