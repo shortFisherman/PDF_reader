@@ -1,6 +1,6 @@
 import { getElements, createPageEl, calculatePlaceholderHeight } from './modules/dom.js';
 import { setupIntersectionObserver } from './modules/lazy-loader.js';
-import { setupScrollSync, setupPageDetection } from './modules/scroll-sync.js';
+import { setupScrollSync, setupPageDetection, createSettleGate } from './modules/scroll-sync.js';
 import { fetchStageLabels, getStageLabel } from './modules/stages.js';
 import { translateCurrentPage } from './modules/translator.js';
 
@@ -71,9 +71,12 @@ async function openPdf() {
         els.appView.classList.remove('hidden');
         els.toolbar.classList.remove('hidden');
 
+        const settle = createSettleGate(els.leftCol, els.rightCol);
+
         setupIntersectionObserver({
             load: loadPageImage,
             unload: unloadPageImage,
+            settle,
         });
         setupScrollSync({ left: els.leftCol, right: els.rightCol });
         setupPageDetection({ container: els.leftCol }, onPageChange);
