@@ -52,4 +52,8 @@ def mock_config(monkeypatch):
     monkeypatch.setattr(config, "MODEL_ENABLE_JSON_MODE", None)
     monkeypatch.setattr(config, "MODEL_TEMPERATURE", None)
     monkeypatch.setattr(config, "MODEL_TIMEOUT", None)
+    monkeypatch.setattr(config, "DPI", 200)
+    monkeypatch.setattr(config, "CACHE_DIR", Path("cache"))
+    monkeypatch.setattr(config, "TRANSLATION_LANG_IN", "en")
+    monkeypatch.setattr(config, "TRANSLATION_LANG_OUT", "zh")
     yield
