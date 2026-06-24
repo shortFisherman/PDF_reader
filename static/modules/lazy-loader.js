@@ -53,6 +53,19 @@ export function setupIntersectionObserver({ load, unload, settle }) {
         }
     });
 
+    // Initial viewport scan: load BUF-range pages after first layout.
+    // Must use requestAnimationFrame (not setTimeout) because IO callbacks
+    // and layout happen during the rendering update; rAF runs after layout
+    // is computed, so getBoundingClientRect reflects true geometry.
+    requestAnimationFrame(() => {
+        for (const container of allContainers) {
+            if (container.dataset.loaded === 'true') continue;
+            if (isWithinViewportBuffer(container, BUF)) {
+                load(container);
+            }
+        }
+    });
+
     // Return observer so it can be disconnected later if needed
     return { observer, pendingLoad, pendingReclaim };
 }

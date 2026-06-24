@@ -87,8 +87,7 @@ async function openPdf() {
         setupPageDetection({ container: els.leftCol, settle }, onPageChange);
         loadTranslatedState();
 
-        // Trigger initial settle after all callbacks registered and IO has processed entries
-        setTimeout(() => settle.trigger(), 0);
+        // Initial viewport scan is handled inside setupIntersectionObserver via rAF
     } catch (e) {
         els.fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">Network error: ${e.message}</p>`);
     }
