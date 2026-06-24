@@ -89,27 +89,27 @@ async function openPdf() {
 function loadPageImage(container) {
     const page = parseInt(container.dataset.page);
     const side = container.dataset.side;
-    const placeholder = container.querySelector('.page-placeholder');
 
-    if (placeholder && placeholder.dataset.loaded === 'true') return;
+    if (container.dataset.loaded === 'true') return;
 
     const img = document.createElement('img');
     img.src = `${API}/page/${side}/${page}?t=${Date.now()}`;
+
     img.onload = () => {
+        const placeholder = container.querySelector('.page-placeholder');
         if (placeholder) {
             placeholder.replaceWith(img);
         }
+        container.dataset.loaded = 'true';
     };
+
     img.onerror = () => {
+        container.dataset.loaded = 'error';
+        const placeholder = container.querySelector('.page-placeholder');
         if (placeholder) {
             placeholder.textContent = `Page ${page + 1} (error)`;
         }
     };
-
-    if (placeholder) {
-        placeholder.dataset.loaded = 'true';
-        container.insertBefore(img, placeholder);
-    }
 }
 
 function unloadPageImage(container) {
