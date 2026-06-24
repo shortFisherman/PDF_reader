@@ -83,6 +83,7 @@ async function openPdf() {
             unload: unloadPageImage,
             settle,
         });
+        settle.trigger();
         setupScrollSync({ left: els.leftCol, right: els.rightCol });
         setupPageDetection({ container: els.leftCol, settle }, onPageChange);
         loadTranslatedState();

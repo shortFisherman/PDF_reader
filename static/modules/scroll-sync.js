@@ -37,7 +37,14 @@ export function createSettleGate(leftEl, rightEl) {
         callbacks.length = 0;
     }
 
-    return { isScrollSettled, onSettle, dispose };
+    return {
+        isScrollSettled, onSettle, dispose,
+        trigger() {
+            settled = true;
+            const cbs = [...callbacks];
+            cbs.forEach(cb => cb());
+        },
+    };
 }
 
 export function setupScrollSync({ left, right }) {
