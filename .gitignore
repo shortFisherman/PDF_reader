@@ -7,3 +7,4 @@ config.toml
 page.*.pdf
 page.*.csv
 *.tmp
+node_modules/
