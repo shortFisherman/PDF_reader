@@ -269,9 +269,11 @@ def test_concurrent_extract_and_render_serialized(app_state, sample_pdf, tmp_pat
 
     extract_started = threading.Event()
     extract_can_finish = threading.Event()
-    render_done = threading.Event()
+
+    lock_held = [False]
 
     def slow_extract_func(doc, page, tmpdir):
+        lock_held[0] = app_state._lock.locked()
         extract_started.set()
         extract_can_finish.wait(timeout=5)
         return pdf_extraction.extract_single_page(doc, page, tmpdir)
@@ -297,7 +299,6 @@ def test_concurrent_extract_and_render_serialized(app_state, sample_pdf, tmp_pat
             )
         except Exception as e:
             render_error[0] = e
-        render_done.set()
 
     t1 = threading.Thread(target=run_extract)
     t2 = threading.Thread(target=run_render)
@@ -311,6 +312,7 @@ def test_concurrent_extract_and_render_serialized(app_state, sample_pdf, tmp_pat
     t1.join(timeout=10)
     t2.join(timeout=10)
 
+    assert lock_held[0] is True, "lock should be held inside extract_func"
     assert extract_error[0] is None, f"extract crashed: {extract_error[0]}"
     assert render_error[0] is None, f"render crashed: {render_error[0]}"
     assert extract_result[0] is not None
