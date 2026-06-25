@@ -20,3 +20,5 @@ verified_at: null
 archived: false
 handoff_context: openspec/changes/fix-concurrency-resource-cleanup/.comet/handoff/design-context.json
 handoff_hash: b93fbc2a934351d11fd300d25007e98a03b62403e8cba03369019ba2ea46f989
+build_command: pytest -q
+verify_command: ruff check .
