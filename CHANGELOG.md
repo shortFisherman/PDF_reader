@@ -1,5 +1,79 @@
 # 更新日志
 
+## 2026-06-25 — 前端翻译模块测试
+
+### `add-translator-frontend-tests`
+
+为 `translator.js`（`translateCurrentPage`）和 `sse-client.js`（`readSSEStream`）新增 9 个 jsdom 自动化测试。被测模块源码未改。
+
+| 组 | 用例数 | 覆盖内容 |
+|---|--------|----------|
+| sse-client | 4 | 单 chunk 多事件、跨 chunk 拼接、非法 JSON 跳过、空流终止 |
+| translator | 5 | 回调顺序、分段后缀、SSE error→onError、HTTP !ok→onError、prompt 透传 |
+
+- **运行方式**：`npm run test:translator`（30 断言，退出码 0/1）
+- **实现**：新建 `tests/run-translator-tests.mjs`，沿用项目 `.mjs` + jsdom + `new Function()` 模式，Node `stream/web` 提供 `ReadableStream`/`TextDecoder` polyfill
+
+---
+
+## 2026-06-25 — TranslateResult 协议
+
+### `add-translate-result-protocol`
+
+`translation_lifecycle.finish_translation` 用 `Any` 鸭子类型直访 pdf2zh-next 字段，与上游数据结构强耦合；`mono_pdf_path → dual_pdf_path` 回退路径无测试覆盖。
+
+- **引入 `TranslateResult(Protocol)`**：显式声明 `mono_pdf_path` / `dual_pdf_path` / `auto_extracted_glossary_path`（均 `Optional[Path]`），形参从 `Any` 收紧为 `TranslateResult`
+- **新增 4 个契约测试**：mono 替换、mono→dual 回退、双空跳过、glossary 合并
+- **影响文件**：`translation_lifecycle.py`（类型收紧）、`tests/test_translation_lifecycle.py`（新建）
+
+---
+
+## 2026-06-25 — 修复并发资源清理
+
+### `fix-concurrency-resource-cleanup`
+
+两个运行时缺陷：
+
+1. **临时目录泄漏**：SSE 生成器在 error / 无结果 / `GeneratorExit` 路径提前退出时不清理 `tmpdir` 和 `output_dir`
+2. **extract 未持锁**：`routes.py` 直接传 `state.left_doc` 给 `pdf_extraction`，绕过 `threading.Lock`，与持锁的 `render_page` 并发存在数据竞争
+
+修复：
+
+| 修复 | 文件 | 措施 |
+|------|------|------|
+| 清理兜底 | `sse_stream.py` | `generate` 包裹在 `try/finally`，`finally` 中 `shutil.rmtree(ignore_errors=True)`，任意退出路径均清理 |
+| 职责收敛 | `translation_lifecycle.py` | 移除 `finish_translation` 末尾的 `rmtree` 调用，清理职责集中到 `generate` |
+| extract_page 持锁 | `state.py` | 新增 `extract_page` 方法，在 `_lock` 内操作 `_left_doc`，约束 `extract_func` 不得回调 AppState |
+| 路由层重构 | `routes.py` | 移除直接传递 `left_doc` 的代码，改为 `ctx.extract_page` Callable 闭包 |
+
+测试：`test_sse_stream.py`（4 类清理场景）+ `test_state.py`（3 类并发场景），共 ~328 行新增/调整
+
+---
+
+## 2026-06-24~25 — CI 与 Lint 清理
+
+### `add-ci-and-lint-cleanup`
+
+- **清理弃用 Lint 规则**（`ruff.toml`）：移除 `ANN101`/`ANN102`，消除每次 `ruff check` 的无效果告警
+- **新增 GitHub Actions CI**（`.github/workflows/ci.yml`）：push/PR 到 `main` 自动运行 `ruff check .` + `pytest -q`，环境 `windows-latest` + Python 3.12
+- **修复 CI 依赖**（`requirements.lock`）：pytest 纳入锁定文件，配置 pip 缓存路径
+- **硬前置**：依赖 `defer-config-validation`（否则 CI 全新克隆无法 `import config`）
+
+---
+
+## 2026-06-24 — 延迟配置校验
+
+### `defer-config-validation`
+
+`config.toml` 被 `.gitignore` 忽略，全新克隆（CI、新协作者）中 `import config` 即崩溃，测试套件无法运行。
+
+- **配置缺失容错**（`config.py`）：`config.toml` 不存在时 `CONFIG` 回退空字典，必填键均用 `.get()` + 默认值
+- **校验延迟**（`config.py` + `engine_resolver.py`）：移除 import 期 `raise ValueError`，改为内部 `_validate_required_config()`，在 `resolve_engine` 入口才触发
+- **新增 4 个测试**（`tests/test_config_deferred.py`）：无文件导入成功、缺失 MODEL 报错、缺失 API Key 报错、已配置不变
+- **增强 mock_config**（`tests/conftest.py`）：fixture 不再依赖 `config.toml`
+
+---
+
 ## 2026-06-24 — 修复初始加载不触发 & 滚动同步拖拽感
 
 ### `fix-initial-load-and-sync-lag`

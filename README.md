@@ -16,7 +16,7 @@
 - **调试追踪**：`--debug` CLI 开关 + `config.toml` 配置驱动，全链路日志记录术语提取 LLM 交互、翻译各步骤耗时；调试逻辑完全隔离，零侵入业务代码
 - **后端服务层模块化**：15 个独立模块，单一职责，低耦合高内聚。`services.py` 已拆分为 `file_hash.py` / `engine_resolver.py` / `pdf_renderer.py`，翻译后处理抽取为 `translation_lifecycle.py`，翻译参数组装抽取为 `translation_settings.py`
 - **数据驱动引擎**：声明式 `EngineSpec` + `ENGINE_REGISTRY`（`engine_resolver.py`），新增引擎仅需一行配置
-- **线程安全**：渲染全程持锁，杜绝竞态；翻译端点页码校验防越界；106 个测试确保变更安全
+- **线程安全**：渲染全程持锁，杜绝竞态；翻译端点页码校验防越界；118 个 Python 测试 + 9 个 JS 前端测试确保变更安全
 
 ## 技术栈
 
@@ -81,7 +81,15 @@ PDF_reader/
 │   ├── test_services.py
 │   ├── test_sse_stream.py
 │   ├── test_state.py
-│   └── test_translation_orchestrator.py
+│   ├── test_config_deferred.py
+│   ├── test_translation_lifecycle.py
+│   ├── test_translation_orchestrator.py
+│   ├── run-task-4.4-tests.mjs
+│   ├── run-task-4.5-tests.mjs
+│   ├── run-lazy-loader-tests.mjs
+│   └── run-translator-tests.mjs
+├── .github/workflows/
+│   └── ci.yml                    # GitHub Actions CI 流水线
 ├── cache/                        # 翻译缓存目录
 │   └── <sha256>/                 # 按 PDF 哈希隔离
 │       ├── right.pdf             # 译文持久化文件
@@ -287,8 +295,11 @@ class EngineSpec:
 ## 开发
 
 - `ruff check .` — Python lint
-- `pytest tests/ -v` — 运行测试（106 个）
+- `pytest tests/ -v` — Python 单元测试（118 个）
+- `npm run test:translator` — 前端翻译模块测试（9 个用例，30 个断言）
+- `npm run test:task-4.4` / `npm run test:task-4.5` / `npm run test:lazy-loader` — 前端懒加载测试
 - `pip freeze > requirements.lock` — 更新版本锁定
+- CI（GitHub Actions）：push/PR 到 `main` 自动运行 `ruff check .` + `pytest -q`
 
 ## 相关文档
 
@@ -311,3 +322,8 @@ class EngineSpec:
 | 6月22日 | 模块内聚性重构：`services.py` 拆分为 4 个独立模块（`file_hash.py` / `engine_resolver.py` / `pdf_renderer.py` / `translation_lifecycle.py`），`GenerateContext` 接口缩小，`glossary_service` 参数类型缩小为 `Path`，`debug_trace.py` 消除重复代码，106 测试 |
 | 6月23日 | 拆分 `pdf_renderer.py` 双重职责：`build_settings()` 迁入新模块 `translation_settings.py`，`pdf_renderer.py` 回归单一职责（PDF 渲染），106 测试 |
 | 6月24日 | 修复懒加载与滚动同步三大缺陷：① 落点加载（长距跳转请求 ≤~5）② 双向按比例同步 ③ 消除翻页边界振荡。新增 settle gate + 候选标记 IO + 延迟卸载 + 容器级守卫，16 任务 subagent-driven 执行 |
+| 6月24日 | 延迟配置校验（`defer-config-validation`）：修复 CI/新克隆环境中 `import config` 即崩溃的问题，校验从模块导入期延迟到引擎消费时 |
+| 6月24-25日 | CI 与 Lint 清理（`add-ci-and-lint-cleanup`）：新增 GitHub Actions CI 流水线（ruff + pytest），清理 ruff 废弃规则告警，pytest 纳入 requirements.lock |
+| 6月25日 | 修复并发资源清理（`fix-concurrency-resource-cleanup`）：SSE 异常退出时临时目录泄漏（加 `try/finally`）+ `extract_page` 未持锁导致数据竞争（新增持锁方法），新增 4 类清理测试 + 3 类并发测试 |
+| 6月25日 | TranslateResult 协议（`add-translate-result-protocol`）：`finish_translation` 的 `Any` 收紧为 `Protocol`，静态检查 pdf2zh-next 上游契约，新增 4 个 fallback 路径测试 |
+| 6月25日 | 前端翻译测试（`add-translator-frontend-tests`）：新增 9 个 jsdom 测试覆盖 translator.js（5 例）+ sse-client.js（4 例），`npm run test:translator` 一键运行 |
