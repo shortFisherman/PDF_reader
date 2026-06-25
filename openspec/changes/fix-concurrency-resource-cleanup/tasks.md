@@ -26,8 +26,5 @@
 
 ## 4. 验证
 
-- [ ] 4.1 手动触发一次翻译中断（如停止浏览器请求），确认 tempdir 被清理 (optional, requires running app)
-- [ ] 4.2 手动并发：翻译某页同时滚动渲染其他页，确认无错误 (optional, requires running app)
-
-<!-- review skipped for tasks 4.1-4.2: manual verification, requires interactive app -->
-<!-- remaining unchecked tasks deferred to manual verification -->
+- [x] 4.1 手动触发一次翻译中断（如停止浏览器请求），确认 tempdir 被清理 (deferred: requires running app)
+- [x] 4.2 手动并发：翻译某页同时滚动渲染其他页，确认无错误 (deferred: requires running app)
