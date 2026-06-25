@@ -1,6 +1,31 @@
 # 更新日志
 
-## 2026-06-25 — 修复 Flask reloader 孤儿进程导致日志丢失
+## 2026-06-25 — Ctrl+滚轮页面缩放
+
+### `ctrl-wheel-zoom`
+
+为双栏 PDF 阅读器新增 Ctrl+滚轮缩放功能：
+
+- **交互**：按住 Ctrl 滚动滚轮缩放页面（上滚放大、下滚缩小），以鼠标位置为锚点，非 Ctrl 滚轮保持正常滚动
+- **范围**：25%–220%，步进 10%，到达边界后继续滚动无反应
+- **同步**：左右两栏缩放同步 + 竖向/横向滚动同步
+- **实现**：CSS 变量 `--zoom` 驱动渲染宽度（非 `transform: scale`），与现有滚动同步、当前页检测、懒加载兼容
+- **工具栏**：缩放百分比实时显示 + 绿色重置按钮（回到 100%，保持当前视图）
+
+| 文件 | 变更 |
+|------|------|
+| `static/modules/zoom.js` | 新增 — Ctrl+滚轮缩放引擎 + 内联单元测试（28 项） |
+| `static/style.css` | `--zoom` / `--page-ratio` CSS 变量，calc 驱动宽高，`safe center` + 溢出处理 |
+| `static/modules/scroll-sync.js` | 新增横向滚动同步（`scrollLeft` 比例跟随） |
+| `static/modules/dom.js` | `--page-ratio` 替代内联 `paddingBottom`，增加 zoom 元素引用 |
+| `static/app.js` | 接入 `setupZoom`，重置绑定，dispose 清理 |
+| `templates/index.html` | toolbar 增加 zoom-level / zoom-reset 控件 |
+| `tests/run-zoom-tests.mjs` | 新增 — jsdom 测试运行器 |
+| `package.json` | 新增 `test:zoom` 脚本 |
+
+**测试**：zoom 28/28、translator 30/30、task-4.5 29/29、ruff 全通过、pytest 126/127
+
+---
 
 ### `fix-reloader-orphan-startup`
 
