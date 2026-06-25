@@ -52,10 +52,16 @@ export function setupScrollSync({ left, right }) {
 
     function sync(src, dst) {
         if (syncing) return;
-        const f = src.scrollHeight <= src.clientHeight ? 0
-            : src.scrollTop / (src.scrollHeight - src.clientHeight);
         syncing = true;
-        dst.scrollTop = f * (dst.scrollHeight - dst.clientHeight);
+
+        const vf = src.scrollHeight <= src.clientHeight ? 0
+            : src.scrollTop / (src.scrollHeight - src.clientHeight);
+        dst.scrollTop = vf * (dst.scrollHeight - dst.clientHeight);
+
+        const hf = src.scrollWidth <= src.clientWidth ? 0
+            : src.scrollLeft / (src.scrollWidth - src.clientWidth);
+        dst.scrollLeft = hf * (dst.scrollWidth - dst.clientWidth);
+
         setTimeout(() => { syncing = false; }, 0);
     }
 

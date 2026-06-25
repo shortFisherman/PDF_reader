@@ -1,6 +1,6 @@
 export function setupZoom({ columns, appEl, onZoomChange }) {
     const MIN = 0.25;
-    const MAX = 4;
+    const MAX = 2.2;
     const STEP = 0.1;
     let zoom = 1;
 
@@ -148,9 +148,9 @@ if (typeof window !== 'undefined' && window.__TEST_ZOOM__) {
 
             instance.resetZoom();
             for (let i = 0; i < 50; i++) fireCtrlWheel(-100);
-            assert(instance.getZoom() === 4, 'Test 6a: zoom clamped to MAX 4');
+            assert(instance.getZoom() === 2.2, 'Test 6a: zoom clamped to MAX 2.2');
             fireCtrlWheel(-100);
-            assert(instance.getZoom() === 4, 'Test 6b: zoom stays at MAX');
+            assert(instance.getZoom() === 2.2, 'Test 6b: zoom stays at MAX');
 
             instance.resetZoom();
             assert(instance.getZoom() === 1, 'Test 7a: resetZoom returns zoom to 1');

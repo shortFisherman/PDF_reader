@@ -120,6 +120,23 @@ body {
     cursor: not-allowed;
 }
 
+#toolbar #zoom-reset {
+    background: #48c78e;
+    color: #1a1a1a;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background 0.2s;
+}
+
+#toolbar #zoom-reset:hover {
+    background: #3bb87a;
+}
+
 #toolbar #progress-bar {
     display: none;
     align-items: center;
