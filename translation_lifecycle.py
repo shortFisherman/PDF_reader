@@ -2,7 +2,7 @@ import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Protocol
 
 import debug_trace
 from glossary_service import merge_after_translate
@@ -10,8 +10,14 @@ from glossary_service import merge_after_translate
 logger = logging.getLogger("pdf_reader")
 
 
+class TranslateResult(Protocol):
+    mono_pdf_path: Path | None
+    dual_pdf_path: Path | None
+    auto_extracted_glossary_path: Path | None
+
+
 def finish_translation(
-    translate_result: Any,
+    translate_result: TranslateResult,
     replace_page: Callable[[str], None],
     glossary_cache_path: Path | None,
 ) -> None:
