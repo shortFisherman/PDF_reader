@@ -26,9 +26,9 @@
 
 ## 5. 前端测试
 
-- [ ] 5.1 在 `static/modules/zoom.js` 中增加内联测试（`window.__TEST_ZOOM__` 门控）：覆盖 Ctrl+wheel 增减、非 Ctrl 不缩放、边界 clamp、锚点公式数值正确、reset 回到 1、onZoomChange 被调用
-- [ ] 5.2 新增 `tests/run-zoom-tests.mjs`（仿 `run-lazy-loader-tests.mjs`：jsdom + 剥离 export + 设 `__TEST_ZOOM__` + 校验 `__ZOOM_TESTS_DONE__` 与 PASS/FAIL 退出码）
-- [ ] 5.3 在 `package.json` 增加 `"test:zoom": "node tests/run-zoom-tests.mjs"` 脚本
+- [x] 5.1 在 `static/modules/zoom.js` 中增加内联测试（`window.__TEST_ZOOM__` 门控）：覆盖 Ctrl+wheel 增减、非 Ctrl 不缩放、边界 clamp、锚点公式数值正确、reset 回到 1、onZoomChange 被调用
+- [x] 5.2 新增 `tests/run-zoom-tests.mjs`（仿 `run-lazy-loader-tests.mjs`：jsdom + 剥离 export + 设 `__TEST_ZOOM__` + 校验 `__ZOOM_TESTS_DONE__` 与 PASS/FAIL 退出码）
+- [x] 5.3 在 `package.json` 增加 `"test:zoom": "node tests/run-zoom-tests.mjs"` 脚本
 - [ ] 5.4 运行 `node tests/run-zoom-tests.mjs` 通过；并运行既有 `node tests/run-lazy-loader-tests.mjs`、`node tests/run-task-4.5-tests.mjs`、`npm run test:translator` 确认无回归
 
 ## 6. 整体验证
