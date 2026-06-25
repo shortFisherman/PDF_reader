@@ -3,6 +3,7 @@ import { setupIntersectionObserver } from './modules/lazy-loader.js';
 import { setupScrollSync, setupPageDetection, createSettleGate } from './modules/scroll-sync.js';
 import { fetchStageLabels, getStageLabel } from './modules/stages.js';
 import { translateCurrentPage } from './modules/translator.js';
+import { setupZoom } from './modules/zoom.js';
 
 const API = '/api';
 let pageCount = 0;
@@ -16,6 +17,7 @@ let statusTimer = null;
 let els;
 let io = null;
 let settle = null;
+let zoomInst = null;
 
 function init() {
     els = getElements();
@@ -30,11 +32,15 @@ function init() {
         els.promptToggle.textContent = promptVisible ? '- Prompt' : '+ Prompt';
     });
     els.translateBtn.addEventListener('click', onTranslateClick);
+    els.zoomReset.addEventListener('click', () => {
+        if (zoomInst) zoomInst.resetZoom();
+    });
 
     fetchStageLabels();
 }
 
 async function openPdf() {
+    if (zoomInst) { zoomInst.dispose(); zoomInst = null; }
     if (io) { io.observer.disconnect(); io = null; }
     if (settle) { settle.dispose(); settle = null; }
 
@@ -85,6 +91,12 @@ async function openPdf() {
         });
         setupScrollSync({ left: els.leftCol, right: els.rightCol });
         setupPageDetection({ container: els.leftCol, settle }, onPageChange);
+        zoomInst = setupZoom({
+            columns: [els.leftCol, els.rightCol],
+            appEl: els.appView,
+            onZoomChange: z => { els.zoomLevel.textContent = Math.round(z * 100) + '%'; }
+        });
+        els.zoomLevel.textContent = '100%';
         loadTranslatedState();
 
         // Initial viewport scan is handled inside setupIntersectionObserver via rAF

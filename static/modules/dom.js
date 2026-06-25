@@ -6,6 +6,8 @@ export function getElements() {
     const leftCol = document.getElementById('left-column');
     const rightCol = document.getElementById('right-column');
     const pageIndicator = document.getElementById('page-indicator');
+    const zoomLevel = document.getElementById('zoom-level');
+    const zoomReset = document.getElementById('zoom-reset');
     const translateBtn = document.getElementById('translate-btn');
     const promptInput = document.getElementById('prompt-input');
     const promptToggle = document.getElementById('prompt-toggle');
@@ -22,6 +24,8 @@ export function getElements() {
         leftCol,
         rightCol,
         pageIndicator,
+        zoomLevel,
+        zoomReset,
         translateBtn,
         promptInput,
         promptToggle,
