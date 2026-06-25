@@ -19,10 +19,10 @@
 
 ## 4. 工具栏缩放控件与接入
 
-- [ ] 4.1 在 `templates/index.html` 的 `#toolbar` 中增加 `<span id="zoom-level">100%</span>` 与 `<button id="zoom-reset">重置缩放</button>`
-- [ ] 4.2 在 `static/modules/dom.js` 的 `getElements` 中增加 `zoomLevel`、`zoomReset` 引用
-- [ ] 4.3 在 `static/app.js` 的 `openPdf` 成功后调用 `setupZoom`，传入 `[els.leftCol, els.rightCol]`、`appEl`、`onZoomChange`；`onZoomChange(z)` 更新 `els.zoomLevel.textContent = Math.round(z*100) + '%'`
-- [ ] 4.4 在 `app.js` 中为 `els.zoomReset` 绑定点击 → 调用 zoom 实例的 `resetZoom()`；打开新 PDF 时 `dispose` 旧实例
+- [x] 4.1 在 `templates/index.html` 的 `#toolbar` 中增加 `<span id="zoom-level">100%</span>` 与 `<button id="zoom-reset">重置缩放</button>`
+- [x] 4.2 在 `static/modules/dom.js` 的 `getElements` 中增加 `zoomLevel`、`zoomReset` 引用
+- [x] 4.3 在 `static/app.js` 的 `openPdf` 成功后调用 `setupZoom`，传入 `[els.leftCol, els.rightCol]`、`appEl`、`onZoomChange`；`onZoomChange(z)` 更新 `els.zoomLevel.textContent = Math.round(z*100) + '%'`
+- [x] 4.4 在 `app.js` 中为 `els.zoomReset` 绑定点击 → 调用 zoom 实例的 `resetZoom()`；打开新 PDF 时 `dispose` 旧实例
 
 ## 5. 前端测试
 
