@@ -29,10 +29,10 @@
 - [x] 5.1 在 `static/modules/zoom.js` 中增加内联测试（`window.__TEST_ZOOM__` 门控）：覆盖 Ctrl+wheel 增减、非 Ctrl 不缩放、边界 clamp、锚点公式数值正确、reset 回到 1、onZoomChange 被调用
 - [x] 5.2 新增 `tests/run-zoom-tests.mjs`（仿 `run-lazy-loader-tests.mjs`：jsdom + 剥离 export + 设 `__TEST_ZOOM__` + 校验 `__ZOOM_TESTS_DONE__` 与 PASS/FAIL 退出码）
 - [x] 5.3 在 `package.json` 增加 `"test:zoom": "node tests/run-zoom-tests.mjs"` 脚本
-- [ ] 5.4 运行 `node tests/run-zoom-tests.mjs` 通过；并运行既有 `node tests/run-lazy-loader-tests.mjs`、`node tests/run-task-4.5-tests.mjs`、`npm run test:translator` 确认无回归
+- [x] 5.4 运行 `node tests/run-zoom-tests.mjs` 通过；并运行既有 `node tests/run-lazy-loader-tests.mjs`、`node tests/run-task-4.5-tests.mjs`、`npm run test:translator` 确认无回归
 
 ## 6. 整体验证
 
-- [ ] 6.1 运行 `ruff check .` 通过（确认未误改 Python 文件或无新增违规）
-- [ ] 6.2 运行 `pytest` 通过（确认后端无回归）
+- [x] 6.1 运行 `ruff check .` 通过（确认未误改 Python 文件或无新增违规）
+- [x] 6.2 运行 `pytest` 通过（确认后端无回归）
 - [ ] 6.3 手动验证：打开 PDF，Ctrl+滚轮缩放以光标为锚点、左右栏同步；25%–400% 边界停止；非 Ctrl 滚轮正常滚动；工具栏显示百分比；重置按钮回 100%；缩放后滚动同步 / 当前页检测 / 懒加载正常
