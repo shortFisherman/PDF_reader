@@ -91,7 +91,7 @@ console.log('--- Test 1: loaded=true → unloads and sets loaded=false ---');
 
     const placeholder = container.querySelector('.page-placeholder');
     assert(placeholder !== null, 'Test 1.2: Placeholder created after unload');
-    assert(placeholder.style.paddingBottom === '150%', 'Test 1.3: Placeholder has correct paddingBottom');
+    assert(placeholder.style.getPropertyValue('--page-ratio') === '150%', 'Test 1.3: Placeholder has correct --page-ratio');
     assert(placeholder.textContent === 'Page 1', 'Test 1.4: Placeholder shows correct page text');
 
     assert(container.dataset.loaded === 'false', 'Test 1.5: container.dataset.loaded set to false after unload');
