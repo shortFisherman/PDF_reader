@@ -1,11 +1,15 @@
 import csv
 import json
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from sse_stream import GenerateContext, format_sse_event, generate
 
+# --- Gold-standard SSE constants (preserved from original) ---
 EXPECTED_PROGRESS_START_SSE = (
     'data: ' + json.dumps({
         "type": "progress", "progress": 0,
@@ -47,6 +51,29 @@ EXPECTED_FINAL_FINISH_SSE = (
 )
 
 
+def _make_ctx(settings=None, replace_page=None, glossary_cache_path=None, page=0,
+              glossary_paths=None, cache_dir=None, extract_page=None):
+    if settings is None:
+        settings = MagicMock()
+    if replace_page is None:
+        replace_page = MagicMock()
+    if cache_dir is None:
+        cache_dir = Path(tempfile.mkdtemp())
+    if extract_page is None:
+        extract_page = MagicMock(return_value=Path("/fake/page.pdf"))
+    return GenerateContext(
+        settings=settings,
+        replace_page=replace_page,
+        glossary_cache_path=glossary_cache_path,
+        page=page,
+        glossary_paths=glossary_paths,
+        cache_dir=cache_dir,
+        extract_page=extract_page,
+    )
+
+
+# --- Golden sample tests ---
+
 def test_golden_sample_progress_start():
     assert EXPECTED_PROGRESS_START_SSE == (
         'data: {"type": "progress", "progress": 0, "stage": "layout_analysis", '
@@ -66,6 +93,8 @@ def test_golden_sample_error():
         'data: {"type": "error", "error": "test error"}\n\n'
     )
 
+
+# --- format_sse_event tests ---
 
 def test_format_sse_event_progress_start():
     evt = {
@@ -114,6 +143,8 @@ def test_format_sse_event_unknown_type_returns_none():
     assert format_sse_event(evt) is None
 
 
+# --- generate() full-flow and error tests ---
+
 def test_generate_full_flow_byte_level_compatible(tmp_path):
     mock_result = MagicMock()
     mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
@@ -130,23 +161,13 @@ def test_generate_full_flow_byte_level_compatible(tmp_path):
     ]
 
     replace_page = MagicMock()
-    glossary_cache_path = None
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = str(tmp_path / "output")
-    single_page_pdf = tmpdir / "page.pdf"
-    single_page_pdf.write_bytes(b"fake pdf")
-
-    ctx = GenerateContext(
+    ctx = _make_ctx(
         settings=MagicMock(),
-        single_page_pdf=single_page_pdf,
         replace_page=replace_page,
-        glossary_cache_path=glossary_cache_path,
-        page=0,
-        glossary_paths=None,
-        tmpdir=tmpdir,
-        output_dir=output_dir,
+        cache_dir=cache_dir,
     )
 
     with patch("sse_stream.run_translation", return_value=iter(events)):
@@ -170,23 +191,12 @@ def test_generate_error_event_stops_stream(tmp_path):
         {"type": "error", "error": "test error"},
     ]
 
-    replace_page = MagicMock()
-    glossary_cache_path = None
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    single_page_pdf = tmpdir / "page.pdf"
-    single_page_pdf.write_bytes(b"fake")
-
-    ctx = GenerateContext(
+    ctx = _make_ctx(
         settings=MagicMock(),
-        single_page_pdf=single_page_pdf,
-        replace_page=replace_page,
-        glossary_cache_path=glossary_cache_path,
-        page=0,
-        glossary_paths=None,
-        tmpdir=tmpdir,
-        output_dir=str(tmp_path / "output"),
+        cache_dir=cache_dir,
     )
 
     with patch("sse_stream.run_translation", return_value=iter(events)):
@@ -203,23 +213,12 @@ def test_generate_translation_error_yields_error_event(tmp_path):
 
     events = [{"type": "progress_start", "stage": "layout_analysis"}]
 
-    replace_page = MagicMock()
-    glossary_cache_path = None
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    single_page_pdf = tmpdir / "page.pdf"
-    single_page_pdf.write_bytes(b"fake")
-
-    ctx = GenerateContext(
+    ctx = _make_ctx(
         settings=MagicMock(),
-        single_page_pdf=single_page_pdf,
-        replace_page=replace_page,
-        glossary_cache_path=glossary_cache_path,
-        page=0,
-        glossary_paths=None,
-        tmpdir=tmpdir,
-        output_dir=str(tmp_path / "output"),
+        cache_dir=cache_dir,
     )
 
     def error_iter() -> Iterator[dict]:
@@ -234,42 +233,6 @@ def test_generate_translation_error_yields_error_event(tmp_path):
     assert result[0] == EXPECTED_PROGRESS_START_SSE
     assert "error" in result[1]
     assert "thread crashed" in result[1]
-
-
-def test_generate_cleans_up_tmpdir(tmp_path):
-    mock_result = MagicMock()
-    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
-    mock_result.dual_pdf_path = None
-    mock_result.auto_extracted_glossary_path = None
-
-    events = [{"type": "finish", "stage": "generating_pdf", "translate_result": mock_result}]
-
-    replace_page = MagicMock()
-    glossary_cache_path = None
-
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    (tmpdir / "page.pdf").write_bytes(b"fake")
-    output_dir = str(tmp_path / "output")
-    Path(output_dir).mkdir()
-
-    ctx = GenerateContext(
-        settings=MagicMock(),
-        single_page_pdf=tmpdir / "page.pdf",
-        replace_page=replace_page,
-        glossary_cache_path=glossary_cache_path,
-        page=0,
-        glossary_paths=None,
-        tmpdir=tmpdir,
-        output_dir=output_dir,
-    )
-
-    with patch("sse_stream.run_translation", return_value=iter(events)):
-        with patch("sse_stream.debug_trace"):
-            list(generate(ctx))
-
-    assert not tmpdir.exists()
-    assert not Path(output_dir).exists()
 
 
 def test_generate_merges_glossary_with_str_auto_path(tmp_path):
@@ -300,23 +263,14 @@ def test_generate_merges_glossary_with_str_auto_path(tmp_path):
     ]
 
     replace_page = MagicMock()
-    glossary_cache_path = glossary_cache
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    single_page_pdf = tmpdir / "page.pdf"
-    single_page_pdf.write_bytes(b"fake pdf")
-    output_dir = str(tmp_path / "output")
-
-    ctx = GenerateContext(
+    ctx = _make_ctx(
         settings=MagicMock(),
-        single_page_pdf=single_page_pdf,
         replace_page=replace_page,
-        glossary_cache_path=glossary_cache_path,
-        page=0,
-        glossary_paths=None,
-        tmpdir=tmpdir,
-        output_dir=output_dir,
+        glossary_cache_path=glossary_cache,
+        cache_dir=work_dir,
     )
 
     with patch("sse_stream.run_translation", return_value=iter(events)):
@@ -343,24 +297,12 @@ def test_generate_passes_through_keepalive_empty_string(tmp_path):
          "token_usage": {}},
     ]
 
-    replace_page = MagicMock()
-    glossary_cache_path = None
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    single_page_pdf = tmpdir / "page.pdf"
-    single_page_pdf.write_bytes(b"fake pdf")
-    output_dir = str(tmp_path / "output")
-
-    ctx = GenerateContext(
+    ctx = _make_ctx(
         settings=MagicMock(),
-        single_page_pdf=single_page_pdf,
-        replace_page=replace_page,
-        glossary_cache_path=glossary_cache_path,
-        page=0,
-        glossary_paths=None,
-        tmpdir=tmpdir,
-        output_dir=output_dir,
+        cache_dir=cache_dir,
     )
 
     with patch("sse_stream.run_translation", return_value=iter(events)):
@@ -368,3 +310,123 @@ def test_generate_passes_through_keepalive_empty_string(tmp_path):
             result = list(generate(ctx))
 
     assert result[0] == ""
+
+
+# --- Cleanup tests ---
+
+def test_generate_cleans_up_on_error_event(tmp_path):
+    """3.1: error event early exit -> tmpdir/output_dir removed"""
+    events = [{"type": "error", "error": "test error"}]
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(cache_dir=cache_dir)
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("sse_stream.run_translation", return_value=iter(events)):
+            with patch("sse_stream.debug_trace"):
+                list(generate(ctx))
+
+    assert not tmpdir.exists()
+    assert not output_dir.exists()
+
+
+def test_generate_cleans_up_on_no_translate_result(tmp_path):
+    """3.2: no translate_result early exit -> tmpdir/output_dir removed"""
+    events = [{"type": "progress_start", "stage": "layout_analysis"}]
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(cache_dir=cache_dir)
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("sse_stream.run_translation", return_value=iter(events)):
+            with patch("sse_stream.debug_trace"):
+                list(generate(ctx))
+
+    assert not tmpdir.exists()
+    assert not output_dir.exists()
+
+
+def test_generate_cleans_up_on_generator_close(tmp_path):
+    """3.3: gen.close() -> GeneratorExit -> dirs removed"""
+    events = [
+        {"type": "progress_start", "stage": "layout_analysis", "overall_progress": 0,
+         "stage_current": 0, "stage_total": 0},
+    ]
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(cache_dir=cache_dir)
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("sse_stream.run_translation", return_value=iter(events)):
+            with patch("sse_stream.debug_trace"):
+                gen = generate(ctx)
+                next(gen)
+                gen.close()
+
+    assert not tmpdir.exists()
+    assert not output_dir.exists()
+
+
+def test_generate_cleans_up_on_success(tmp_path):
+    """3.4: success path -> dirs removed exactly once"""
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+
+    events = [{"type": "finish", "stage": "generating_pdf", "translate_result": mock_result}]
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(cache_dir=cache_dir)
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("sse_stream.run_translation", return_value=iter(events)):
+            with patch("sse_stream.debug_trace"):
+                list(generate(ctx))
+
+    assert not tmpdir.exists()
+    assert not output_dir.exists()
+
+
+def test_generate_cleans_up_on_exception(tmp_path):
+    """Exception during translation -> dirs removed"""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(cache_dir=cache_dir)
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("sse_stream.run_translation", side_effect=RuntimeError("boom")):
+            with patch("sse_stream.debug_trace"):
+                list(generate(ctx))
+
+    assert not tmpdir.exists()
+    assert not output_dir.exists()
