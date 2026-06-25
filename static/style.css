@@ -12,6 +12,7 @@ body {
 }
 
 #app {
+    --zoom: 1;
     display: flex;
     height: 100vh;
     overflow: hidden;
@@ -20,7 +21,7 @@ body {
 .column {
     flex: 1;
     overflow-y: auto;
-    overflow-x: hidden;
+    overflow-x: auto;
     padding: 20px;
 }
 
@@ -31,11 +32,11 @@ body {
 .page-container {
     margin-bottom: 16px;
     display: flex;
-    justify-content: center;
+    justify-content: safe center;
 }
 
 .page-container img {
-    width: 100%;
+    width: calc(100% * var(--zoom, 1));
     height: auto;
     display: block;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
@@ -43,7 +44,8 @@ body {
 }
 
 .page-placeholder {
-    width: 100%;
+    width: calc(100% * var(--zoom, 1));
+    padding-bottom: calc(var(--page-ratio) * var(--zoom, 1));
     background: #333;
     display: flex;
     align-items: center;
