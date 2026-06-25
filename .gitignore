@@ -8,3 +8,5 @@ page.*.pdf
 page.*.csv
 *.tmp
 node_modules/
+.worktrees/
+worktrees/
