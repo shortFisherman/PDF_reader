@@ -156,6 +156,7 @@ function onPageChange(pageNum) {
 
 async function onTranslateClick() {
     if (isTranslating) return;
+    const targetPage = currentPage;
     isTranslating = true;
     els.translateBtn.disabled = true;
     els.translateBtn.textContent = 'Translating...';
@@ -169,7 +170,7 @@ async function onTranslateClick() {
     }
 
     try {
-        await translateCurrentPage(currentPage, {
+        await translateCurrentPage(targetPage, {
             prompt: els.promptInput.value.trim() || null,
             onStageChange(stage, labelText) {
                 els.progressStatusText.textContent = labelText;
@@ -194,10 +195,12 @@ async function onTranslateClick() {
                     els.progressStatusText.classList.remove('done', 'error');
                 }, 2000);
 
-                const rightEl = els.rightCol.querySelector(`.page-container[data-page="${currentPage}"]`);
+                const rightEl = els.rightCol.querySelector(`.page-container[data-page="${targetPage}"]`);
                 if (rightEl) {
-                    unloadPageImage(rightEl);
-                    loadPageImage(rightEl);
+                    if (rightEl.dataset.loaded === 'true') {
+                        unloadPageImage(rightEl);
+                        loadPageImage(rightEl);
+                    }
                     rightEl.classList.add('translated');
                 }
                 loadTranslatedState();
