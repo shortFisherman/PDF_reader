@@ -1,5 +1,16 @@
 # 更新日志
 
+## 2026-06-25 — 修复 Flask reloader 孤儿进程导致日志丢失
+
+### `fix-reloader-orphan-startup`
+
+Flask `debug=True` + reloader 模式下，`python app.py` 起两个进程（父 reloader + 子 worker）。Ctrl+C 只杀父进程，子进程有时残留并继续占用 5000 端口。再启动时新实例绑不上端口，请求被老孤儿接走，终端收不到任何日志。
+
+- **`start.bat`**：启动前加 `for /f ... netstat ... findstr ":5000 " ... taskkill ...` 清理占用 5000 的遗留进程
+- 不改代码逻辑，仅加固启动脚本
+
+---
+
 ## 2026-06-25 — 前端翻译模块测试
 
 ### `add-translator-frontend-tests`
