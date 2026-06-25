@@ -2,6 +2,7 @@
 change: fix-concurrency-resource-cleanup
 design-doc: docs/superpowers/specs/2026-06-25-fix-concurrency-resource-cleanup-design.md
 base-ref: fffa539a2e74fb9806d058e31dcd02bcd84ce67a
+archived-with: 2026-06-25-fix-concurrency-resource-cleanup
 ---
 
 # fix-concurrency-resource-cleanup 实现计划
@@ -23,6 +24,7 @@ base-ref: fffa539a2e74fb9806d058e31dcd02bcd84ce67a
 - 清理逻辑绝不抛出异常，绝不掩盖业务错误
 - 遵循现有代码风格：无类型注解冗余注释、dataclass、与 `render_page` 同模式的 docstring 风格
 
+archived-with: 2026-06-25-fix-concurrency-resource-cleanup
 ---
 
 ## 文件结构
@@ -36,6 +38,7 @@ base-ref: fffa539a2e74fb9806d058e31dcd02bcd84ce67a
 | `tests/test_sse_stream.py` | 新增清理测试，适配 GenerateContext 签名变更 | 修改 |
 | `tests/test_state.py` | 新增 extract_page 测试 | 修改 |
 
+archived-with: 2026-06-25-fix-concurrency-resource-cleanup
 ---
 
 ### 任务 1：AppState 新增 extract_page 方法
@@ -78,6 +81,7 @@ git add state.py
 git commit -m "feat(state): add extract_page method under lock for concurrency safety"
 ```
 
+archived-with: 2026-06-25-fix-concurrency-resource-cleanup
 ---
 
 ### 任务 2：GenerateContext 数据类重构 + generate() try/finally 清理 + _safe_rmtree
@@ -229,6 +233,7 @@ git add sse_stream.py
 git commit -m "feat(sse_stream): wrap generate in try/finally, delegate extraction via ctx callable"
 ```
 
+archived-with: 2026-06-25-fix-concurrency-resource-cleanup
 ---
 
 ### 任务 3：finish_translation 移除 tmpdir/output_dir 参数和 rmtree 调用
@@ -297,6 +302,7 @@ git add translation_lifecycle.py
 git commit -m "refactor(translation_lifecycle): remove tmpdir/output_dir cleanup, now in generate() finally"
 ```
 
+archived-with: 2026-06-25-fix-concurrency-resource-cleanup
 ---
 
 ### 任务 4：routes.py 移除目录创建和裸 state.left_doc 访问
@@ -388,6 +394,7 @@ git add routes.py
 git commit -m "refactor(routes): delegate extraction and cleanup to generate(), remove bare state.left_doc access"
 ```
 
+archived-with: 2026-06-25-fix-concurrency-resource-cleanup
 ---
 
 ### 任务 5：测试——AppState.extract_page 单元测试
@@ -480,6 +487,7 @@ git add tests/test_state.py
 git commit -m "test(state): add extract_page unit tests"
 ```
 
+archived-with: 2026-06-25-fix-concurrency-resource-cleanup
 ---
 
 ### 任务 6：测试——extract 与 render 并发线程安全测试
@@ -577,6 +585,7 @@ git add tests/test_state.py
 git commit -m "test(state): add concurrent extract+render serialization test"
 ```
 
+archived-with: 2026-06-25-fix-concurrency-resource-cleanup
 ---
 
 ### 任务 7：测试——generate() 清理测试 + 适配现有测试
@@ -1165,6 +1174,7 @@ git add tests/test_sse_stream.py
 git commit -m "test(sse_stream): add cleanup tests and adapt to new GenerateContext signature"
 ```
 
+archived-with: 2026-06-25-fix-concurrency-resource-cleanup
 ---
 
 ### 任务 8：最终验证——全量测试 + lint
@@ -1208,6 +1218,7 @@ git add -u
 git commit -m "chore: apply lint and format fixes after concurrency cleanup changes"
 ```
 
+archived-with: 2026-06-25-fix-concurrency-resource-cleanup
 ---
 
 ### 任务 9：手动验证（可选）

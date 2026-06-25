@@ -1,0 +1,16 @@
+{
+  "change": "fix-concurrency-resource-cleanup",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "b93fbc2a934351d11fd300d25007e98a03b62403e8cba03369019ba2ea46f989",
+  "files": [
+    { "path": "openspec/changes/fix-concurrency-resource-cleanup/proposal.md", "sha256": "c350cd8a31a3543a8cac12e6bfd0be1f750c54fcf0f8a32e672a519f68ebf558" },
+    { "path": "openspec/changes/fix-concurrency-resource-cleanup/design.md", "sha256": "bb9bf4cb63d4062c067d5d7c7aa578ec38928c27ccdd4999ee2fd9d76afd2a8e" },
+    { "path": "openspec/changes/fix-concurrency-resource-cleanup/tasks.md", "sha256": "40acb2cb7ac693fc1dcc00a10b536193b1e4390654bbbb97900eed9f4edacef9" },
+    { "path": "openspec/changes/fix-concurrency-resource-cleanup/specs/code-quality-foundations/spec.md", "sha256": "ccded664d2f33c2e398e4809f4e5451ce8655dcb65ee11b620cbd12459d618c1" },
+    { "path": "openspec/changes/fix-concurrency-resource-cleanup/specs/page-translation/spec.md", "sha256": "cb4a6f6698e9ccedcb0f8afa12e14d93e1435021572182ae733f093f99bfc1db" },
+    { "path": "openspec/changes/fix-concurrency-resource-cleanup/specs/translation-lifecycle/spec.md", "sha256": "356d66e2bb2fd4e2590cd1968e07718718728bbb3251b3672079b84927323a8e" }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "change": "add-translate-result-protocol",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "b75c3894d382310c1226a176e65fde6c5085fece358aaf44bade972e2332be57",
+  "files": [
+    { "path": "openspec/changes/add-translate-result-protocol/proposal.md", "sha256": "7d59d9cb03b604697c2c9209abb73b21ad0cb490b50caaf4208a69c073cc5bde" },
+    { "path": "openspec/changes/add-translate-result-protocol/design.md", "sha256": "52b3b2af4f85e78e443227f4c36b77b83b5e69e8959448092742c2728a0e3374" },
+    { "path": "openspec/changes/add-translate-result-protocol/tasks.md", "sha256": "d0beefd8a7a27781b7613698885dc95ede7792203658e0a8431d242e842ad926" },
+    { "path": "openspec/changes/add-translate-result-protocol/specs/translation-lifecycle/spec.md", "sha256": "b809582c8de1831cd3fe4eb48333ddb816dfd1fe8c6931bb2d9b32658499c439" }
+  ]
+}
