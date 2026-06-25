@@ -2,8 +2,8 @@ import threading
 import time
 from pathlib import Path
 
-import pytest
 import pymupdf
+import pytest
 
 from state import AppState
 
@@ -14,22 +14,26 @@ def test_app_state_initial():
     assert state.page_count == 0
     assert len(state.translated_pages) == 0
 
+
 def test_open_pdf_creates_cache(sample_pdf, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     state = AppState(cache_dir)
     from file_hash import sha256
+
     result = state.open_pdf(str(sample_pdf), sha256)
     assert result["page_count"] == 2
     assert result["hash"] is not None
     assert state.is_doc_open() is True
     state._close_docs()
 
+
 def test_reopen_closes_old_docs(sample_pdf, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     state = AppState(cache_dir)
     from file_hash import sha256
+
     state.open_pdf(str(sample_pdf), sha256)
     state.open_pdf(str(sample_pdf), sha256)
     second_left = state.left_doc
@@ -37,14 +41,17 @@ def test_reopen_closes_old_docs(sample_pdf, tmp_path):
     assert second_left is not None
     state._close_docs()
 
+
 def test_translated_pages_tracking(sample_pdf, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     state = AppState(cache_dir)
     from file_hash import sha256
+
     state.open_pdf(str(sample_pdf), sha256)
     assert len(state.translated_pages) == 0
     state._close_docs()
+
 
 def test_glossary_cache_path_no_pdf(tmp_path):
     cache_dir = tmp_path / "cache"
@@ -52,11 +59,13 @@ def test_glossary_cache_path_no_pdf(tmp_path):
     state = AppState(cache_dir)
     assert state.glossary_cache_path is None
 
+
 def test_glossary_cache_path_after_open(sample_pdf, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     state = AppState(cache_dir)
     from file_hash import sha256
+
     state.open_pdf(str(sample_pdf), sha256)
     expected = cache_dir / state.pdf_hash
     assert state.glossary_cache_path == expected
@@ -89,9 +98,7 @@ def test_render_page_concurrent_replace_no_crash(app_state, sample_pdf, tmp_path
 
     def render_thread():  # noqa: ANN202
         try:
-            render_result[0] = app_state.render_page(
-                "right", 0, slow_render_func, 72
-            )
+            render_result[0] = app_state.render_page("right", 0, slow_render_func, 72)
         except Exception as e:
             render_error[0] = e
 
@@ -120,7 +127,7 @@ def test_extract_page_returns_path(app_state, sample_pdf, tmp_path):
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
-    def extract_func(doc, page, tmpdir):
+    def extract_func(doc, page, tmpdir) -> Path:
         out = Path(tmpdir) / f"page_{page}.png"
         out.write_bytes(b"fake-image-data")
         return out
@@ -134,10 +141,9 @@ def test_extract_page_raises_when_no_doc(tmp_path):
     state = AppState(tmp_path / "cache")
     tmp_path.mkdir(exist_ok=True)
 
-    def extract_func(doc, page, tmpdir):
+    def extract_func(doc, page, tmpdir) -> Path:
         return Path(tmpdir) / "never.txt"
 
-    import pytest
     with pytest.raises(ValueError, match="no document opened"):
         state.extract_page(0, tmp_path, extract_func)
 
@@ -153,7 +159,7 @@ def test_extract_page_holds_lock(app_state, sample_pdf, tmp_path):
     extract_can_finish = threading.Event()
     lock_held_in_extract = [False]
 
-    def extract_func(doc, page, tmpdir):
+    def extract_func(doc, page, tmpdir) -> Path:
         lock_held_in_extract[0] = app_state._lock.locked()
         in_extract.set()
         extract_can_finish.wait(timeout=5)
@@ -161,7 +167,7 @@ def test_extract_page_holds_lock(app_state, sample_pdf, tmp_path):
 
     result = [None]
 
-    def extract_thread():
+    def extract_thread() -> None:
         result[0] = app_state.extract_page(0, tmp_path, extract_func)
 
     t = threading.Thread(target=extract_thread)
@@ -200,10 +206,7 @@ def test_concurrent_replace_different_pages(app_state, sample_pdf, tmp_path):
         except Exception as e:
             errors[idx] = e
 
-    threads = [
-        threading.Thread(target=replace_page, args=(i,))
-        for i in range(page_count)
-    ]
+    threads = [threading.Thread(target=replace_page, args=(i,)) for i in range(page_count)]
     for t in threads:
         t.start()
     for t in threads:
@@ -223,8 +226,8 @@ def test_concurrent_replace_different_pages(app_state, sample_pdf, tmp_path):
 
 
 def test_extract_page_normal(app_state, sample_pdf, tmp_path):
-    from file_hash import sha256 as sha256_func
     import pdf_extraction
+    from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
@@ -237,14 +240,14 @@ def test_extract_page_normal(app_state, sample_pdf, tmp_path):
 
 
 def test_extract_page_under_lock(app_state, sample_pdf, tmp_path):
-    from file_hash import sha256 as sha256_func
     import pdf_extraction
+    from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
     lock_held_during_extract = [False]
 
-    def track_lock_extract_func(doc, page, tmpdir):
+    def track_lock_extract_func(doc, page, tmpdir) -> Path:
         lock_held_during_extract[0] = app_state._lock.locked()
         return pdf_extraction.extract_single_page(doc, page, tmpdir)
 
@@ -258,8 +261,9 @@ def test_extract_page_under_lock(app_state, sample_pdf, tmp_path):
 def test_concurrent_extract_and_render_serialized(app_state, sample_pdf, tmp_path):
     import threading
     import time
-    from file_hash import sha256 as sha256_func
+
     import pdf_extraction
+    from file_hash import sha256 as sha256_func
     from pdf_renderer import render_page
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
@@ -272,7 +276,7 @@ def test_concurrent_extract_and_render_serialized(app_state, sample_pdf, tmp_pat
 
     lock_held = [False]
 
-    def slow_extract_func(doc, page, tmpdir):
+    def slow_extract_func(doc, page, tmpdir) -> Path:
         lock_held[0] = app_state._lock.locked()
         extract_started.set()
         extract_can_finish.wait(timeout=5)
@@ -283,20 +287,16 @@ def test_concurrent_extract_and_render_serialized(app_state, sample_pdf, tmp_pat
     render_result = [None]
     render_error = [None]
 
-    def run_extract():
+    def run_extract() -> None:
         try:
-            extract_result[0] = app_state.extract_page(
-                0, extract_tmpdir, slow_extract_func
-            )
+            extract_result[0] = app_state.extract_page(0, extract_tmpdir, slow_extract_func)
         except Exception as e:
             extract_error[0] = e
 
-    def run_render():
+    def run_render() -> None:
         extract_started.wait(timeout=5)
         try:
-            render_result[0] = app_state.render_page(
-                "left", 0, render_page, 72
-            )
+            render_result[0] = app_state.render_page("left", 0, render_page, 72)
         except Exception as e:
             render_error[0] = e
 

@@ -47,26 +47,47 @@ def format_sse_event(evt: dict) -> str | None:
     evt_type = evt.get("type", "")
 
     if evt_type == "progress_start":
-        return "data: " + json.dumps({
-            "type": "progress", "progress": 0,
-            "stage": evt.get("stage", ""),
-            "stage_current": evt.get("stage_current", 0),
-            "stage_total": evt.get("stage_total", 0),
-        }) + "\n\n"
+        return (
+            "data: "
+            + json.dumps(
+                {
+                    "type": "progress",
+                    "progress": 0,
+                    "stage": evt.get("stage", ""),
+                    "stage_current": evt.get("stage_current", 0),
+                    "stage_total": evt.get("stage_total", 0),
+                }
+            )
+            + "\n\n"
+        )
     elif evt_type == "progress_update":
-        return "data: " + json.dumps({
-            "type": "progress",
-            "progress": evt.get("overall_progress", 0),
-            "stage": evt.get("stage", ""),
-            "stage_current": evt.get("stage_current", 0),
-            "stage_total": evt.get("stage_total", 0),
-        }) + "\n\n"
+        return (
+            "data: "
+            + json.dumps(
+                {
+                    "type": "progress",
+                    "progress": evt.get("overall_progress", 0),
+                    "stage": evt.get("stage", ""),
+                    "stage_current": evt.get("stage_current", 0),
+                    "stage_total": evt.get("stage_total", 0),
+                }
+            )
+            + "\n\n"
+        )
     elif evt_type == "finish":
-        return "data: " + json.dumps({
-            "type": "progress", "progress": 95,
-            "stage": evt.get("stage", "generating_pdf"),
-            "stage_current": 0, "stage_total": 0,
-        }) + "\n\n"
+        return (
+            "data: "
+            + json.dumps(
+                {
+                    "type": "progress",
+                    "progress": 95,
+                    "stage": evt.get("stage", "generating_pdf"),
+                    "stage_current": 0,
+                    "stage_total": 0,
+                }
+            )
+            + "\n\n"
+        )
     elif evt_type == "error":
         return f"data: {json.dumps({'type': 'error', 'error': evt.get('error', 'unknown')})}\n\n"
     else:
@@ -85,9 +106,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
             translate_result = None
             token_usage_finish = None
 
-            single_page_pdf = ctx.extract_page(
-                ctx.page, tmpdir, pdf_extraction.extract_single_page
-            )
+            single_page_pdf = ctx.extract_page(ctx.page, tmpdir, pdf_extraction.extract_single_page)
 
             for evt in run_translation(ctx.settings, str(single_page_pdf)):
                 if not isinstance(evt, dict):
@@ -118,10 +137,19 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                 ctx.glossary_cache_path,
             )
 
-            yield "data: " + json.dumps({
-                "type": "progress", "progress": 100,
-                "stage": "finish", "stage_current": 0, "stage_total": 0,
-            }) + "\n\n"
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "type": "progress",
+                        "progress": 100,
+                        "stage": "finish",
+                        "stage_current": 0,
+                        "stage_total": 0,
+                    }
+                )
+                + "\n\n"
+            )
             yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
 
     except TranslationError as e:

@@ -23,6 +23,7 @@ def sample_pdf():
     yield pdf_path
     shutil.rmtree(tmpdir, ignore_errors=True)
 
+
 @pytest.fixture
 def app_state(tmp_path):
     """Create AppState with temp cache dir"""
@@ -32,11 +33,12 @@ def app_state(tmp_path):
     yield state
     state._close_docs()
 
+
 @pytest.fixture
 def test_client():
     """Flask test client"""
     app = create_app()
-    app.config['TESTING'] = True
+    app.config["TESTING"] = True
     with app.test_client() as client:
         yield client
 

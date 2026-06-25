@@ -31,6 +31,4 @@ def finish_translation(
         translate_result.auto_extracted_glossary_path,
     )
     elapsed = time.time() - merge_start
-    debug_trace.log_glossary_merge(
-        "merge_done", page=-1, elapsed=f"{elapsed:.2f}"
-    )
+    debug_trace.log_glossary_merge("merge_done", page=-1, elapsed=f"{elapsed:.2f}")

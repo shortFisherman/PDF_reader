@@ -87,7 +87,8 @@ def translate_page(page: int):
 
     glossary_paths = glossary_service.resolve_glossary_paths(state.glossary_cache_path)
     settings = build_settings(
-        "", user_prompt,
+        "",
+        user_prompt,
         glossary_paths=glossary_paths,
     )
     ctx = sse_stream.GenerateContext(

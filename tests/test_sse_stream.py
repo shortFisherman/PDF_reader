@@ -5,54 +5,79 @@ from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from sse_stream import GenerateContext, format_sse_event, generate
 
 # --- Gold-standard SSE constants (preserved from original) ---
 EXPECTED_PROGRESS_START_SSE = (
-    'data: ' + json.dumps({
-        "type": "progress", "progress": 0,
-        "stage": "layout_analysis",
-        "stage_current": 0, "stage_total": 0,
-    }) + '\n\n'
+    "data: "
+    + json.dumps(
+        {
+            "type": "progress",
+            "progress": 0,
+            "stage": "layout_analysis",
+            "stage_current": 0,
+            "stage_total": 0,
+        }
+    )
+    + "\n\n"
 )
 
 EXPECTED_PROGRESS_UPDATE_SSE = (
-    'data: ' + json.dumps({
-        "type": "progress",
-        "progress": 50,
-        "stage": "translating",
-        "stage_current": 2, "stage_total": 5,
-    }) + '\n\n'
+    "data: "
+    + json.dumps(
+        {
+            "type": "progress",
+            "progress": 50,
+            "stage": "translating",
+            "stage_current": 2,
+            "stage_total": 5,
+        }
+    )
+    + "\n\n"
 )
 
 EXPECTED_FINISH_PROGRESS_SSE = (
-    'data: ' + json.dumps({
-        "type": "progress", "progress": 95,
-        "stage": "generating_pdf",
-        "stage_current": 0, "stage_total": 0,
-    }) + '\n\n'
+    "data: "
+    + json.dumps(
+        {
+            "type": "progress",
+            "progress": 95,
+            "stage": "generating_pdf",
+            "stage_current": 0,
+            "stage_total": 0,
+        }
+    )
+    + "\n\n"
 )
 
-EXPECTED_ERROR_SSE = (
-    'data: ' + json.dumps({"type": "error", "error": "test error"}) + '\n\n'
-)
+EXPECTED_ERROR_SSE = "data: " + json.dumps({"type": "error", "error": "test error"}) + "\n\n"
 
 EXPECTED_FINAL_PROGRESS_SSE = (
-    'data: ' + json.dumps({
-        "type": "progress", "progress": 100,
-        "stage": "finish", "stage_current": 0, "stage_total": 0,
-    }) + '\n\n'
+    "data: "
+    + json.dumps(
+        {
+            "type": "progress",
+            "progress": 100,
+            "stage": "finish",
+            "stage_current": 0,
+            "stage_total": 0,
+        }
+    )
+    + "\n\n"
 )
 
-EXPECTED_FINAL_FINISH_SSE = (
-    'data: ' + json.dumps({"type": "finish", "progress": 100}) + '\n\n'
-)
+EXPECTED_FINAL_FINISH_SSE = "data: " + json.dumps({"type": "finish", "progress": 100}) + "\n\n"
 
 
-def _make_ctx(settings=None, replace_page=None, glossary_cache_path=None, page=0,
-              glossary_paths=None, cache_dir=None, extract_page=None):
+def _make_ctx(
+    settings=None,
+    replace_page=None,
+    glossary_cache_path=None,
+    page=0,
+    glossary_paths=None,
+    cache_dir=None,
+    extract_page=None,
+) -> GenerateContext:
     if settings is None:
         settings = MagicMock()
     if replace_page is None:
@@ -74,6 +99,7 @@ def _make_ctx(settings=None, replace_page=None, glossary_cache_path=None, page=0
 
 # --- Golden sample tests ---
 
+
 def test_golden_sample_progress_start():
     assert EXPECTED_PROGRESS_START_SSE == (
         'data: {"type": "progress", "progress": 0, "stage": "layout_analysis", '
@@ -83,18 +109,16 @@ def test_golden_sample_progress_start():
 
 def test_golden_sample_progress_update():
     assert EXPECTED_PROGRESS_UPDATE_SSE == (
-        'data: {"type": "progress", "progress": 50, "stage": "translating", '
-        '"stage_current": 2, "stage_total": 5}\n\n'
+        'data: {"type": "progress", "progress": 50, "stage": "translating", "stage_current": 2, "stage_total": 5}\n\n'
     )
 
 
 def test_golden_sample_error():
-    assert EXPECTED_ERROR_SSE == (
-        'data: {"type": "error", "error": "test error"}\n\n'
-    )
+    assert EXPECTED_ERROR_SSE == ('data: {"type": "error", "error": "test error"}\n\n')
 
 
 # --- format_sse_event tests ---
+
 
 def test_format_sse_event_progress_start():
     evt = {
@@ -145,6 +169,7 @@ def test_format_sse_event_unknown_type_returns_none():
 
 # --- generate() full-flow and error tests ---
 
+
 def test_generate_full_flow_byte_level_compatible(tmp_path):
     mock_result = MagicMock()
     mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
@@ -152,12 +177,21 @@ def test_generate_full_flow_byte_level_compatible(tmp_path):
     mock_result.auto_extracted_glossary_path = None
 
     events = [
-        {"type": "progress_start", "stage": "layout_analysis", "overall_progress": 0,
-         "stage_current": 0, "stage_total": 0},
-        {"type": "progress_update", "stage": "translating", "overall_progress": 50,
-         "stage_current": 2, "stage_total": 5},
-        {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result,
-         "token_usage": {}},
+        {
+            "type": "progress_start",
+            "stage": "layout_analysis",
+            "overall_progress": 0,
+            "stage_current": 0,
+            "stage_total": 0,
+        },
+        {
+            "type": "progress_update",
+            "stage": "translating",
+            "overall_progress": 50,
+            "stage_current": 2,
+            "stage_total": 5,
+        },
+        {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}},
     ]
 
     replace_page = MagicMock()
@@ -256,10 +290,14 @@ def test_generate_merges_glossary_with_str_auto_path(tmp_path):
     mock_result.auto_extracted_glossary_path = str(auto_file)
 
     events = [
-        {"type": "progress_start", "stage": "layout_analysis", "overall_progress": 0,
-         "stage_current": 0, "stage_total": 0},
-        {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result,
-         "token_usage": {}},
+        {
+            "type": "progress_start",
+            "stage": "layout_analysis",
+            "overall_progress": 0,
+            "stage_current": 0,
+            "stage_total": 0,
+        },
+        {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}},
     ]
 
     replace_page = MagicMock()
@@ -293,8 +331,7 @@ def test_generate_passes_through_keepalive_empty_string(tmp_path):
 
     events = [
         "",
-        {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result,
-         "token_usage": {}},
+        {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}},
     ]
 
     cache_dir = tmp_path / "cache"
@@ -313,6 +350,7 @@ def test_generate_passes_through_keepalive_empty_string(tmp_path):
 
 
 # --- Cleanup tests ---
+
 
 def test_generate_cleans_up_on_error_event(tmp_path):
     """3.1: error event early exit -> tmpdir/output_dir removed"""
@@ -361,8 +399,13 @@ def test_generate_cleans_up_on_no_translate_result(tmp_path):
 def test_generate_cleans_up_on_generator_close(tmp_path):
     """3.3: gen.close() -> GeneratorExit -> dirs removed"""
     events = [
-        {"type": "progress_start", "stage": "layout_analysis", "overall_progress": 0,
-         "stage_current": 0, "stage_total": 0},
+        {
+            "type": "progress_start",
+            "stage": "layout_analysis",
+            "overall_progress": 0,
+            "stage_current": 0,
+            "stage_total": 0,
+        },
     ]
 
     cache_dir = tmp_path / "cache"

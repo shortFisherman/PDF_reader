@@ -36,9 +36,7 @@ def run_translation(settings: SettingsModel, pdf_path: str) -> Iterator[dict | s
                     if pending:
                         for task in pending:
                             task.cancel()
-                        loop.run_until_complete(
-                            asyncio.gather(*pending, return_exceptions=True)
-                        )
+                        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
                 except Exception:
                     pass
                 loop.close()

@@ -36,6 +36,7 @@ MODEL_ENABLE_JSON_MODE = model_cfg.get("enable_json_mode")
 MODEL_TEMPERATURE = model_cfg.get("temperature")
 MODEL_TIMEOUT = model_cfg.get("timeout")
 
+
 @dataclass(frozen=True)
 class EngineSpec:
     provider: str
@@ -162,15 +163,14 @@ ENGINE_REGISTRY: list[EngineSpec] = [
 ]
 
 
-PROVIDER_INDEX: dict[str, EngineSpec] = {
-    spec.provider: spec for spec in ENGINE_REGISTRY
-}
+PROVIDER_INDEX: dict[str, EngineSpec] = {spec.provider: spec for spec in ENGINE_REGISTRY}
 
 DPI = CONFIG.get("pdf_reader", {}).get("dpi", 200)
 CACHE_DIR = Path(CONFIG.get("pdf_reader", {}).get("cache_dir", "cache")).resolve()
 GLOSSARY_PATH = Path(__file__).parent / "docs" / "glossary.csv"
 TRANSLATION_LANG_IN = CONFIG.get("translation", {}).get("lang_in", "en")
 TRANSLATION_LANG_OUT = CONFIG.get("translation", {}).get("lang_out", "zh")
+
 
 def _validate_required_config() -> None:
     if not MODEL:
@@ -185,5 +185,6 @@ def _resolve_debug() -> bool:
         return bool(debug_section["enabled"])
     server_section = CONFIG.get("server", {})
     return bool(server_section.get("debug", False))
+
 
 DEBUG: bool = _resolve_debug()

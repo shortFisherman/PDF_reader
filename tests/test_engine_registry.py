@@ -1,4 +1,5 @@
 """等价回归基线：对所有 10 引擎，新旧路径产出一致"""
+
 from unittest.mock import MagicMock
 
 import config
@@ -52,14 +53,14 @@ def test_all_providers_resolve_to_correct_class(mock_config):
         spec = resolve_engine(provider)
         expected = config.PROVIDER_INDEX[provider].settings_cls
         assert spec.settings_cls is expected, (
-            f"resolve_engine('{provider}') → {spec.settings_cls.__name__}, "
-            f"expected {expected.__name__}"
+            f"resolve_engine('{provider}') → {spec.settings_cls.__name__}, expected {expected.__name__}"
         )
 
 
 def test_unknown_provider_falls_back_to_openai_compatible(mock_config):
     spec = resolve_engine("nonexistent_provider_xyz")
     from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
+
     assert spec.settings_cls is OpenAICompatibleSettings
 
 
@@ -76,19 +77,13 @@ def test_all_engines_build_kwargs_structure(monkeypatch):
     for provider in ALL_PROVIDERS:
         spec = resolve_engine(provider)
         kwargs = build_engine_kwargs(spec)
-        assert isinstance(kwargs, dict), (
-            f"build_engine_kwargs({spec.settings_cls.__name__}) returned {type(kwargs)}"
-        )
+        assert isinstance(kwargs, dict), f"build_engine_kwargs({spec.settings_cls.__name__}) returned {type(kwargs)}"
         engine_name = spec.settings_cls.__name__
         api_field = spec.field_map.get("api_key", "")
         model_field = spec.field_map.get("model", "")
         assert api_field, f"{engine_name}: no api_key in field_map"
-        assert kwargs[api_field] == "sk-test-key", (
-            f"{engine_name}: expected api_key at '{api_field}'"
-        )
-        assert kwargs[model_field] == "test-model", (
-            f"{engine_name}: expected model at '{model_field}'"
-        )
+        assert kwargs[api_field] == "sk-test-key", f"{engine_name}: expected api_key at '{api_field}'"
+        assert kwargs[model_field] == "test-model", f"{engine_name}: expected model at '{model_field}'"
 
 
 # Migration-equivalence snapshot of the original FIELD_MAP that was
@@ -159,14 +154,8 @@ _OLD_FIELD_MAP = {
 
 
 def test_engine_registry_covers_all_providers():
-    settings_to_provider = {
-        spec.settings_cls.__name__: spec.provider
-        for spec in config.PROVIDER_INDEX.values()
-    }
-    expected_providers = {
-        settings_to_provider[name]
-        for name in _OLD_FIELD_MAP["api_key"]
-    }
+    settings_to_provider = {spec.settings_cls.__name__: spec.provider for spec in config.PROVIDER_INDEX.values()}
+    expected_providers = {settings_to_provider[name] for name in _OLD_FIELD_MAP["api_key"]}
     registry_providers = set(config.PROVIDER_INDEX.keys())
     assert registry_providers == expected_providers, (
         f"Provider mismatch: registry={sorted(registry_providers)}, "
@@ -178,9 +167,16 @@ def _old_build_engine_kwargs(engine_cls) -> dict:
     engine_fields = engine_cls.model_fields
     engine_name = engine_cls.__name__
     kwargs = {}
-    for unified_name in ("api_key", "model", "base_url", "thinking_mode",
-                         "reasoning_effort", "enable_json_mode",
-                         "temperature", "timeout"):
+    for unified_name in (
+        "api_key",
+        "model",
+        "base_url",
+        "thinking_mode",
+        "reasoning_effort",
+        "enable_json_mode",
+        "temperature",
+        "timeout",
+    ):
         config_attr_name = "MODEL" if unified_name == "model" else f"MODEL_{unified_name.upper()}"
         value = getattr(config, config_attr_name, None)
         engine_field = _OLD_FIELD_MAP.get(unified_name, {}).get(engine_name)
@@ -212,9 +208,7 @@ def test_new_path_matches_old_path(monkeypatch):
     for provider, spec in config.PROVIDER_INDEX.items():
         old_kwargs = _old_build_engine_kwargs(spec.settings_cls)
         new_kwargs = build_engine_kwargs(spec)
-        assert old_kwargs == new_kwargs, (
-            f"{provider}: old={old_kwargs} != new={new_kwargs}"
-        )
+        assert old_kwargs == new_kwargs, f"{provider}: old={old_kwargs} != new={new_kwargs}"
 
 
 def test_fake_engine_extensibility(monkeypatch):
@@ -248,6 +242,7 @@ def test_fake_engine_extensibility(monkeypatch):
 
 def test_fake_engine_optional_field_warns(monkeypatch, caplog):
     import logging
+
     caplog.set_level(logging.WARNING)
 
     fake_settings_cls = MagicMock()

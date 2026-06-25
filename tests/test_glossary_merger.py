@@ -34,6 +34,7 @@ def test_first_merge_creates_cumulative():
         assert ("laser", "激光") in rows
     finally:
         import shutil
+
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
@@ -58,6 +59,7 @@ def test_append_merge_with_voting():
         assert source_to_target["grating"] == "光栅"
     finally:
         import shutil
+
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
@@ -79,6 +81,7 @@ def test_auto_empty_does_not_change_cumulative():
         assert rows == [("waveguide", "波导")]
     finally:
         import shutil
+
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
@@ -93,6 +96,7 @@ def test_auto_file_missing_does_not_create_cumulative():
         assert not cumulative_path.exists()
     finally:
         import shutil
+
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
@@ -119,4 +123,5 @@ def test_bom_encoded_auto_glossary_is_merged():
         assert source_to_target["panel"] == "专家组"
     finally:
         import shutil
+
         shutil.rmtree(tmpdir, ignore_errors=True)

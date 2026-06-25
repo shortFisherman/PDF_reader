@@ -12,6 +12,7 @@ def test_cli_debug_flag_overrides_config():
             args, _ = parser.parse_known_args()
 
             import config
+
             if args.debug is not None:
                 config.DEBUG = args.debug
 
@@ -26,6 +27,7 @@ def test_cli_no_debug_flag_does_not_override():
         args, _ = parser.parse_known_args()
 
         import config
+
         original = config.DEBUG
         if args.debug is not None:
             config.DEBUG = args.debug
@@ -38,6 +40,7 @@ def test_import_app_does_not_trigger_side_effects():
     with patch("config.DEBUG", False):
         with patch("app.debug_trace.init_debug") as mock_init:
             import app  # noqa: F401
+
             mock_init.assert_not_called()
 
 
@@ -45,5 +48,6 @@ def test_create_app_calls_init_debug():
     """create_app() explicitly calls init_debug(config.DEBUG)."""
     with patch("app.debug_trace.init_debug") as mock_init:
         from app import create_app
+
         create_app()
         mock_init.assert_called_once()

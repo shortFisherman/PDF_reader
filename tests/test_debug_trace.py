@@ -28,7 +28,6 @@ def test_log_step_logs_when_debug_true():
             mock_info.assert_called_once_with("[step] test step %d", 1)
 
 
-
 def test_log_token_usage_no_op_when_empty():
     with patch("debug_trace.config") as mock_config:
         mock_config.DEBUG = True
@@ -53,9 +52,7 @@ def test_full_debug_trace_bytes_identical(tmp_path):
 
     buffer = io.StringIO()
     stream_handler = logging.StreamHandler(buffer)
-    stream_handler.setFormatter(logging.Formatter(
-        "%(asctime)s %(levelname)s:%(name)s:%(message)s"
-    ))
+    stream_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s:%(name)s:%(message)s"))
 
     original_handlers = list(debug_trace.trace_logger.handlers)
     for h in original_handlers:
@@ -143,10 +140,12 @@ def test_init_debug_false_does_not_patch():
 
 def test_init_debug_handles_import_error(monkeypatch):
     """When AutomaticTermExtractor import fails, init_debug logs warning and returns."""
+
     def raise_import(*args, **kwargs):
         raise ImportError("babeldoc not available")
 
     import debug_trace as dt
+
     with patch("debug_trace.logger.warning") as mock_warn:
         try:
             dt._apply_monkey_patches()
@@ -163,12 +162,14 @@ def test_config_debug_defaults_to_false(monkeypatch):
 def test_config_debug_reads_debug_section():
     """config.DEBUG is True when [debug] enabled = true in config.toml."""
     import config as cfg
+
     assert isinstance(cfg.DEBUG, bool)
 
 
 def test_config_debug_falls_back_to_server_debug():
     """When [debug] is absent but [server] debug is present, use server.debug."""
     import config as cfg
+
     debug_section = cfg.CONFIG.get("debug")
     server_debug = cfg.CONFIG.get("server", {}).get("debug", False)
     if debug_section is None:
@@ -188,8 +189,7 @@ def test_debug_session_creates_and_removes_file_handler(tmp_path):
             assert log_file.exists()
 
         assert debug_trace.trace_logger.handlers == [
-            h for h in debug_trace.trace_logger.handlers
-            if not isinstance(h, logging.FileHandler)
+            h for h in debug_trace.trace_logger.handlers if not isinstance(h, logging.FileHandler)
         ]
 
 
@@ -239,10 +239,7 @@ def test_debug_session_exception_safe(tmp_path):
     glossary_path = tmp_path / "glossary"
     glossary_path.mkdir()
 
-    handlers_before = [
-        h for h in debug_trace.trace_logger.handlers
-        if isinstance(h, logging.FileHandler)
-    ]
+    handlers_before = [h for h in debug_trace.trace_logger.handlers if isinstance(h, logging.FileHandler)]
 
     with patch("debug_trace.config") as mock_config:
         mock_config.DEBUG = True
@@ -253,10 +250,7 @@ def test_debug_session_exception_safe(tmp_path):
         except RuntimeError:
             pass
 
-    handlers_after = [
-        h for h in debug_trace.trace_logger.handlers
-        if isinstance(h, logging.FileHandler)
-    ]
+    handlers_after = [h for h in debug_trace.trace_logger.handlers if isinstance(h, logging.FileHandler)]
     assert len(handlers_after) == len(handlers_before)
 
 
@@ -264,9 +258,7 @@ def test_log_glossary_merge_logs_when_debug_true():
     with patch("debug_trace.config") as mock_config:
         mock_config.DEBUG = True
         with patch.object(debug_trace.trace_logger, "info") as mock_info:
-            debug_trace.log_glossary_merge(
-                "merge_done", page=1, elapsed=0.02, entries=5
-            )
+            debug_trace.log_glossary_merge("merge_done", page=1, elapsed=0.02, entries=5)
             mock_info.assert_called_once()
             call_args = mock_info.call_args
             assert "merge_done" in str(call_args)

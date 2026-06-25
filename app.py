@@ -11,8 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pdf_reader")
 
 _parser = argparse.ArgumentParser()
-_parser.add_argument("--debug", action="store_true", default=None,
-                     help="Enable debug tracing")
+_parser.add_argument("--debug", action="store_true", default=None, help="Enable debug tracing")
 _cli_args, _ = _parser.parse_known_args()
 if _cli_args.debug is not None:
     config.DEBUG = _cli_args.debug
@@ -23,6 +22,7 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config["app_state"] = AppState(config.CACHE_DIR)
     from routes import register_routes
+
     register_routes(app)
     return app
 
