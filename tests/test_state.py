@@ -2,6 +2,7 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
 import pymupdf
 
 from state import AppState
@@ -219,3 +220,36 @@ def test_concurrent_replace_different_pages(app_state, sample_pdf, tmp_path):
 
     assert 0 in app_state.translated_pages
     assert 1 in app_state.translated_pages
+
+
+def test_extract_page_normal(app_state, sample_pdf, tmp_path):
+    from file_hash import sha256 as sha256_func
+    import pdf_extraction
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+
+    extract_tmpdir = tmp_path / "extract"
+    extract_tmpdir.mkdir()
+    result = app_state.extract_page(0, extract_tmpdir, pdf_extraction.extract_single_page)
+
+    assert result == extract_tmpdir / "page.pdf"
+    assert result.exists()
+
+
+def test_extract_page_under_lock(app_state, sample_pdf, tmp_path):
+    from file_hash import sha256 as sha256_func
+    import pdf_extraction
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+
+    lock_held_during_extract = [False]
+
+    def track_lock_extract_func(doc, page, tmpdir):
+        lock_held_during_extract[0] = app_state._lock.locked()
+        return pdf_extraction.extract_single_page(doc, page, tmpdir)
+
+    extract_tmpdir = tmp_path / "extract"
+    extract_tmpdir.mkdir()
+    app_state.extract_page(0, extract_tmpdir, track_lock_extract_func)
+
+    assert lock_held_during_extract[0] is True
