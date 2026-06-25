@@ -1,7 +1,5 @@
 import io
 import os
-import tempfile
-from pathlib import Path
 
 from flask import (
     Blueprint,
@@ -16,7 +14,6 @@ from flask import (
 
 import config
 import glossary_service
-import pdf_extraction
 import sse_stream
 from file_hash import sha256
 from pdf_renderer import render_page
@@ -88,23 +85,19 @@ def translate_page(page: int):
     data = request.get_json(silent=True) or {}
     user_prompt = (data.get("prompt") or "").strip() or None
 
-    tmpdir = Path(tempfile.mkdtemp())
-    output_dir = tempfile.mkdtemp(dir=str(config.CACHE_DIR))
-    single_page_pdf = pdf_extraction.extract_single_page(state.left_doc, page, tmpdir)
     glossary_paths = glossary_service.resolve_glossary_paths(state.glossary_cache_path)
     settings = build_settings(
-        str(single_page_pdf), user_prompt,
-        output_dir=output_dir, glossary_paths=glossary_paths,
+        "", user_prompt,
+        glossary_paths=glossary_paths,
     )
     ctx = sse_stream.GenerateContext(
         settings=settings,
-        single_page_pdf=single_page_pdf,
         replace_page=lambda path: state.replace_page(path, page),
         glossary_cache_path=state.glossary_cache_path,
         page=page,
         glossary_paths=glossary_paths,
-        tmpdir=tmpdir,
-        output_dir=output_dir,
+        cache_dir=config.CACHE_DIR,
+        extract_page=lambda page, tmpdir, func: state.extract_page(page, tmpdir, func),
     )
     return Response(
         stream_with_context(sse_stream.generate(ctx)),
