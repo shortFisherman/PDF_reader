@@ -12,10 +12,10 @@
 
 ## 3. zoom 模块
 
-- [ ] 3.1 新增 `static/modules/zoom.js`，导出 `setupZoom({ columns, appEl, onZoomChange })`，内部维护 zoom 状态（初始 1）、`MIN=0.25`、`MAX=4`、`STEP=0.1`
-- [ ] 3.2 在 `setupZoom` 中为每个 column 注册 `wheel` 监听：仅当 `e.ctrlKey` 为真时 `preventDefault` 并按 `e.deltaY` 符号增减一步，clamp 到 `[MIN,MAX]`；非 Ctrl 时不动 zoom、不阻止默认滚动
-- [ ] 3.3 实现鼠标锚点滚动重算：`r = newZoom/oldZoom`，`newScrollTop = (scrollTop + cy)*r - cy`、`newScrollLeft = (scrollLeft + cx)*r - cx`；先设 `appEl.style.--zoom` 再设主动栏 `scrollLeft/scrollTop`（依赖现有 scroll-sync 把另一栏拉到同分数位置）
-- [ ] 3.4 导出 `resetZoom()`（回到 1：以视口中心为锚点、`r=1/oldZoom` 反向套公式，保持当前视图）、`getZoom()`、`dispose()`（移除 wheel 监听）；每次 zoom 变化调用 `onZoomChange(zoom)`
+- [x] 3.1 新增 `static/modules/zoom.js`，导出 `setupZoom({ columns, appEl, onZoomChange })`，内部维护 zoom 状态（初始 1）、`MIN=0.25`、`MAX=4`、`STEP=0.1`
+- [x] 3.2 在 `setupZoom` 中为每个 column 注册 `wheel` 监听：仅当 `e.ctrlKey` 为真时 `preventDefault` 并按 `e.deltaY` 符号增减一步，clamp 到 `[MIN,MAX]`；非 Ctrl 时不动 zoom、不阻止默认滚动
+- [x] 3.3 实现鼠标锚点滚动重算：`r = newZoom/oldZoom`，`newScrollTop = (scrollTop + cy)*r - cy`、`newScrollLeft = (scrollLeft + cx)*r - cx`；先设 `appEl.style.--zoom` 再设主动栏 `scrollLeft/scrollTop`（依赖现有 scroll-sync 把另一栏拉到同分数位置）
+- [x] 3.4 导出 `resetZoom()`（回到 1：以视口中心为锚点、`r=1/oldZoom` 反向套公式，保持当前视图）、`getZoom()`、`dispose()`（移除 wheel 监听）；每次 zoom 变化调用 `onZoomChange(zoom)`
 
 ## 4. 工具栏缩放控件与接入
 
