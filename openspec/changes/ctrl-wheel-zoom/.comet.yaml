@@ -8,6 +8,7 @@ tdd_mode: tdd
 review_mode: off
 isolation: worktree
 verify_mode: null
+build_command: echo "no build step - static web app"
 auto_transition: true
 base_ref: 905840f80cd876795d1910d2d58a99654bbec1a6
 design_doc: docs/superpowers/specs/2026-06-25-ctrl-wheel-zoom-design.md
