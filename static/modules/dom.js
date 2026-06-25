@@ -56,7 +56,7 @@ export function createPageEl(pageNum, side, pageWidth, pageHeight) {
 
     const placeholder = document.createElement('div');
     placeholder.className = 'page-placeholder';
-    placeholder.style.paddingBottom = `${ph}%`;
+    placeholder.style.setProperty('--page-ratio', `${ph}%`);
     placeholder.textContent = `Page ${pageNum + 1}`;
     container.appendChild(placeholder);
 

@@ -128,7 +128,7 @@ function unloadPageImage(container) {
     const placeholder = document.createElement('div');
     placeholder.className = 'page-placeholder';
     const ph = calculatePlaceholderHeight(pageWidth, pageHeight);
-    placeholder.style.paddingBottom = `${ph}%`;
+    placeholder.style.setProperty('--page-ratio', `${ph}%`);
     placeholder.textContent = `Page ${parseInt(container.dataset.page) + 1}`;
 
     img.replaceWith(placeholder);
