@@ -1,5 +1,7 @@
 import json
 import logging
+import shutil
+import tempfile
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -8,6 +10,7 @@ from pathlib import Path
 from pdf2zh_next import SettingsModel
 
 import debug_trace
+import pdf_extraction
 from translation_lifecycle import finish_translation
 from translation_orchestrator import TranslationError, run_translation
 
@@ -19,17 +22,25 @@ STAGE_LABELS = {
     "finish": "\u7ffb\u8bd1\u5b8c\u6210",
 }
 
+logger = logging.getLogger("pdf_reader")
+
+
+def _safe_rmtree(path: Path) -> None:
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except Exception:
+        logger.debug("failed to clean up temp dir %s", path)
+
 
 @dataclass
 class GenerateContext:
     settings: SettingsModel
-    single_page_pdf: Path
     replace_page: Callable[[str], None]
     glossary_cache_path: Path | None
     page: int
     glossary_paths: list[str] | None
-    tmpdir: Path
-    output_dir: str
+    cache_dir: Path
+    extract_page: Callable[[int, Path, Callable], Path]
 
 
 def format_sse_event(evt: dict) -> str | None:
@@ -63,6 +74,9 @@ def format_sse_event(evt: dict) -> str | None:
 
 
 def generate(ctx: GenerateContext) -> Iterator[str]:
+    tmpdir = Path(tempfile.mkdtemp())
+    output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
+    ctx.settings.translation.output = str(output_dir)
     try:
         with debug_trace.debug_session(ctx.glossary_cache_path, ctx.page):
             debug_trace.log_step("submit translate page %d", ctx.page)
@@ -71,7 +85,11 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
             translate_result = None
             token_usage_finish = None
 
-            for evt in run_translation(ctx.settings, str(ctx.single_page_pdf)):
+            single_page_pdf = ctx.extract_page(
+                ctx.page, tmpdir, pdf_extraction.extract_single_page
+            )
+
+            for evt in run_translation(ctx.settings, str(single_page_pdf)):
                 if not isinstance(evt, dict):
                     yield ""
                     continue
@@ -98,8 +116,6 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                 translate_result,
                 ctx.replace_page,
                 ctx.glossary_cache_path,
-                ctx.tmpdir,
-                ctx.output_dir,
             )
 
             yield "data: " + json.dumps({
@@ -113,3 +129,6 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
     except Exception as e:
         logging.getLogger("pdf_reader").warning("translate_page generate error", exc_info=True)
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    finally:
+        _safe_rmtree(tmpdir)
+        _safe_rmtree(output_dir)
