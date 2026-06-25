@@ -2,6 +2,8 @@
 comet_change: add-translator-frontend-tests
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-25-add-translator-frontend-tests
+status: final
 ---
 
 # Technical Design: translator / sse-client Frontend Tests

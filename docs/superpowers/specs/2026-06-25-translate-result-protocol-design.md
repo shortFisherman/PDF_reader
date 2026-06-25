@@ -2,6 +2,8 @@
 comet_change: add-translate-result-protocol
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-25-add-translate-result-protocol
+status: final
 ---
 
 # TranslateResult Protocol — Technical Design

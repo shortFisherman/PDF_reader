@@ -2,6 +2,7 @@
 change: add-translate-result-protocol
 design-doc: docs/superpowers/specs/2026-06-25-translate-result-protocol-design.md
 base-ref: 3126be2e964487d99075cd2057e73887c0cf8e02
+archived-with: 2026-06-25-add-translate-result-protocol
 ---
 
 # TranslateResult Protocol 实现计划
@@ -22,6 +23,7 @@ base-ref: 3126be2e964487d99075cd2057e73887c0cf8e02
 - `ruff check .` 必须零新增告警
 - 所有 if/else 运行时分支逻辑保持不变
 
+archived-with: 2026-06-25-add-translate-result-protocol
 ---
 
 ### Task 1: 定义 TranslateResult Protocol 并接入
@@ -102,6 +104,7 @@ git add translation_lifecycle.py
 git commit -m "feat: add TranslateResult Protocol and wire into finish_translation"
 ```
 
+archived-with: 2026-06-25-add-translate-result-protocol
 ---
 
 ### Task 2: 契约测试
@@ -253,6 +256,7 @@ git add tests/test_translation_lifecycle.py
 git commit -m "test: add contract tests for finish_translation with TranslateResult Protocol"
 ```
 
+archived-with: 2026-06-25-add-translate-result-protocol
 ---
 
 ### Task 3: 全量验证

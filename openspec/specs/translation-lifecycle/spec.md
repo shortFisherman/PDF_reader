@@ -5,7 +5,7 @@ TBD - created by archiving change refactor-module-cohesion. Update Purpose after
 ## Requirements
 ### Requirement: Translation lifecycle module
 
-The system SHALL provide a `translation_lifecycle` module that encapsulates all post-translation operations: persisting the translated page into right.pdf and merging auto-extracted terminology into the cumulative glossary. Temporary directory cleanup SHALL NOT be the responsibility of the lifecycle module's success path alone; the SSE streaming layer SHALL guarantee cleanup of the temporary directories (`tmpdir` and `output_dir`) on every exit path from the translation stream — success, error event, missing translation result, raised exception, or client disconnect. The SSE streaming module SHALL delegate page-replacement and glossary-merge to the lifecycle module rather than calling state.replace_page and glossary merging directly.
+The system SHALL provide a `translation_lifecycle` module that encapsulates all post-translation operations: persisting the translated page into right.pdf, merging auto-extracted terminology into the cumulative glossary, and (subject to the SSE layer's cleanup responsibility) temporary directories. The lifecycle module SHALL consume the translation result through an explicit `TranslateResult` Protocol (structural typing) declaring the fields it depends on (`mono_pdf_path`, `dual_pdf_path`, `auto_extracted_glossary_path`, each `Path | None`), rather than through an `Any`-typed parameter. The SSE streaming module SHALL delegate post-translation page-replacement and glossary-merge to this module rather than calling state.replace_page and glossary merging directly.
 
 #### Scenario: Translation completion triggers lifecycle
 
@@ -15,25 +15,15 @@ The system SHALL provide a `translation_lifecycle` module that encapsulates all 
 #### Scenario: Lifecycle handles missing output
 
 - **WHEN** translate_result has no mono_pdf_path and no dual_pdf_path
-- **THEN** the translation lifecycle module SHALL raise an error that propagates as an SSE error event
+- **THEN** the translation lifecycle module SHALL skip page replacement and continue with glossary merging (preserving current behavior), and SHALL NOT raise
 
-#### Scenario: Cleanup on successful translation
+#### Scenario: Lifecycle falls back to dual PDF
 
-- **WHEN** a translation completes successfully and the stream exits normally
-- **THEN** the temporary directories created for single-page extraction and translation output SHALL be removed
+- **WHEN** translate_result has `mono_pdf_path is None` and a non-null `dual_pdf_path`
+- **THEN** the lifecycle module SHALL use the `dual_pdf_path` as the page to insert into right.pdf
 
-#### Scenario: Cleanup on error event early return
+#### Scenario: Typed contract enables static checking
 
-- **WHEN** the translation stream yields an error event and the generator returns early before invoking the lifecycle module
-- **THEN** the temporary directories SHALL still be removed
-
-#### Scenario: Cleanup on missing translation result
-
-- **WHEN** the translation stream finishes without producing a translate_result (no translation result) and the generator returns early
-- **THEN** the temporary directories SHALL still be removed
-
-#### Scenario: Cleanup on client disconnect
-
-- **WHEN** the client disconnects mid-stream, causing the generator to be closed (GeneratorExit)
-- **THEN** the temporary directories SHALL still be removed
+- **WHEN** the lifecycle module source is inspected or a static type checker is run
+- **THEN** the `translate_result` parameter SHALL be typed as the `TranslateResult` Protocol (not `Any`), so field-name typos or missing attributes are detectable by static analysis
 

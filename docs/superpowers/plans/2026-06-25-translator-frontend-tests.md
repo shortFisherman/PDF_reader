@@ -2,6 +2,7 @@
 change: add-translator-frontend-tests
 design-doc: docs/superpowers/specs/2026-06-25-translator-frontend-tests-design.md
 base-ref: 6a256b21b178e4914f905f6733a7f8b8738dca61
+archived-with: 2026-06-25-add-translator-frontend-tests
 ---
 
 # translator / sse-client Frontend Tests Implementation Plan
@@ -22,6 +23,7 @@ base-ref: 6a256b21b178e4914f905f6733a7f8b8738dca61
 - All tests use a single `passed`/`failed` counter pattern matching existing `tests/run-task-4.4-tests.mjs`
 - jsdom 29 is already in `devDependencies` — no new dependencies
 
+archived-with: 2026-06-25-add-translator-frontend-tests
 ---
 
 ### Task 1: Scaffold Test Runner with Infrastructure and sse-client Tests
@@ -178,9 +180,13 @@ node tests/run-translator-tests.mjs
 
 Expected output:
 ```
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 2.1: single chunk, multiple events ---
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 2.2: event split across chunks ---
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 2.3: malformed JSON skipped ---
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 2.4: empty stream terminates ---
 
 Results: 8 passed, 0 failed
@@ -223,6 +229,7 @@ git add tests/run-translator-tests.mjs package.json
 git commit -m "feat: add test infrastructure and sse-client tests (4 cases)"
 ```
 
+archived-with: 2026-06-25-add-translator-frontend-tests
 ---
 
 ### Task 2: Add translator Tests
@@ -405,14 +412,23 @@ node tests/run-translator-tests.mjs
 
 Expected output:
 ```
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 2.1: single chunk, multiple events ---
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 2.2: event split across chunks ---
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 2.3: malformed JSON skipped ---
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 2.4: empty stream terminates ---
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 3.1: progress -> finish callback order ---
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 3.2: no stage_current/stage_total -> no suffix ---
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 3.3: SSE error event -> onError ---
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 3.4: HTTP not ok -> onError ---
+archived-with: 2026-06-25-add-translator-frontend-tests
 --- Test 3.5: prompt forwarding ---
 
 Results: 26 passed, 0 failed
