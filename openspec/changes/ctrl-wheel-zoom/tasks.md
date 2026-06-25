@@ -1,8 +1,8 @@
 ## 1. CSS 缩放基础
 
-- [ ] 1.1 在 `static/style.css` 中为 `#app`（或 `.column`）建立 `--zoom` CSS 变量（默认 `1`），并为 `.page-container img` 与 `.page-placeholder` 设置 `width: calc(100% * var(--zoom, 1))`（覆盖 img 现有 `width:100%`）
-- [ ] 1.2 在 `static/style.css` 中将 `.page-placeholder` 的高度改为 `padding-bottom: calc(var(--page-ratio) * var(--zoom, 1))`，移除对内联 `padding-bottom` 的依赖
-- [ ] 1.3 将 `.column` 的 `overflow-x` 由 `hidden` 改为 `auto`；将 `.page-container` 的 `justify-content` 由 `center` 改为 `safe center`
+- [x] 1.1 在 `static/style.css` 中为 `#app`（或 `.column`）建立 `--zoom` CSS 变量（默认 `1`），并为 `.page-container img` 与 `.page-placeholder` 设置 `width: calc(100% * var(--zoom, 1))`（覆盖 img 现有 `width:100%`）
+- [x] 1.2 在 `static/style.css` 中将 `.page-placeholder` 的高度改为 `padding-bottom: calc(var(--page-ratio) * var(--zoom, 1))`，移除对内联 `padding-bottom` 的依赖
+- [x] 1.3 将 `.column` 的 `overflow-x` 由 `hidden` 改为 `auto`；将 `.page-container` 的 `justify-content` 由 `center` 改为 `safe center`
 
 ## 2. 占位符改造为 CSS 变量驱动
 
