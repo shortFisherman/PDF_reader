@@ -253,3 +253,67 @@ def test_extract_page_under_lock(app_state, sample_pdf, tmp_path):
     app_state.extract_page(0, extract_tmpdir, track_lock_extract_func)
 
     assert lock_held_during_extract[0] is True
+
+
+def test_concurrent_extract_and_render_serialized(app_state, sample_pdf, tmp_path):
+    import threading
+    import time
+    from file_hash import sha256 as sha256_func
+    import pdf_extraction
+    from pdf_renderer import render_page
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+
+    extract_tmpdir = tmp_path / "extract"
+    extract_tmpdir.mkdir()
+
+    extract_started = threading.Event()
+    extract_can_finish = threading.Event()
+    render_done = threading.Event()
+
+    def slow_extract_func(doc, page, tmpdir):
+        extract_started.set()
+        extract_can_finish.wait(timeout=5)
+        return pdf_extraction.extract_single_page(doc, page, tmpdir)
+
+    extract_result = [None]
+    extract_error = [None]
+    render_result = [None]
+    render_error = [None]
+
+    def run_extract():
+        try:
+            extract_result[0] = app_state.extract_page(
+                0, extract_tmpdir, slow_extract_func
+            )
+        except Exception as e:
+            extract_error[0] = e
+
+    def run_render():
+        extract_started.wait(timeout=5)
+        try:
+            render_result[0] = app_state.render_page(
+                "left", 0, render_page, 72
+            )
+        except Exception as e:
+            render_error[0] = e
+        render_done.set()
+
+    t1 = threading.Thread(target=run_extract)
+    t2 = threading.Thread(target=run_render)
+    t1.start()
+    t2.start()
+
+    # Give extract time to acquire the lock, render should block waiting
+    time.sleep(0.2)
+    extract_can_finish.set()
+
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+
+    assert extract_error[0] is None, f"extract crashed: {extract_error[0]}"
+    assert render_error[0] is None, f"render crashed: {render_error[0]}"
+    assert extract_result[0] is not None
+    assert render_result[0] is not None
+    assert isinstance(render_result[0], bytes)
+    assert len(render_result[0]) > 0
