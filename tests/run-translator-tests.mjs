@@ -132,6 +132,156 @@ console.log('--- Test 2.4: empty stream terminates ---');
 }
 
 // ============================================================
+// translator Tests
+// ============================================================
+
+// Test 3.1: progress -> finish callback order with stage_current/stage_total
+console.log('--- Test 3.1: progress -> finish callback order ---');
+{
+    const record = [];
+    const sseBody = [
+        'data: {"type":"progress","progress":0.3,"stage":"translating","stage_current":1,"stage_total":3}\n',
+        '\n',
+        'data: {"type":"progress","progress":0.7,"stage":"translating","stage_current":2,"stage_total":3}\n',
+        '\n',
+        'data: {"type":"finish"}\n',
+        '\n',
+    ].join('');
+    const stream = makeSSEStream(sseBody);
+    const mockFetchResp = createMockResponse({ ok: true, body: stream });
+
+    globalThis.fetch = async (url, init) => mockFetchResp;
+
+    const callbacks = {
+        onStageChange: (stage, label) => record.push({ type: 'stage', stage, label }),
+        onProgress: (p) => record.push({ type: 'progress', p }),
+        onFinish: () => record.push({ type: 'finish' }),
+        onError: (msg) => record.push({ type: 'error', msg }),
+    };
+
+    await translateCurrentPage(1, callbacks);
+
+    assert(record.length === 5, 'Test 3.1.1: 5 callbacks total');
+    assert(record[0].type === 'progress' && record[0].p === 0.3, 'Test 3.1.2: first onProgress(0.3)');
+    assert(record[1].type === 'stage' && record[1].stage === 'translating' && record[1].label.includes('正在翻译'), 'Test 3.1.3: onStageChange for stage 1');
+    assert(record[1].label.includes('第 1/3 段'), 'Test 3.1.4: label has stage suffix');
+    assert(record[2].type === 'progress' && record[2].p === 0.7, 'Test 3.1.5: second onProgress(0.7)');
+    assert(record[3].type === 'stage' && record[3].label.includes('第 2/3 段'), 'Test 3.1.6: label has stage suffix');
+    assert(record[4].type === 'finish', 'Test 3.1.7: onFinish called last');
+    assert(!record.some(r => r.type === 'error'), 'Test 3.1.8: onError not called');
+}
+
+// Test 3.2: stage_current/stage_total absent -> no page suffix
+console.log('--- Test 3.2: no stage_current/stage_total -> no suffix ---');
+{
+    const record = [];
+    const sseBody = [
+        'data: {"type":"progress","progress":0.5,"stage":"translating"}\n',
+        '\n',
+        'data: {"type":"finish"}\n',
+        '\n',
+    ].join('');
+    const stream = makeSSEStream(sseBody);
+    const mockFetchResp = createMockResponse({ ok: true, body: stream });
+
+    globalThis.fetch = async (url, init) => mockFetchResp;
+
+    const callbacks = {
+        onStageChange: (stage, label) => record.push({ type: 'stage', stage, label }),
+        onProgress: (p) => record.push({ type: 'progress', p }),
+        onFinish: () => record.push({ type: 'finish' }),
+        onError: (msg) => record.push({ type: 'error', msg }),
+    };
+
+    await translateCurrentPage(1, callbacks);
+
+    const stageRecord = record.find(r => r.type === 'stage');
+    assert(stageRecord !== undefined, 'Test 3.2.1: onStageChange called');
+    assert(stageRecord.label === '正在翻译…', `Test 3.2.2: label is "正在翻译…", got "${stageRecord.label}"`);
+    assert(!stageRecord.label.includes('第'), 'Test 3.2.3: label has no stage suffix');
+}
+
+// Test 3.3: SSE error event -> onError, onFinish not called
+console.log('--- Test 3.3: SSE error event -> onError ---');
+{
+    const record = [];
+    const stream = makeSSEStream('data: {"type":"error","error":"SSE stream error"}\n\n');
+    const mockFetchResp = createMockResponse({ ok: true, body: stream });
+
+    globalThis.fetch = async (url, init) => mockFetchResp;
+
+    const callbacks = {
+        onStageChange: () => {},
+        onProgress: () => {},
+        onFinish: () => record.push('finish'),
+        onError: (msg) => record.push({ type: 'error', msg }),
+    };
+
+    await translateCurrentPage(1, callbacks);
+
+    assert(record.length === 1, 'Test 3.3.1: exactly 1 callback');
+    assert(record[0].type === 'error', 'Test 3.3.2: onError called');
+    assert(record[0].msg === 'SSE stream error', 'Test 3.3.3: error message correct');
+    assert(!record.includes('finish'), 'Test 3.3.4: onFinish not called');
+}
+
+// Test 3.4: HTTP !ok -> onError with server error message
+console.log('--- Test 3.4: HTTP not ok -> onError ---');
+{
+    const record = [];
+    const mockFetchResp = createMockResponse({ ok: false, jsonData: { error: '服务暂不可用' } });
+
+    globalThis.fetch = async (url, init) => mockFetchResp;
+
+    const callbacks = {
+        onStageChange: () => {},
+        onProgress: () => {},
+        onFinish: () => record.push('finish'),
+        onError: (msg) => record.push({ type: 'error', msg }),
+    };
+
+    await translateCurrentPage(1, callbacks);
+
+    assert(record.length === 1, 'Test 3.4.1: exactly 1 callback');
+    assert(record[0].type === 'error', 'Test 3.4.2: onError called');
+    assert(record[0].msg === '服务暂不可用', `Test 3.4.3: error message is "服务暂不可用", got "${record[0].msg}"`);
+    assert(!record.includes('finish'), 'Test 3.4.4: onFinish not called');
+}
+
+// Test 3.5: prompt forwarding in fetch body
+console.log('--- Test 3.5: prompt forwarding ---');
+{
+    let capturedBody = null;
+    const stream = makeSSEStream('data: {"type":"finish"}\n\n');
+    const mockFetchResp = createMockResponse({ ok: true, body: stream });
+
+    globalThis.fetch = async (url, init) => {
+        capturedBody = init.body;
+        return mockFetchResp;
+    };
+
+    // With prompt
+    await translateCurrentPage(1, {
+        onStageChange: () => {},
+        onProgress: () => {},
+        onFinish: () => {},
+        onError: () => {},
+        prompt: '请用正式语气翻译',
+    });
+    assert(capturedBody === '{"prompt":"请用正式语气翻译"}', `Test 3.5.1: prompt in body, got "${capturedBody}"`);
+
+    // Without prompt
+    capturedBody = null;
+    await translateCurrentPage(1, {
+        onStageChange: () => {},
+        onProgress: () => {},
+        onFinish: () => {},
+        onError: () => {},
+    });
+    assert(capturedBody === '{"prompt":null}', `Test 3.5.2: null prompt in body, got "${capturedBody}"`);
+}
+
+// ============================================================
 // Summary
 // ============================================================
 console.log('');
