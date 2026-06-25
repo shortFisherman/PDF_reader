@@ -114,6 +114,64 @@ def test_render_page_concurrent_replace_no_crash(app_state, sample_pdf, tmp_path
     assert render_result[0][:4] == b"\x89PNG"
 
 
+def test_extract_page_returns_path(app_state, sample_pdf, tmp_path):
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+
+    def extract_func(doc, page, tmpdir):
+        out = Path(tmpdir) / f"page_{page}.png"
+        out.write_bytes(b"fake-image-data")
+        return out
+
+    result = app_state.extract_page(0, tmp_path, extract_func)
+    assert result == tmp_path / "page_0.png"
+    assert result.read_bytes() == b"fake-image-data"
+
+
+def test_extract_page_raises_when_no_doc(tmp_path):
+    state = AppState(tmp_path / "cache")
+    tmp_path.mkdir(exist_ok=True)
+
+    def extract_func(doc, page, tmpdir):
+        return Path(tmpdir) / "never.txt"
+
+    import pytest
+    with pytest.raises(ValueError, match="no document opened"):
+        state.extract_page(0, tmp_path, extract_func)
+
+
+def test_extract_page_holds_lock(app_state, sample_pdf, tmp_path):
+    import threading
+
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+
+    in_extract = threading.Event()
+    extract_can_finish = threading.Event()
+    lock_held_in_extract = [False]
+
+    def extract_func(doc, page, tmpdir):
+        lock_held_in_extract[0] = app_state._lock.locked()
+        in_extract.set()
+        extract_can_finish.wait(timeout=5)
+        return Path(tmpdir) / "result.png"
+
+    result = [None]
+
+    def extract_thread():
+        result[0] = app_state.extract_page(0, tmp_path, extract_func)
+
+    t = threading.Thread(target=extract_thread)
+    t.start()
+    in_extract.wait(timeout=5)
+    assert lock_held_in_extract[0] is True, "lock should be held inside extract_func"
+    extract_can_finish.set()
+    t.join(timeout=5)
+    assert result[0] is not None
+
+
 def test_concurrent_replace_different_pages(app_state, sample_pdf, tmp_path):
     from file_hash import sha256 as sha256_func
 

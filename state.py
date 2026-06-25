@@ -95,6 +95,14 @@ class AppState:
                 raise ValueError("no document opened")
             return render_func(doc, page_num, dpi)
 
+    def extract_page(self, page: int, tmpdir: Path, extract_func) -> Path:
+        """Extract a single page under the state lock.
+        extract_func must not reenter AppState (non-reentrant lock)."""
+        with self._lock:
+            if self._left_doc is None:
+                raise ValueError("no document opened")
+            return extract_func(self._left_doc, page, tmpdir)
+
     def replace_page(self, translated_pdf_path: str, page_num: int) -> None:
         with self._lock:
             src_doc = pymupdf.open(translated_pdf_path)
