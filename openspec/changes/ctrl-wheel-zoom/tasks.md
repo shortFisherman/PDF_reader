@@ -6,9 +6,9 @@
 
 ## 2. 占位符改造为 CSS 变量驱动
 
-- [ ] 2.1 修改 `static/modules/dom.js` 的 `createPageEl`：用 `placeholder.style.setProperty('--page-ratio', '${ph}%')` 替换 `placeholder.style.paddingBottom = '${ph}%'`
-- [ ] 2.2 修改 `static/app.js` 的 `unloadPageImage`：重建占位符时同样设置 `--page-ratio` 而非内联 `padding-bottom`
-- [ ] 2.3 验证 100% 缩放下占位符宽高比与改动前一致（无视觉回归）
+- [x] 2.1 修改 `static/modules/dom.js` 的 `createPageEl`：用 `placeholder.style.setProperty('--page-ratio', '${ph}%')` 替换 `placeholder.style.paddingBottom = '${ph}%'`
+- [x] 2.2 修改 `static/app.js` 的 `unloadPageImage`：重建占位符时同样设置 `--page-ratio` 而非内联 `padding-bottom`
+- [x] 2.3 验证 100% 缩放下占位符宽高比与改动前一致（无视觉回归）
 
 ## 3. zoom 模块
 
