@@ -78,7 +78,9 @@ if (typeof window !== 'undefined' && window.__TEST_ZOOM__) {
         col.addEventListener = function (type, handler) {
             if (type === 'wheel') wheelHandler = handler;
         };
-        col.removeEventListener = function () {};
+        col.removeEventListener = function (type) {
+            if (type === 'wheel') wheelHandler = null;
+        };
         col.getBoundingClientRect = function () {
             return { left: 0, top: 0, width: 400, height: 600, right: 400, bottom: 600 };
         };
@@ -87,6 +89,7 @@ if (typeof window !== 'undefined' && window.__TEST_ZOOM__) {
         function onZoomChange(z) { zoomChanges.push(z); }
 
         function fireCtrlWheel(deltaY, opts) {
+            if (!wheelHandler) return;
             const e = {
                 ctrlKey: true,
                 deltaY: deltaY,
@@ -99,6 +102,7 @@ if (typeof window !== 'undefined' && window.__TEST_ZOOM__) {
         }
 
         function firePlainWheel(deltaY) {
+            if (!wheelHandler) return;
             const e = {
                 ctrlKey: false,
                 deltaY: deltaY,
@@ -160,7 +164,36 @@ if (typeof window !== 'undefined' && window.__TEST_ZOOM__) {
             const cssZoom = appEl.style.getPropertyValue('--zoom');
             assert(cssZoom !== '' && cssZoom !== '1', 'Test 9: --zoom CSS property set on Ctrl+wheel');
 
+            // Anchor formula test: verify scrollTop/scrollLeft recalculation
+            instance.resetZoom();
+            col.scrollTop = 200;
+            col.scrollLeft = 100;
+            col.getBoundingClientRect = function () {
+                return { left: 10, top: 10, width: 800, height: 600, right: 810, bottom: 610 };
+            };
+            // clientX=400, clientY=400, rect left=10/top=10 → cx=390, cy=390, r=1.1
+            // scrollTop = (200 + 390) * 1.1 - 390 = 259
+            // scrollLeft = (100 + 390) * 1.1 - 390 = 149
+            fireCtrlWheel(-100, { clientX: 400, clientY: 400 });
+            assert(instance.getZoom() > 1, 'Test 10a: zoom increased in formula test');
+            assert(Math.abs(col.scrollTop - 259) < 0.01, 'Test 10b: scrollTop anchor formula (got ' + col.scrollTop + ', expected ~259)');
+            assert(Math.abs(col.scrollLeft - 149) < 0.01, 'Test 10c: scrollLeft anchor formula (got ' + col.scrollLeft + ', expected ~149)');
+
+            // Dispose test: verify dispose actually removes listener
+            instance.resetZoom();
+            fireCtrlWheel(-100);
+            const zoomBeforeDispose = instance.getZoom();
+            const changesBeforeDispose = zoomChanges.length;
+            const lastZoomBeforeDispose = zoomChanges[zoomChanges.length - 1];
+
             instance.dispose();
+
+            fireCtrlWheel(100);
+            assert(instance.getZoom() === zoomBeforeDispose, 'Test 11a: zoom unchanged after dispose (wheel down)');
+            fireCtrlWheel(-100);
+            assert(instance.getZoom() === zoomBeforeDispose, 'Test 11b: zoom unchanged after dispose (wheel up)');
+            assert(zoomChanges.length === changesBeforeDispose, 'Test 11c: onZoomChange NOT called after dispose');
+            assert(zoomChanges[zoomChanges.length - 1] === lastZoomBeforeDispose, 'Test 11d: lastZoom unchanged after dispose');
 
         } catch (e) {
             assert(false, 'Exception: ' + e.message + '\n' + e.stack);
