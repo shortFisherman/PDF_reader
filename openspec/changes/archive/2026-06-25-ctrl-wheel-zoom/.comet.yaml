@@ -1,5 +1,5 @@
 workflow: full
-phase: verify
+phase: archive
 context_compression: off
 build_mode: subagent-driven-development
 build_pause: null
@@ -13,11 +13,11 @@ auto_transition: true
 base_ref: 905840f80cd876795d1910d2d58a99654bbec1a6
 design_doc: docs/superpowers/specs/2026-06-25-ctrl-wheel-zoom-design.md
 plan: docs/superpowers/plans/2026-06-25-ctrl-wheel-zoom.md
-verify_result: pending
+verify_result: pass
 verification_report: docs/superpowers/reports/2026-06-25-ctrl-wheel-zoom-verify.md
-branch_status: pending
+branch_status: handled
 created_at: 2026-06-25
-verified_at: null
-archived: false
+verified_at: 2026-06-25
+archived: true
 handoff_context: openspec/changes/ctrl-wheel-zoom/.comet/handoff/design-context.json
 handoff_hash: 57850b0adbe116828cca037b27a6536656498e50ee72d13887bee02aeae0a62a

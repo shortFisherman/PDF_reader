@@ -2,6 +2,8 @@
 comet_change: ctrl-wheel-zoom
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-25-ctrl-wheel-zoom
+status: final
 ---
 
 # Design Doc — Ctrl+滚轮页面缩放

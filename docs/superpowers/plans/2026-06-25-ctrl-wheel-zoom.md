@@ -2,6 +2,7 @@
 change: ctrl-wheel-zoom
 design-doc: docs/superpowers/specs/2026-06-25-ctrl-wheel-zoom-design.md
 base-ref: 905840f80cd876795d1910d2d58a99654bbec1a6
+archived-with: 2026-06-25-ctrl-wheel-zoom
 ---
 
 # Implementation Plan — Ctrl+滚轮页面缩放
