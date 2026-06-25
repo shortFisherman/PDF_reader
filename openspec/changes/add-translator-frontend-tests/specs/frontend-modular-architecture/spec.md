@@ -11,6 +11,11 @@ The `translator` and `sse-client` frontend modules SHALL be covered by automated
 - **WHEN** a response body streams multiple `data: {json}\n\n` events across one or more chunks
 - **THEN** `readSSEStream` SHALL parse each event and invoke the callback once per event with the decoded JSON object, including events split across chunk boundaries
 
+#### Scenario: readSSEStream terminates on empty stream
+
+- **WHEN** the response body stream ends immediately with no data chunks
+- **THEN** `readSSEStream` SHALL resolve without invoking any callbacks and without throwing
+
 #### Scenario: readSSEStream skips malformed lines
 
 - **WHEN** a chunk contains a `data: ` line whose payload is not valid JSON
@@ -20,6 +25,13 @@ The `translator` and `sse-client` frontend modules SHALL be covered by automated
 
 - **WHEN** `translateCurrentPage` is called and the SSE stream yields a progress event followed by a finish event
 - **THEN** `onProgress` SHALL be invoked with the progress value, `onStageChange` SHALL be invoked (when a stage is present) with the stage and label, and `onFinish` SHALL be invoked last
+
+#### Scenario: translateCurrentPage appends page suffix to stage label conditionally
+
+- **WHEN** a progress event includes `stage_current` and `stage_total` both greater than 0
+- **THEN** the `onStageChange` label SHALL include the page segment suffix (e.g. `第 2/5 段`)
+- **WHEN** `stage_current` or `stage_total` is 0 or absent
+- **THEN** the label SHALL NOT include the page segment suffix
 
 #### Scenario: translateCurrentPage handles SSE error event
 

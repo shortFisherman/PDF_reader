@@ -1,0 +1,14 @@
+{
+  "change": "add-translator-frontend-tests",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "1d84d6b556b81199f3c5aafae8348e500a87a3e9f9acb87d2690b4adbd0143c3",
+  "files": [
+    { "path": "openspec/changes/add-translator-frontend-tests/proposal.md", "sha256": "6c1c6f0cdfc72afe73034c77aafef2a091f9dbc470c026ea22d6de5399643e9f" },
+    { "path": "openspec/changes/add-translator-frontend-tests/design.md", "sha256": "1e3bb869451426dd0c0405273793cdc4ec3208c2b505c43250c0371b5a5027d0" },
+    { "path": "openspec/changes/add-translator-frontend-tests/tasks.md", "sha256": "e0d4a7768c93d282e9cd9b82d90782be959bf82c1ad1414b8165d839fd0c43fb" },
+    { "path": "openspec/changes/add-translator-frontend-tests/specs/frontend-modular-architecture/spec.md", "sha256": "7bb53c899fcbfd68120d60b08ce1444c11c6df72d2811689ee48c56f120fc907" }
+  ]
+}
