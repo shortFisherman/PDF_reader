@@ -9,6 +9,7 @@ from pathlib import Path
 
 from pdf2zh_next import SettingsModel
 
+import config
 import debug_trace
 import pdf_extraction
 from translation_lifecycle import finish_translation, merge_glossary_only
@@ -184,7 +185,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
     except TranslationError as e:
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     except Exception as e:
-        logger.warning("translate_page generate error", exc_info=True)
+        logger.error("[page=%d] translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s", ctx.page, config.MODEL_PROVIDER, config.MODEL, config.TRANSLATION_LANG_IN, config.TRANSLATION_LANG_OUT, str(tmpdir), exc_info=True)
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     finally:
         _safe_rmtree(tmpdir)
@@ -252,7 +253,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
     except TranslationError as e:
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     except Exception as e:
-        logger.warning("translate_batch generate error", exc_info=True)
+        logger.error("[batch=%d-%d] translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s", ctx.from_page, ctx.to_page, config.MODEL_PROVIDER, config.MODEL, config.TRANSLATION_LANG_IN, config.TRANSLATION_LANG_OUT, str(tmpdir), exc_info=True)
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     finally:
         _safe_rmtree(tmpdir)

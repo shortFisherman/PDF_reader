@@ -317,3 +317,95 @@ def test_generate_batch_logging_info_messages(caplog, tmp_path):
 
     token_records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace" and "Token usage" in r.message]
     assert len(token_records) == 0, f"token_usage should not be visible at INFO, got: {[r.message for r in token_records]}"
+
+
+# --- sse_stream error logging ---
+
+
+def test_generate_error_logging_context(caplog, tmp_path, mock_config):
+    """generate() generic error logs ERROR with [page=N], provider, model, lang, tmpdir, exc_info."""
+    setup_logging(False)
+    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = GenerateContext(
+        settings=MagicMock(),
+        replace_page=MagicMock(),
+        glossary_cache_path=None,
+        page=7,
+        glossary_paths=None,
+        cache_dir=cache_dir,
+        extract_page=MagicMock(side_effect=RuntimeError("extract crashed")),
+    )
+
+    list(generate(ctx))
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
+    assert len(records) == 1, f"expected 1 ERROR, got: {[r.message for r in caplog.records]}"
+    msg = records[0].message
+    assert "[page=7]" in msg
+    assert "translate failed" in msg
+    assert "provider=deepseek" in msg
+    assert "model=deepseek-v4-flash" in msg
+    assert "lang=en->zh" in msg
+    assert "tmpdir=" in msg
+    assert records[0].exc_info is not None
+    assert "sk-test-key" not in msg
+
+
+def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
+    """generate_batch() generic error logs ERROR with [batch=N-M], provider, model, lang, tmpdir, exc_info."""
+    setup_logging(False)
+    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = GenerateBatchContext(
+        settings=MagicMock(),
+        from_page=4,
+        to_page=9,
+        page_indices=[3, 4, 5, 6, 7, 8],
+        replace_pages=MagicMock(),
+        glossary_cache_path=None,
+        glossary_paths=None,
+        cache_dir=cache_dir,
+        extract_pages=MagicMock(side_effect=RuntimeError("batch extract crashed")),
+    )
+
+    list(generate_batch(ctx))
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
+    assert len(records) == 1, f"expected 1 ERROR, got: {[r.message for r in caplog.records]}"
+    msg = records[0].message
+    assert "[batch=4-9]" in msg
+    assert "translate failed" in msg
+    assert "provider=deepseek" in msg
+    assert "model=deepseek-v4-flash" in msg
+    assert "lang=en->zh" in msg
+    assert "tmpdir=" in msg
+    assert records[0].exc_info is not None
+    assert "sk-test-key" not in msg
+
+
+def test_generate_error_logging_produces_sse_error_event(caplog, tmp_path, mock_config):
+    """generate() generic error still yields an SSE error event after logging."""
+    setup_logging(False)
+    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = GenerateContext(
+        settings=MagicMock(),
+        replace_page=MagicMock(),
+        glossary_cache_path=None,
+        page=1,
+        glossary_paths=None,
+        cache_dir=cache_dir,
+        extract_page=MagicMock(side_effect=RuntimeError("boom")),
+    )
+
+    output = list(generate(ctx))
+
+    error_events = [line for line in output if '"type": "error"' in line]
+    assert len(error_events) >= 1, f"expected SSE error event, got: {output}"
