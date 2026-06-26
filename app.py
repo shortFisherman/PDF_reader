@@ -18,6 +18,18 @@ if _cli_args.debug is not None:
 
 def create_app() -> Flask:
     logging_config.setup_logging(config.DEBUG)
+
+    logger.info(
+        "Starting PDF Reader provider=%s model=%s lang=%s->%s cache_dir=%s dpi=%d debug=%s",
+        config.MODEL_PROVIDER,
+        config.MODEL,
+        config.TRANSLATION_LANG_IN,
+        config.TRANSLATION_LANG_OUT,
+        config.CACHE_DIR,
+        config.DPI,
+        config.DEBUG,
+    )
+
     app = Flask(__name__)
     app.config["app_state"] = AppState(config.CACHE_DIR)
     from routes import register_routes
