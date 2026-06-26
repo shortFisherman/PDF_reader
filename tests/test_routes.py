@@ -179,3 +179,77 @@ def test_get_stages(test_client):
         "generating_pdf_bilingual": "\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026",
         "finish": "\u7ffb\u8bd1\u5b8c\u6210",
     }
+
+
+def test_translate_batch_validation_errors(app_state, sample_pdf):
+    from flask import Flask
+
+    from file_hash import sha256 as sha256_func
+    from routes import register_routes
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    app = Flask(__name__)
+    app.config["app_state"] = app_state
+    app.config["TESTING"] = True
+    register_routes(app)
+
+    with app.test_client() as client:
+        resp = client.post("/api/translate-batch", json={"from": 5, "to": 2})
+        assert resp.status_code == 400
+        assert "error" in json.loads(resp.data)
+
+        resp = client.post("/api/translate-batch", json={"from": 0, "to": 1})
+        assert resp.status_code == 400
+        resp = client.post("/api/translate-batch", json={"from": 1, "to": 99})
+        assert resp.status_code == 400
+
+        resp = client.post("/api/translate-batch", json={"from": None, "to": 1})
+        assert resp.status_code == 400
+
+
+def test_translate_batch_no_doc(test_client):
+    resp = test_client.post("/api/translate-batch", json={"from": 1, "to": 1})
+    assert resp.status_code == 400
+    assert "error" in json.loads(resp.data)
+
+
+def test_translate_batch_emits_batch_info_and_finish(app_state, sample_pdf, monkeypatch):
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    from flask import Flask
+
+    from file_hash import sha256 as sha256_func
+    from routes import register_routes
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    page_count = app_state.page_count
+
+    def fake_build_settings(input_pdf, user_prompt=None, output_dir=None, glossary_paths=None, pages="1"):  # noqa: ANN202
+        return MagicMock()
+
+    async def fake_translate_stream(settings, file):  # noqa: ANN202
+        yield {"type": "progress_start", "stage": "layout_analysis", "overall_progress": 0,
+               "stage_current": 0, "stage_total": 0}
+        mock_result = MagicMock()
+        mock_result.mono_pdf_path = Path(str(sample_pdf))
+        mock_result.dual_pdf_path = None
+        mock_result.auto_extracted_glossary_path = None
+        yield {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}}
+
+    monkeypatch.setattr("routes.build_settings", fake_build_settings)
+    monkeypatch.setattr("translation_orchestrator.do_translate_async_stream", fake_translate_stream)
+    monkeypatch.setattr("glossary_service.merge_glossary_csvs", lambda c, a: None)
+
+    app = Flask(__name__)
+    app.config["app_state"] = app_state
+    app.config["TESTING"] = True
+    register_routes(app)
+
+    with app.test_client() as client:
+        resp = client.post("/api/translate-batch", json={"from": 1, "to": page_count})
+        assert resp.status_code == 200
+        body = resp.data.decode("utf-8")
+        assert '"type": "batch_info"' in body
+        assert '"from": 1' in body and f'"to": {page_count}' in body
+        assert '"type": "finish"' in body

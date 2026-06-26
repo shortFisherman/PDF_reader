@@ -107,6 +107,54 @@ def translate_page(page: int):
     )
 
 
+@bp.route("/api/translate-batch", methods=["POST"])
+def translate_batch():
+    state = _get_state()
+    if state.left_doc is None:
+        return error_response("no document opened", 400)
+
+    data = request.get_json(silent=True) or {}
+    from_page = data.get("from")
+    to_page = data.get("to")
+    page_count = state.page_count
+
+    if not isinstance(from_page, int) or not isinstance(to_page, int):
+        return error_response("invalid page numbers", 400)
+    if from_page < 1 or to_page < 1 or from_page > page_count or to_page > page_count:
+        return error_response("page out of range", 400)
+    if from_page > to_page:
+        return error_response("invalid page range", 400)
+
+    user_prompt = (data.get("prompt") or "").strip() or None
+    page_indices = list(range(from_page - 1, to_page))
+    k = len(page_indices)
+    pages_str = f"1-{k}" if k > 1 else "1"
+
+    glossary_paths = glossary_service.resolve_glossary_paths(state.glossary_cache_path)
+    settings = build_settings(
+        "",
+        user_prompt,
+        glossary_paths=glossary_paths,
+        pages=pages_str,
+    )
+    ctx = sse_stream.GenerateBatchContext(
+        settings=settings,
+        from_page=from_page,
+        to_page=to_page,
+        page_indices=page_indices,
+        replace_pages=lambda path: state.replace_pages(path, page_indices),
+        glossary_cache_path=state.glossary_cache_path,
+        glossary_paths=glossary_paths,
+        cache_dir=config.CACHE_DIR,
+        extract_pages=lambda indices, tmpdir, func: state.extract_pages(indices, tmpdir, func),
+    )
+    return Response(
+        stream_with_context(sse_stream.generate_batch(ctx)),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @bp.route("/api/translated-pages")
 def translated_pages():
     state = _get_state()
