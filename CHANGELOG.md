@@ -1,5 +1,46 @@
 # 更新日志
 
+## 2026-06-26 — 日志系统改造
+
+### `logging-system-overhaul`
+
+全项目日志系统重构：用集中式 `logging_config.py` 替代 ad-hoc `logging.basicConfig`，移除 `debug_trace.py` 的 monkey-patch，为 10 个模块统一补入命名空间化 INFO/DEBUG 日志，实现 debug off 时仍有完整流程轨迹。
+
+- **集中式日志配置**：`logging_config.setup_logging(debug)` 统一管理根 `pdf_reader` logger，控制台 + 轮转文件双 handler（5MB×5，utf-8），幂等安全
+- **INFO 常驻流程日志**：`open_pdf` / `replace_page` / 翻译起止 / 术语合并完成 等里程碑始终输出，不再依赖 `config.DEBUG`
+- **命名空间分级**：`pdf_reader.app` / `.state` / `.translate` / `.engine` / `.lifecycle` / `.glossary` / `.routes` / `.render` / `.extract` / `.debug_trace`，按模块可独立调级
+- **翻译流程 page 关联**：`[page=N]` / `[batch=from-to]` 前缀贯穿抽页/编排/替换/合并全链路
+- **错误上下文**：翻译异常 ERROR 记录含 page + provider + model + tmpdir + exc_info
+- **第三方降噪**：werkzeug / pdf2zh_next / babeldoc 固定为 DEBUG，平时不打
+- **启动摘要**：INFO 输出 provider/model/lang/cache_dir/dpi/debug，不含 api_key
+- **移除 monkey-patch**：`AutomaticTermExtractor` monkey-patch 整段删除，术语排查靠 babeldoc `debug=True` tracking 文件 + 新日志定位
+- **安全**：全项目 grep 复核，任何日志语句不输出 api_key 原值
+
+| 文件 | 变更 |
+|------|------|
+| `logging_config.py` | **新增** — 集中式日志配置 + 第三方降噪 |
+| `app.py` | 替换 `basicConfig` 为 `setup_logging`，移除 `import debug_trace`，命名空间改为 `pdf_reader.app`，启动 INFO 摘要 |
+| `debug_trace.py` | 删 monkey-patch（`_apply_monkey_patches`/`patched_extract`/`_original_extract`/`init_debug`）；`log_step`→INFO 常驻、`log_token_usage`→DEBUG、`log_glossary_merge`→INFO；`trace_logger` 移除自建 handler 接入根配置；`debug_session` 保留 |
+| `state.py` | `open_pdf` INFO（hash/pages/dim/cache）+ `replace_page`/`replace_pages` INFO/ERROR |
+| `pdf_renderer.py` | `render_page` DEBUG |
+| `pdf_extraction.py` | `extract_single_page`/`extract_pages` DEBUG |
+| `translation_orchestrator.py` | `run_translation` 新增 `flow_label`，线程启停 INFO / 异常 ERROR / 超时 WARNING |
+| `sse_stream.py` | 命名空间→`pdf_reader.translate`，`log_step`→`logger.info` 带 `[page=N]` 前缀，错误→ERROR 含上下文，传入 `flow_label` |
+| `translation_lifecycle.py` | 命名空间→`pdf_reader.lifecycle`，签名加 `page` 参数贯穿关联 |
+| `glossary_service.py` | 命名空间→`pdf_reader.glossary`，resolve DEBUG / merge WARNING 含路径 |
+| `routes.py` | 命名空间→`pdf_reader.routes`，端点入口/校验失败 DEBUG |
+| `engine_resolver.py` + `translation_settings.py` | 命名空间→`pdf_reader.engine`，`_settings_summary()` 安全摘要，`build_settings` DEBUG |
+| `AGENTS.md` | 追加日志约定（命名空间表、级别策略、page 前缀、安全、命令） |
+| `tests/test_logging_config.py` | **新增** — handler/级别/幂等/第三方降级/安全 测试 |
+| `tests/test_flow_logging.py` | **新增** — 流程日志 INFO 常驻 + page 关联 + 错误上下文 测试 |
+| `tests/test_debug_trace.py` | 删 monkey-patch 用例，更新 log_* 分层断言 |
+| `tests/test_app.py` | `init_debug`→`setup_logging` 断言适配 |
+| `tests/test_debug_patches.py` | **删除**（monkey-patch 已移除） |
+
+**测试**：pytest 171/171、ruff check 零错误、ruff format 通过
+
+---
+
 ## 2026-06-26 — 批量翻译
 
 ### `batch-translation`

@@ -13,10 +13,10 @@
 - **持久化**：译文保存在 `right.pdf` 中，关闭后下次打开自动恢复
 - **大 PDF 支持**：IntersectionObserver 懒加载，1000 页不卡顿
 - **翻译进度**：SSE 实时推送翻译进度条及阶段标签
-- **调试追踪**：`--debug` CLI 开关 + `config.toml` 配置驱动，全链路日志记录术语提取 LLM 交互、翻译各步骤耗时；调试逻辑完全隔离，零侵入业务代码
+- **调试追踪**：`--debug` CLI 开关 + `config.toml` 配置驱动。debug off 时仍有 INFO 流程轨迹（open/翻译/替换/合并），debug on 时额外展示 DEBUG 细节（渲染每页、token 用量、第三方进度）。所有日志持久化到 `logs/pdf_reader.log`（轮转保留），per-PDF 调试留档到 `cache/<sha256>/debug_trace.log`
 - **后端服务层模块化**：15 个独立模块，单一职责，低耦合高内聚。`services.py` 已拆分为 `file_hash.py` / `engine_resolver.py` / `pdf_renderer.py`，翻译后处理抽取为 `translation_lifecycle.py`，翻译参数组装抽取为 `translation_settings.py`
 - **数据驱动引擎**：声明式 `EngineSpec` + `ENGINE_REGISTRY`（`engine_resolver.py`），新增引擎仅需一行配置
-- **线程安全**：渲染全程持锁，杜绝竞态；翻译端点页码校验防越界；118 个 Python 测试 + 9 个 JS 前端测试确保变更安全
+- **线程安全**：渲染全程持锁，杜绝竞态；翻译端点页码校验防越界；171 个 Python 测试 + 9 个 JS 前端测试确保变更安全
 
 ## 技术栈
 
@@ -37,6 +37,9 @@
 PDF_reader/
 ├── app.py                        # Flask 入口，创建 app + 注册路由
 ├── config.py                     # 配置加载（环境变量 / config.toml）+ EngineSpec 引擎注册表
+├── logging_config.py             # 集中式日志配置（setup_logging + 轮转文件 + 第三方降噪）
+├── logs/                         # 日志输出目录（轮转：5MB×5）
+│   └── .gitkeep
 ├── state.py                      # AppState 类（单锁线程安全状态管理）
 ├── file_hash.py                  # SHA256 文件哈希计算
 ├── engine_resolver.py            # 翻译引擎查找与参数映射
@@ -48,7 +51,7 @@ PDF_reader/
 ├── sse_stream.py                 # SSE 流式推送 + 阶段标签定义
 ├── glossary_service.py           # 术语表路径解析 + 翻译后合并
 ├── glossary_merger.py            # 术语表合并（按 source 列投票去重）
-├── debug_trace.py                # 调试追踪（条件 monkey-patch、debug_session 上下文、日志轮转）
+├── debug_trace.py                # 调试细节层（流程骨架 INFO + 细节 DEBUG + debug_session 文件留档）
 ├── routes.py                     # Flask 路由注册（Blueprint，薄路由层）
 ├── config.toml                   # 配置文件（模型、DPI、服务器、调试）
 ├── config.example.toml           # 配置文件模板（含完整参数表格）
@@ -68,7 +71,7 @@ PDF_reader/
 │       ├── lazy-loader.js        # IntersectionObserver 懒加载
 │       ├── stages.js             # 阶段标签（从后端 /api/stages 拉取）
 │       └── translator.js         # 翻译编排（回调驱动，无 DOM 访问）
-├── tests/                        # pytest 单元测试（106 个测试）
+├── tests/                        # pytest 单元测试（171 个测试）
 │   ├── conftest.py
 │   ├── test_app.py
 │   ├── test_debug_trace.py
@@ -228,8 +231,9 @@ enabled = true
   → 后端提取原 PDF 第 N 页为临时单页 PDF（pdf_extraction.py）
   → 调用翻译编排器（translation_orchestrator.py：asyncio 线程 + 事件队列）
   → pdf2zh-next（BabelDOC 管道）翻译
-  → 译文插入 right.pdf 第 N 页（覆盖）
-  → 前端 SSE 接收进度 → 刷新右栏图片
+   → 译文插入 right.pdf 第 N 页（覆盖）
+   → 每步均有 INFO 日志记录（带 [page=N] 前缀），异常时 ERROR 含 page + provider + model + exc_info
+   → 前端 SSE 接收进度 → 刷新右栏图片
 ```
 
 ### 服务层架构
@@ -287,15 +291,17 @@ class EngineSpec:
 
 ### 调试追踪
 
-- `debug_trace.py` 提供 `init_debug()`（条件 monkey-patch）、`debug_session`（上下文管理器管理文件日志）、`log_step`、`log_token_usage`、`log_glossary_merge`
-- `config.DEBUG = False` 时所有调试函数立即返回，零开销
-- 调试由 `config.toml` 的 `[debug]` 段或 `--debug` CLI 参数驱动，无 import-time 副作用
-- 日志写入 `cache/<sha256>/debug_trace.log`，自动轮转保留历史
+- `debug_trace.py` 提供 `log_step`（INFO 流程骨架）、`log_token_usage`（DEBUG 细节）、`log_glossary_merge`（INFO 合并完成）、`debug_session`（per-PDF 文件留档上下文管理器，仅 debug on）
+- INFO 流程日志常驻不受 `config.DEBUG` 影响；DEBUG 细节仅在 root logger 级别为 DEBUG 时可见
+- 日志由 `logging_config.setup_logging(debug)` 集中配置：控制台 + `logs/pdf_reader.log` 轮转文件双输出
+- 第三方库（werkzeug / pdf2zh_next / babeldoc）固定为 DEBUG 级别，平时不刷屏
+- 翻译流程日志带 `[page=N]` / `[batch=from-to]` 关联前缀，错误日志含 page + provider + model + tmpdir + exc_info
+- 启动时 INFO 输出配置摘要（provider/model/lang/cache_dir/dpi/debug），不含 api_key
 
 ## 开发
 
 - `ruff check .` — Python lint
-- `pytest tests/ -v` — Python 单元测试（118 个）
+- `pytest tests/ -v` — Python 单元测试（171 个）
 - `npm run test:translator` — 前端翻译模块测试（9 个用例，30 个断言）
 - `npm run test:task-4.4` / `npm run test:task-4.5` / `npm run test:lazy-loader` — 前端懒加载测试
 - `pip freeze > requirements.lock` — 更新版本锁定
@@ -303,7 +309,7 @@ class EngineSpec:
 
 ## 相关文档
 
-- `openspec/specs/` — 17 个 capability 的详细规格
+- `openspec/specs/` — 20 个 capability 的详细规格
 - `docs/superpowers/` — 设计文档与实施计划
 - `pdf2zh-internals-report.md` — pdf2zh v1 源码分析
 - `babeldoc-vs-pdf2zh-next-report.md` — BabelDOC 与 pdf2zh-next 对比
@@ -327,3 +333,4 @@ class EngineSpec:
 | 6月25日 | 修复并发资源清理（`fix-concurrency-resource-cleanup`）：SSE 异常退出时临时目录泄漏（加 `try/finally`）+ `extract_page` 未持锁导致数据竞争（新增持锁方法），新增 4 类清理测试 + 3 类并发测试 |
 | 6月25日 | TranslateResult 协议（`add-translate-result-protocol`）：`finish_translation` 的 `Any` 收紧为 `Protocol`，静态检查 pdf2zh-next 上游契约，新增 4 个 fallback 路径测试 |
 | 6月25日 | 前端翻译测试（`add-translator-frontend-tests`）：新增 9 个 jsdom 测试覆盖 translator.js（5 例）+ sse-client.js（4 例），`npm run test:translator` 一键运行 |
+| 6月26日 | 日志系统改造（`logging-system-overhaul`）：集中式 logging_config + 10 模块命名空间化 INFO/DEBUG 日志 + 移除 monkey-patch + page/batch 关联前缀 + 错误上下文 + 第三方降噪 + 启动摘要。171 测试，ruff 零错误 |
