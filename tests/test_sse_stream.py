@@ -5,7 +5,14 @@ from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from sse_stream import GenerateContext, format_sse_event, generate
+from sse_stream import (
+    GenerateBatchContext,
+    GenerateContext,
+    format_batch_info,
+    format_sse_event,
+    generate,
+    generate_batch,
+)
 
 # --- Gold-standard SSE constants (preserved from original) ---
 EXPECTED_PROGRESS_START_SSE = (
@@ -473,3 +480,124 @@ def test_generate_cleans_up_on_exception(tmp_path):
 
     assert not tmpdir.exists()
     assert not output_dir.exists()
+
+
+def test_format_batch_info_event():
+    sse = format_batch_info(2, 5, 4)
+    assert sse == (
+        'data: {"type": "batch_info", "from": 2, "to": 5, "total": 4}\n\n'
+    )
+
+
+def _make_batch_ctx(
+    settings=None,
+    from_page=2,
+    to_page=5,
+    page_indices=None,
+    replace_pages=None,
+    glossary_cache_path=None,
+    glossary_paths=None,
+    cache_dir=None,
+    extract_pages=None,
+) -> GenerateBatchContext:
+    if settings is None:
+        settings = MagicMock()
+    if replace_pages is None:
+        replace_pages = MagicMock()
+    if cache_dir is None:
+        cache_dir = Path(tempfile.mkdtemp())
+    if extract_pages is None:
+        extract_pages = MagicMock(return_value=Path("/fake/pages.pdf"))
+    if page_indices is None:
+        page_indices = list(range(from_page - 1, to_page))
+    return GenerateBatchContext(
+        settings=settings,
+        from_page=from_page,
+        to_page=to_page,
+        page_indices=page_indices,
+        replace_pages=replace_pages,
+        glossary_cache_path=glossary_cache_path,
+        glossary_paths=glossary_paths,
+        cache_dir=cache_dir,
+        extract_pages=extract_pages,
+    )
+
+
+def test_generate_batch_emits_batch_info_then_progress_then_finish(tmp_path):
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+
+    events = [
+        {"type": "progress_start", "stage": "layout_analysis", "overall_progress": 0,
+         "stage_current": 0, "stage_total": 0},
+        {"type": "progress_update", "stage": "translating", "overall_progress": 40,
+         "stage_current": 1, "stage_total": 2},
+        {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}},
+    ]
+
+    replace_pages = MagicMock()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_batch_ctx(replace_pages=replace_pages, cache_dir=cache_dir)
+
+    with patch("sse_stream.run_translation", return_value=iter(events)):
+        with patch("sse_stream.debug_trace"):
+            with patch("sse_stream.merge_glossary_only") as mg:
+                result = list(generate_batch(ctx))
+
+    # batch_info present at head
+    assert '"type": "batch_info", "from": 2, "to": 5, "total": 4' in result[0]
+    # progress events forwarded
+    assert any('"type": "progress", "progress": 40' in r for r in result)
+    # finish tail present
+    assert any('"type": "finish"' in r for r in result)
+    # replace_pages called once with translated pdf path
+    replace_pages.assert_called_once_with(str(tmp_path / "translated.pdf"))
+    # merge_glossary_only called (no replace internally)
+    mg.assert_called_once()
+
+
+def test_generate_batch_includes_already_translated_pages(tmp_path):
+    """范围内已翻译页也纳入（不跳过）：page_indices 应等于 range(from-1,to)，无过滤。"""
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "t.pdf")
+    mock_result.auto_extracted_glossary_path = None
+    mock_result.dual_pdf_path = None
+
+    captured_indices = []
+    def extract_spy(indices, tmpdir, func) -> Path:
+        captured_indices.append(list(indices))
+        return Path("/fake/pages.pdf")
+
+    cache_dir = tmp_path / "c"
+    cache_dir.mkdir()
+    ctx = _make_batch_ctx(
+        from_page=1, to_page=3,
+        extract_pages=extract_spy,
+        cache_dir=cache_dir,
+    )
+
+    with patch("sse_stream.run_translation", return_value=iter([
+        {"type": "finish", "stage": "generating_pdf",
+         "translate_result": mock_result, "token_usage": {}}
+    ])):
+        with patch("sse_stream.debug_trace"):
+            with patch("sse_stream.merge_glossary_only"):
+                list(generate_batch(ctx))
+
+    assert captured_indices == [[0, 1, 2]]
+
+
+def test_generate_batch_error_event_stops_stream(tmp_path):
+    events = [{"type": "error", "error": "boom"}]
+    cache_dir = tmp_path / "c"
+    cache_dir.mkdir()
+    ctx = _make_batch_ctx(cache_dir=cache_dir)
+    with patch("sse_stream.run_translation", return_value=iter(events)):
+        with patch("sse_stream.debug_trace"):
+            result = list(generate_batch(ctx))
+    assert any('"type": "error"' in r for r in result)
+    # no finish tail when error
+    assert not any('"type": "finish"' in r for r in result)

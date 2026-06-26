@@ -11,7 +11,7 @@ from pdf2zh_next import SettingsModel
 
 import debug_trace
 import pdf_extraction
-from translation_lifecycle import finish_translation
+from translation_lifecycle import finish_translation, merge_glossary_only
 from translation_orchestrator import TranslationError, run_translation
 
 STAGE_LABELS = {
@@ -41,6 +41,34 @@ class GenerateContext:
     glossary_paths: list[str] | None
     cache_dir: Path
     extract_page: Callable[[int, Path, Callable], Path]
+
+
+@dataclass
+class GenerateBatchContext:
+    settings: SettingsModel
+    from_page: int
+    to_page: int
+    page_indices: list[int]
+    replace_pages: Callable[[str], None]
+    glossary_cache_path: Path | None
+    glossary_paths: list[str] | None
+    cache_dir: Path
+    extract_pages: Callable[[list[int], Path, Callable], Path]
+
+
+def format_batch_info(from_page: int, to_page: int, total: int) -> str:
+    return (
+        "data: "
+        + json.dumps(
+            {
+                "type": "batch_info",
+                "from": from_page,
+                "to": to_page,
+                "total": total,
+            }
+        )
+        + "\n\n"
+    )
 
 
 def format_sse_event(evt: dict) -> str | None:
@@ -156,6 +184,76 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     except Exception as e:
         logging.getLogger("pdf_reader").warning("translate_page generate error", exc_info=True)
+        yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    finally:
+        _safe_rmtree(tmpdir)
+        _safe_rmtree(output_dir)
+
+
+def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
+    tmpdir = Path(tempfile.mkdtemp())
+    output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
+    ctx.settings.translation.output = str(output_dir)
+    try:
+        with debug_trace.debug_session(ctx.glossary_cache_path, ctx.from_page):
+            debug_trace.log_step("submit translate batch %d-%d", ctx.from_page, ctx.to_page)
+
+            translate_start = time.time()
+            translate_result = None
+            token_usage_finish = None
+
+            multi_page_pdf = ctx.extract_pages(ctx.page_indices, tmpdir, pdf_extraction.extract_pages)
+
+            yield format_batch_info(ctx.from_page, ctx.to_page, len(ctx.page_indices))
+
+            for evt in run_translation(ctx.settings, str(multi_page_pdf)):
+                if not isinstance(evt, dict):
+                    yield ""
+                    continue
+                if evt.get("type") == "finish":
+                    translate_result = evt.get("translate_result")
+                    token_usage_finish = evt.get("token_usage", {})
+
+                sse = format_sse_event(evt)
+                if sse is not None:
+                    yield sse
+
+                if evt.get("type") == "error":
+                    return
+
+            if translate_result is None:
+                yield f"data: {json.dumps({'type': 'error', 'error': 'no translation result'})}\n\n"
+                return
+
+            debug_trace.log_step(
+                "translate batch %d-%d done (%.2fs)",
+                ctx.from_page, ctx.to_page, time.time() - translate_start,
+            )
+            if token_usage_finish:
+                debug_trace.log_token_usage(token_usage_finish)
+
+            translated_pdf = translate_result.mono_pdf_path
+            if translated_pdf is None and translate_result.dual_pdf_path is not None:
+                translated_pdf = translate_result.dual_pdf_path
+            if translated_pdf is not None:
+                ctx.replace_pages(str(translated_pdf))
+
+            merge_glossary_only(translate_result, ctx.glossary_cache_path)
+
+            yield (
+                "data: "
+                + json.dumps(
+                    {"type": "progress", "progress": 100, "stage": "finish",
+                     "stage_current": 0, "stage_total": 0}
+                )
+                + "\n\n"
+            )
+            yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
+
+    except TranslationError as e:
+        yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    except Exception as e:
+        logging.getLogger("pdf_reader").warning("translate_batch generate error", exc_info=True)
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     finally:
         _safe_rmtree(tmpdir)
