@@ -217,3 +217,19 @@ def test_build_settings_translation_debug_independent_of_config_debug(mock_confi
     monkeypatch.setattr(config, "DEBUG", True)
     settings = build_settings("dummy.pdf")
     assert settings.basic.debug is False
+
+
+def test_build_settings_multi_page_pages_param(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("/nonexistent"))
+
+    settings = build_settings("/tmp/multi.pdf", None, pages="1-4")
+    assert settings.pdf.pages == "1-4"
+    assert settings.pdf.only_include_translated_page is True
+    assert settings.pdf.no_dual is True
+
+
+def test_build_settings_default_pages_is_one(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("/nonexistent"))
+
+    settings = build_settings("/tmp/single.pdf", None)
+    assert settings.pdf.pages == "1"

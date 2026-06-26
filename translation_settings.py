@@ -12,10 +12,11 @@ logger = logging.getLogger("pdf_reader")
 
 
 def build_settings(
-    single_page_pdf: str,
+    input_pdf: str,
     user_prompt: str | None = None,
     output_dir: str | None = None,
     glossary_paths: list[str] | None = None,
+    pages: str = "1",
 ) -> SettingsModel:
     spec = resolve_engine(config.MODEL_PROVIDER)
     engine_kwargs = build_engine_kwargs(spec)
@@ -42,7 +43,7 @@ def build_settings(
         basic=BasicSettings(debug=False),
         translation=Pdf2zhTranslationSettings(**translation_kwargs),
         pdf=Pdf2zhPDFSettings(
-            pages="1",
+            pages=pages,
             no_dual=True,
             only_include_translated_page=True,
             watermark_output_mode="no_watermark",
