@@ -8,7 +8,18 @@ from pdf2zh_next.config.model import TranslationSettings as Pdf2zhTranslationSet
 import config
 from engine_resolver import build_engine_kwargs, resolve_engine
 
-logger = logging.getLogger("pdf_reader")
+logger = logging.getLogger("pdf_reader.engine")
+
+
+def _settings_summary() -> str:
+    return "provider={} model={} lang={}->{} cache_dir={} dpi={}".format(
+        config.MODEL_PROVIDER,
+        config.MODEL,
+        config.TRANSLATION_LANG_IN,
+        config.TRANSLATION_LANG_OUT,
+        config.CACHE_DIR,
+        config.DPI,
+    )
 
 
 def build_settings(
@@ -38,6 +49,8 @@ def build_settings(
         translation_kwargs["glossaries"] = ",".join(paths)
     if output_dir is not None:
         translation_kwargs["output"] = output_dir
+
+    logger.debug("[settings] provider=%s model=%s lang=%s->%s pages=%s", config.MODEL_PROVIDER, config.MODEL, config.TRANSLATION_LANG_IN, config.TRANSLATION_LANG_OUT, pages)
 
     return SettingsModel(
         basic=BasicSettings(debug=False),

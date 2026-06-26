@@ -2,7 +2,7 @@ import logging
 
 import config
 
-logger = logging.getLogger("pdf_reader")
+logger = logging.getLogger("pdf_reader.engine")
 
 CONFIG_ATTR_MAP: dict[str, str] = {
     "model": "MODEL",
