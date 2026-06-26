@@ -19,6 +19,10 @@ export function getElements() {
     const toolbar = document.getElementById('toolbar');
     const openBtn = document.getElementById('open-btn');
     const pdfPathInput = document.getElementById('pdf-path');
+    const fromPage = document.getElementById('from-page');
+    const toPage = document.getElementById('to-page');
+    const rangeTranslateBtn = document.getElementById('range-translate-btn');
+    const fullTranslateBtn = document.getElementById('full-translate-btn');
 
     _cache = {
         leftCol,
@@ -37,6 +41,10 @@ export function getElements() {
         toolbar,
         openBtn,
         pdfPathInput,
+        fromPage,
+        toPage,
+        rangeTranslateBtn,
+        fullTranslateBtn,
     };
 
     return _cache;

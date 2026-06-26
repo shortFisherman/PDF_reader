@@ -25,6 +25,14 @@
     <button id="zoom-reset">重置缩放</button>
     <button id="prompt-toggle">+ Prompt</button>
     <input type="text" id="prompt-input" placeholder="Custom prompt..." style="display:none">
+    <div id="batch-range-group">
+        <label for="from-page">起</label>
+        <input type="number" id="from-page" min="1" step="1">
+        <label for="to-page">止</label>
+        <input type="number" id="to-page" min="1" step="1">
+    </div>
+    <button id="range-translate-btn" type="button">范围翻译</button>
+    <button id="full-translate-btn" type="button">全文翻译</button>
     <div id="progress-bar"><div id="progress-track"><div id="progress-fill"></div></div><span id="progress-status-text"></span></div>
     <button id="translate-btn">Translate</button>
 </div>

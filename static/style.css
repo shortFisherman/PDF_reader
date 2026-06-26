@@ -120,6 +120,57 @@ body {
     cursor: not-allowed;
 }
 
+#toolbar #batch-range-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #aaa;
+}
+
+#toolbar #from-page,
+#toolbar #to-page {
+    width: 56px;
+    background: #2a2a2a;
+    border: 1px solid #555;
+    color: #ddd;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+}
+
+#toolbar #from-page:focus,
+#toolbar #to-page:focus {
+    border-color: #48c78e;
+}
+
+#toolbar #range-translate-btn,
+#toolbar #full-translate-btn {
+    background: #48c78e;
+    color: #1a1a1a;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background 0.2s;
+}
+
+#toolbar #range-translate-btn:hover:not(:disabled),
+#toolbar #full-translate-btn:hover:not(:disabled) {
+    background: #3bb87a;
+}
+
+#toolbar #range-translate-btn:disabled,
+#toolbar #full-translate-btn:disabled {
+    background: #555;
+    color: #888;
+    cursor: not-allowed;
+}
+
 #toolbar #zoom-reset {
     background: #48c78e;
     color: #1a1a1a;
