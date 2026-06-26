@@ -38,6 +38,12 @@ function init() {
         if (zoomInst) zoomInst.resetZoom();
     });
 
+    els.toolbarToggle.addEventListener('click', () => {
+        const extras = els.toolbarExtras;
+        const isCollapsed = extras.classList.toggle('collapsed');
+        els.toolbarToggle.textContent = isCollapsed ? '▶' : '▼';
+    });
+
     fetchStageLabels();
 }
 
@@ -270,11 +276,7 @@ async function runBatchTranslate(from, to) {
 
     const rangeCount = to - from + 1;
     if (rangeCount > BATCH_CONFIRM_THRESHOLD) {
-        const lowSec = rangeCount * 30;
-        const highSec = rangeCount * 40;
-        const lowMin = Math.round(lowSec / 60);
-        const highMin = Math.round(highSec / 60);
-        if (!window.confirm(`共 ${rangeCount} 页，预计 ${lowSec}–${highSec} 秒（约 ${lowMin}–${highMin} 分钟），确认翻译？`)) return;
+        if (!window.confirm(`翻译 ${rangeCount} 页，预计花费较长时间，确认翻译？`)) return;
     }
 
     isTranslating = true;

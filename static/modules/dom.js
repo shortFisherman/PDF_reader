@@ -23,6 +23,8 @@ export function getElements() {
     const toPage = document.getElementById('to-page');
     const rangeTranslateBtn = document.getElementById('range-translate-btn');
     const fullTranslateBtn = document.getElementById('full-translate-btn');
+    const toolbarToggle = document.getElementById('toolbar-toggle');
+    const toolbarExtras = document.getElementById('toolbar-extras');
 
     _cache = {
         leftCol,
@@ -45,6 +47,8 @@ export function getElements() {
         toPage,
         rangeTranslateBtn,
         fullTranslateBtn,
+        toolbarToggle,
+        toolbarExtras,
     };
 
     return _cache;

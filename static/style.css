@@ -184,6 +184,30 @@ body {
     transition: background 0.2s;
 }
 
+#toolbar #toolbar-toggle {
+    background: none;
+    border: none;
+    color: #aaa;
+    padding: 4px 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: color 0.2s;
+}
+
+#toolbar #toolbar-toggle:hover {
+    color: #48c78e;
+}
+
+#toolbar #toolbar-extras {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#toolbar #toolbar-extras.collapsed {
+    display: none;
+}
+
 #toolbar #zoom-reset:hover {
     background: #3bb87a;
 }
