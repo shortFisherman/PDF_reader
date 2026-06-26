@@ -37,3 +37,8 @@ def setup_logging(debug: bool = False) -> None:
     root_pdf.addHandler(file_handler)
 
     root_pdf.setLevel(level)
+
+    # 第三方 logger 降级为 DEBUG，阻止其 INFO 消息干扰控制台/文件输出
+    logging.getLogger("werkzeug").setLevel(logging.DEBUG)
+    logging.getLogger("pdf2zh_next").setLevel(logging.DEBUG)
+    logging.getLogger("babeldoc").setLevel(logging.DEBUG)

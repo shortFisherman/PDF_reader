@@ -9,13 +9,14 @@ import logging_config
 
 @pytest.fixture(autouse=True)
 def _cleanup_logger():
-    """每个测试后清理 pdf_reader logger 的 handler 以避免污染其他测试"""
+    """每个测试后清理相关 logger 的 handler 和级别以避免污染其他测试"""
     yield
-    root = logging.getLogger("pdf_reader")
-    for h in list(root.handlers):
-        root.removeHandler(h)
-        h.close()
-    root.setLevel(logging.NOTSET)
+    for logger_name in ("pdf_reader", "werkzeug", "pdf2zh_next", "babeldoc"):
+        logger = logging.getLogger(logger_name)
+        for h in list(logger.handlers):
+            logger.removeHandler(h)
+            h.close()
+        logger.setLevel(logging.NOTSET)
 
 
 class TestSetupLoggingInfoMode:
@@ -99,3 +100,52 @@ class TestSetupLoggingIdempotent:
 
         assert len(stream_handlers) == 1
         assert len(rotating_handlers) == 1
+
+
+class TestThirdPartyLoggerDemotion:
+    """第三方 logger 降级为 DEBUG"""
+
+    @pytest.mark.parametrize("logger_name", ["werkzeug", "pdf2zh_next", "babeldoc"])
+    def test_effective_level_is_debug_after_setup(self, tmp_path, logger_name):
+        """setup_logging(False) 后第三方 logger effective level 为 DEBUG"""
+        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+            logging_config.setup_logging(False)
+        assert logging.getLogger(logger_name).getEffectiveLevel() == logging.DEBUG
+
+    def test_debug_messages_pass_through_when_demoted(self, tmp_path):
+        """降级后第三方 logger 的 DEBUG 消息可通过（证明门限未抬高）"""
+        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+            logging_config.setup_logging(False)
+
+        wk = logging.getLogger("werkzeug")
+        records = []
+        handler = logging.Handler()
+        handler.emit = lambda record: records.append(record)
+        handler.setLevel(logging.DEBUG)
+        wk.addHandler(handler)
+
+        wk.debug("debug msg")
+        wk.info("info msg")
+
+        assert len(records) == 2, "DEBUG 与 INFO 消息均应通过"
+        wk.removeHandler(handler)
+        handler.close()
+
+    def test_info_messages_not_captured_by_pdf_reader_handlers(self, tmp_path):
+        """第三方 logger INFO 消息不进入 pdf_reader 的 handler（隔离性）"""
+        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+            logging_config.setup_logging(False)
+
+        pdf = logging.getLogger("pdf_reader")
+        records = []
+        isolate = logging.Handler()
+        isolate.emit = lambda record: records.append(record)
+        isolate.setLevel(logging.DEBUG)
+        pdf.addHandler(isolate)
+
+        wk = logging.getLogger("werkzeug")
+        wk.info("should not reach pdf_reader handler")
+
+        assert len(records) == 0, "第三方 logger INFO 不应进入 pdf_reader handler"
+        pdf.removeHandler(isolate)
+        isolate.close()
