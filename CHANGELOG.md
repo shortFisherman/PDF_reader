@@ -1,5 +1,42 @@
 # 更新日志
 
+## 2026-06-26 — 批量翻译
+
+### `batch-translation`
+
+新增批量翻译功能，支持页码范围翻译与全文翻译，将范围内全部页抽取为单一多页 PDF 一次性喂入 pdf2zh-next 引擎以获得跨页翻译连贯性。
+
+- **范围翻译**：工具栏输入起/止页码，一次性翻译闭区间内全部页（含已翻译页重译覆盖）
+- **全文翻译**：一键翻译整篇 PDF（等价于范围 1 到总页数）
+- **批量确认保护**：范围超过 10 页弹出确认提示；≤10 页直接开始
+- **进度展示**：翻译中显示「翻译第 from-to 页（共 N 页）」+ 引擎整体百分比/阶段标签（段落级）
+- **工具栏折叠**：默认仅显示单页 Translate 按钮，点击 ▶ 展开缩放/Prompt/批量翻译等高级功能
+
+| 文件 | 变更 |
+|------|------|
+| `pdf_extraction.py` | 新增 `extract_pages` 多页抽取 |
+| `state.py` | 新增 `extract_pages`/`replace_pages` 锁内批量原语 |
+| `translation_settings.py` | `build_settings` 参数化 `pages` |
+| `translation_lifecycle.py` | 新增 `merge_glossary_only` 仅术语表合并 |
+| `sse_stream.py` | 新增 `GenerateBatchContext`/`format_batch_info`/`generate_batch` |
+| `routes.py` | 新增 `POST /api/translate-batch` SSE 端点 |
+| `templates/index.html` | 工具栏新增起/止页输入、范围/全文按钮、折叠切换 |
+| `static/modules/dom.js` | 注册新元素引用 |
+| `static/style.css` | 工具栏样式、折叠布局、紧凑尺寸 |
+| `static/modules/translator.js` | 新增 `translateBatch` SSE 客户端 |
+| `static/app.js` | 新增批量翻译逻辑、确认保护、进度展示、互斥控制 |
+| `tests/test_pdf_extraction.py` | 多页抽取顺序/页数测试 |
+| `tests/test_state.py` | 批量回填与 `translated_pages` 更新测试 |
+| `tests/test_routes.py` | 批量端点页码校验与 SSE 测试 |
+| `tests/test_sse_stream.py` | `generate_batch` 事件流测试 |
+| `tests/test_translation_lifecycle.py` | `merge_glossary_only` 测试 |
+| `tests/test_services.py` | `build_settings` 参数化测试 |
+| `tests/run-translator-tests.mjs` | `translateBatch` 前端测试 |
+
+**测试**：pytest 142/142、前端 40/40、ruff 全通过
+
+---
+
 ## 2026-06-25 — Ctrl+滚轮页面缩放
 
 ### `ctrl-wheel-zoom`
