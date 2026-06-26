@@ -12,13 +12,10 @@ logger = logging.getLogger("pdf_reader.engine")
 
 
 def _settings_summary() -> str:
-    return "provider={} model={} lang={}->{} cache_dir={} dpi={}".format(
-        config.MODEL_PROVIDER,
-        config.MODEL,
-        config.TRANSLATION_LANG_IN,
-        config.TRANSLATION_LANG_OUT,
-        config.CACHE_DIR,
-        config.DPI,
+    return (
+        f"provider={config.MODEL_PROVIDER} model={config.MODEL} "
+        f"lang={config.TRANSLATION_LANG_IN}->{config.TRANSLATION_LANG_OUT} "
+        f"cache_dir={config.CACHE_DIR} dpi={config.DPI}"
     )
 
 
@@ -50,7 +47,14 @@ def build_settings(
     if output_dir is not None:
         translation_kwargs["output"] = output_dir
 
-    logger.debug("[settings] provider=%s model=%s lang=%s->%s pages=%s", config.MODEL_PROVIDER, config.MODEL, config.TRANSLATION_LANG_IN, config.TRANSLATION_LANG_OUT, pages)
+    logger.debug(
+        "[settings] provider=%s model=%s lang=%s->%s pages=%s",
+        config.MODEL_PROVIDER,
+        config.MODEL,
+        config.TRANSLATION_LANG_IN,
+        config.TRANSLATION_LANG_OUT,
+        pages,
+    )
 
     return SettingsModel(
         basic=BasicSettings(debug=False),

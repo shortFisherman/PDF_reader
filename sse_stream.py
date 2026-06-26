@@ -186,7 +186,16 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
     except TranslationError as e:
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     except Exception as e:
-        logger.error("[page=%d] translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s", ctx.page, config.MODEL_PROVIDER, config.MODEL, config.TRANSLATION_LANG_IN, config.TRANSLATION_LANG_OUT, str(tmpdir), exc_info=True)
+        logger.error(
+            "[page=%d] translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s",
+            ctx.page,
+            config.MODEL_PROVIDER,
+            config.MODEL,
+            config.TRANSLATION_LANG_IN,
+            config.TRANSLATION_LANG_OUT,
+            str(tmpdir),
+            exc_info=True,
+        )
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     finally:
         _safe_rmtree(tmpdir)
@@ -209,7 +218,9 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
 
             yield format_batch_info(ctx.from_page, ctx.to_page, len(ctx.page_indices))
 
-            for evt in run_translation(ctx.settings, str(multi_page_pdf), flow_label=f"batch={ctx.from_page}-{ctx.to_page}"):
+            for evt in run_translation(
+                ctx.settings, str(multi_page_pdf), flow_label=f"batch={ctx.from_page}-{ctx.to_page}"
+            ):
                 if not isinstance(evt, dict):
                     yield ""
                     continue
@@ -244,8 +255,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
             yield (
                 "data: "
                 + json.dumps(
-                    {"type": "progress", "progress": 100, "stage": "finish",
-                     "stage_current": 0, "stage_total": 0}
+                    {"type": "progress", "progress": 100, "stage": "finish", "stage_current": 0, "stage_total": 0}
                 )
                 + "\n\n"
             )
@@ -254,7 +264,17 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
     except TranslationError as e:
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     except Exception as e:
-        logger.error("[batch=%d-%d] translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s", ctx.from_page, ctx.to_page, config.MODEL_PROVIDER, config.MODEL, config.TRANSLATION_LANG_IN, config.TRANSLATION_LANG_OUT, str(tmpdir), exc_info=True)
+        logger.error(
+            "[batch=%d-%d] translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s",
+            ctx.from_page,
+            ctx.to_page,
+            config.MODEL_PROVIDER,
+            config.MODEL,
+            config.TRANSLATION_LANG_IN,
+            config.TRANSLATION_LANG_OUT,
+            str(tmpdir),
+            exc_info=True,
+        )
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     finally:
         _safe_rmtree(tmpdir)

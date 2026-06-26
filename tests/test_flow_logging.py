@@ -51,6 +51,7 @@ def test_replace_page_logs_info_on_success(app_state, sample_pdf, caplog):
 
     # 构建单页译文 PDF
     import pymupdf
+
     translated_pdf = Path(sample_pdf).parent / "translated.pdf"
     doc = pymupdf.open()
     doc.new_page(width=612, height=792)
@@ -97,6 +98,7 @@ def test_replace_pages_logs_info_on_success(app_state, sample_pdf, caplog):
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
     import pymupdf
+
     translated_pdf = Path(sample_pdf).parent / "translated.pdf"
     doc = pymupdf.open()
     for _ in range(2):
@@ -176,7 +178,7 @@ def test_translate_thread_lifecycle_logging_debug_off(caplog):
         {"type": "finish", "translate_result": MagicMock()},
     ]
 
-    async def fake_stream(settings, file):
+    async def fake_stream(settings, file) -> None:
         for evt in events:
             yield evt
 
@@ -194,7 +196,7 @@ def test_translate_thread_exception_logging(caplog):
     setup_logging(False)
     caplog.set_level(logging.INFO, logger="pdf_reader.translate")
 
-    async def failing_stream(settings, file):
+    async def failing_stream(settings, file) -> None:
         yield {"type": "progress_start"}
         raise RuntimeError("translation crash")
 
@@ -246,7 +248,7 @@ def test_generate_logging_info_messages(caplog, tmp_path):
         {"type": "finish", "translate_result": mock_result, "token_usage": {"main": {"total": 100}}},
     ]
 
-    async def fake_stream(settings, file):
+    async def fake_stream(settings, file) -> None:
         for evt in events:
             yield evt
 
@@ -273,11 +275,14 @@ def test_generate_logging_info_messages(caplog, tmp_path):
     assert any("translate done" in msg for msg in messages), f"Messages: {messages}"
 
     token_records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace" and "Token usage" in r.message]
-    assert len(token_records) == 0, f"token_usage should not be visible at INFO, got: {[r.message for r in token_records]}"
+    assert len(token_records) == 0, (
+        f"token_usage should not be visible at INFO, got: {[r.message for r in token_records]}"
+    )
 
 
 def test_generate_batch_logging_info_messages(caplog, tmp_path):
-    """generate_batch() produces [batch=N-M] submit, thread start/end, translate done at INFO. Token usage not visible."""
+    """generate_batch() produces [batch=N-M] submit, thread start/end, translate done at INFO.
+    Token usage not visible."""
     setup_logging(False)
     caplog.set_level(logging.INFO, logger="pdf_reader.translate")
 
@@ -287,7 +292,7 @@ def test_generate_batch_logging_info_messages(caplog, tmp_path):
         {"type": "finish", "translate_result": mock_result, "token_usage": {"main": {"total": 200}}},
     ]
 
-    async def fake_stream(settings, file):
+    async def fake_stream(settings, file) -> None:
         for evt in events:
             yield evt
 
@@ -316,7 +321,9 @@ def test_generate_batch_logging_info_messages(caplog, tmp_path):
     assert any("[batch=2-5] translate done" in msg for msg in messages), f"Messages: {messages}"
 
     token_records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace" and "Token usage" in r.message]
-    assert len(token_records) == 0, f"token_usage should not be visible at INFO, got: {[r.message for r in token_records]}"
+    assert len(token_records) == 0, (
+        f"token_usage should not be visible at INFO, got: {[r.message for r in token_records]}"
+    )
 
 
 # --- sse_stream error logging ---

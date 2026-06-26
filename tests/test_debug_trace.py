@@ -1,8 +1,7 @@
 import io
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import config
 import debug_trace
 
 

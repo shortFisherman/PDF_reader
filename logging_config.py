@@ -15,9 +15,7 @@ def setup_logging(debug: bool = False) -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    formatter = logging.Formatter(
-        "%(asctime)s %(levelname)s %(name)s [%(message)s]"
-    )
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s [%(message)s]")
 
     level = logging.DEBUG if debug else logging.INFO
 

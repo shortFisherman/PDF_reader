@@ -53,7 +53,7 @@ def test_debug_trace_logger_exists():
 
     assert isinstance(trace_logger, logging.Logger)
     assert trace_logger.name == "pdf_reader.debug_trace"
-    assert trace_logger.level == logging.INFO
+    assert trace_logger.level == logging.NOTSET
 
 
 def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, monkeypatch):
@@ -229,8 +229,13 @@ def test_translate_batch_emits_batch_info_and_finish(app_state, sample_pdf, monk
         return MagicMock()
 
     async def fake_translate_stream(settings, file):  # noqa: ANN202
-        yield {"type": "progress_start", "stage": "layout_analysis", "overall_progress": 0,
-               "stage_current": 0, "stage_total": 0}
+        yield {
+            "type": "progress_start",
+            "stage": "layout_analysis",
+            "overall_progress": 0,
+            "stage_current": 0,
+            "stage_total": 0,
+        }
         mock_result = MagicMock()
         mock_result.mono_pdf_path = Path(str(sample_pdf))
         mock_result.dual_pdf_path = None

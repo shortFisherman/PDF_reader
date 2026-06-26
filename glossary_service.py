@@ -30,4 +30,6 @@ def merge_after_translate(cumulative_path: Path | None, auto_extracted_path: Pat
     try:
         merge_glossary_csvs(Path(cumulative_path), Path(auto_extracted_path))
     except Exception:
-        logger.warning("[glossary] merge failed: cumulative=%s auto=%s", cumulative_path, auto_extracted_path, exc_info=True)
+        logger.warning(
+            "[glossary] merge failed: cumulative=%s auto=%s", cumulative_path, auto_extracted_path, exc_info=True
+        )

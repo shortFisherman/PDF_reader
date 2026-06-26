@@ -484,9 +484,7 @@ def test_generate_cleans_up_on_exception(tmp_path):
 
 def test_format_batch_info_event():
     sse = format_batch_info(2, 5, 4)
-    assert sse == (
-        'data: {"type": "batch_info", "from": 2, "to": 5, "total": 4}\n\n'
-    )
+    assert sse == ('data: {"type": "batch_info", "from": 2, "to": 5, "total": 4}\n\n')
 
 
 def _make_batch_ctx(
@@ -530,10 +528,20 @@ def test_generate_batch_emits_batch_info_then_progress_then_finish(tmp_path):
     mock_result.auto_extracted_glossary_path = None
 
     events = [
-        {"type": "progress_start", "stage": "layout_analysis", "overall_progress": 0,
-         "stage_current": 0, "stage_total": 0},
-        {"type": "progress_update", "stage": "translating", "overall_progress": 40,
-         "stage_current": 1, "stage_total": 2},
+        {
+            "type": "progress_start",
+            "stage": "layout_analysis",
+            "overall_progress": 0,
+            "stage_current": 0,
+            "stage_total": 0,
+        },
+        {
+            "type": "progress_update",
+            "stage": "translating",
+            "overall_progress": 40,
+            "stage_current": 1,
+            "stage_total": 2,
+        },
         {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}},
     ]
 
@@ -567,6 +575,7 @@ def test_generate_batch_includes_already_translated_pages(tmp_path):
     mock_result.dual_pdf_path = None
 
     captured_indices = []
+
     def extract_spy(indices, tmpdir, func) -> Path:
         captured_indices.append(list(indices))
         return Path("/fake/pages.pdf")
@@ -574,15 +583,18 @@ def test_generate_batch_includes_already_translated_pages(tmp_path):
     cache_dir = tmp_path / "c"
     cache_dir.mkdir()
     ctx = _make_batch_ctx(
-        from_page=1, to_page=3,
+        from_page=1,
+        to_page=3,
         extract_pages=extract_spy,
         cache_dir=cache_dir,
     )
 
-    with patch("sse_stream.run_translation", return_value=iter([
-        {"type": "finish", "stage": "generating_pdf",
-         "translate_result": mock_result, "token_usage": {}}
-    ])):
+    with patch(
+        "sse_stream.run_translation",
+        return_value=iter(
+            [{"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}}]
+        ),
+    ):
         with patch("sse_stream.debug_trace"):
             with patch("sse_stream.merge_glossary_only"):
                 list(generate_batch(ctx))

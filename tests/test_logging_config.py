@@ -11,7 +11,7 @@ import logging_config
 
 
 @pytest.fixture(autouse=True)
-def _cleanup_logger():
+def _cleanup_logger() -> None:
     """每个测试后清理相关 logger 的 handler 和级别以避免污染其他测试"""
     yield
     for logger_name in ("pdf_reader", "werkzeug", "pdf2zh_next", "babeldoc"):
@@ -169,10 +169,12 @@ class TestApiKeyNeverLogged:
         monkeypatch.setattr(config, "DEBUG", False)
 
         from logging_config import setup_logging
+
         setup_logging(False)
         caplog.set_level(logging.INFO, logger="pdf_reader.app")
 
         import app as app_module
+
         app_module.create_app()
 
         records = [r for r in caplog.records if r.name == "pdf_reader.app"]
@@ -195,16 +197,16 @@ class TestApiKeyNeverLogged:
         monkeypatch.setattr(config, "DEBUG", False)
 
         from logging_config import setup_logging
+
         setup_logging(False)
         caplog.set_level(logging.DEBUG)
 
         import app as app_module
+
         app_module.create_app()
 
         for record in caplog.records:
-            assert "sk-secret-test-123" not in record.message, (
-                f"API key leaked in {record.name}: {record.message}"
-            )
+            assert "sk-secret-test-123" not in record.message, f"API key leaked in {record.name}: {record.message}"
 
     def test_debug_trace_functions_never_log_api_key(self, monkeypatch, caplog):
         """debug_trace 日志函数不输出 api_key"""
@@ -216,9 +218,7 @@ class TestApiKeyNeverLogged:
         debug_trace.log_glossary_merge("merge_done", page=1, elapsed="0.5")
 
         for record in caplog.records:
-            assert "sk-secret-test-123" not in record.message, (
-                f"API key leaked in debug_trace: {record.message}"
-            )
+            assert "sk-secret-test-123" not in record.message, f"API key leaked in debug_trace: {record.message}"
 
     def test_settings_summary_excludes_api_key(self, monkeypatch):
         """_settings_summary 输出 provider/model/lang/cache_dir/dpi，不含 api_key"""
@@ -231,6 +231,7 @@ class TestApiKeyNeverLogged:
         monkeypatch.setattr(config, "DPI", 300)
 
         from translation_settings import _settings_summary
+
         summary = _settings_summary()
 
         assert "sk-secret-test-123" not in summary
