@@ -116,6 +116,28 @@ class AppState:
             self._right_doc = pymupdf.open(self._right_pdf_path)
             self._translated_pages.add(page_num)
 
+    def extract_pages(self, page_indices: list[int], tmpdir: Path, extract_func) -> Path:
+        """Extract multiple pages under the state lock.
+        extract_func must not reenter AppState (non-reentrant lock)."""
+        with self._lock:
+            if self._left_doc is None:
+                raise ValueError("no document opened")
+            return extract_func(self._left_doc, page_indices, tmpdir)
+
+    def replace_pages(self, translated_pdf_path: str, page_indices: list[int]) -> None:
+        with self._lock:
+            src_doc = pymupdf.open(translated_pdf_path)
+            for j, idx in enumerate(page_indices):
+                self._right_doc.delete_page(idx)
+                self._right_doc.insert_pdf(src_doc, start_at=idx, from_page=j, to_page=j)
+            tmp_save = self._right_pdf_path + ".tmp"
+            self._right_doc.save(tmp_save)
+            src_doc.close()
+            self._right_doc.close()
+            os.replace(tmp_save, self._right_pdf_path)
+            self._right_doc = pymupdf.open(self._right_pdf_path)
+            self._translated_pages.update(page_indices)
+
     def is_doc_open(self) -> bool:
         return self._left_doc is not None
 
