@@ -9,7 +9,8 @@ import debug_trace
 def test_trace_logger_exists():
     assert isinstance(debug_trace.trace_logger, logging.Logger)
     assert debug_trace.trace_logger.name == "pdf_reader.debug_trace"
-    assert debug_trace.trace_logger.level == logging.INFO
+    # level inherited from root pdf_reader logger via setup_logging
+    assert debug_trace.trace_logger.level == logging.NOTSET
 
 
 def test_log_step_no_op_when_debug_false():

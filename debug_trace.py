@@ -91,11 +91,6 @@ def debug_session(glossary_path: Path | None, page: int):
 
 
 trace_logger = logging.getLogger("pdf_reader.debug_trace")
-trace_logger.setLevel(logging.INFO)
-if not trace_logger.handlers:
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s:%(name)s:%(message)s"))
-    trace_logger.addHandler(console_handler)
 
 
 def log_step(step: str, *args: object) -> None:
