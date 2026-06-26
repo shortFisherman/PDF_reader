@@ -12,6 +12,7 @@ auto_transition: true
 base_ref: 022162846f082e987df8eb9ab1c0cc081c22ab7b
 design_doc: docs/superpowers/specs/2026-06-26-logging-system-overhaul-design.md
 plan: docs/superpowers/plans/2026-06-26-logging-system-overhaul.md
+build_command: pytest -q
 verify_result: pending
 verification_report: null
 branch_status: pending
