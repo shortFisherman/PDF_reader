@@ -38,3 +38,19 @@ def finish_translation(
     )
     elapsed = time.time() - merge_start
     debug_trace.log_glossary_merge("merge_done", page=-1, elapsed=f"{elapsed:.2f}")
+
+
+def merge_glossary_only(
+    translate_result: TranslateResult,
+    glossary_cache_path: Path | None,
+) -> None:
+    cumulative_glossary_file: Path | None = None
+    if glossary_cache_path is not None:
+        cumulative_glossary_file = glossary_cache_path / "cumulative_glossary.csv"
+    merge_start = time.time()
+    merge_after_translate(
+        cumulative_glossary_file,
+        translate_result.auto_extracted_glossary_path,
+    )
+    elapsed = time.time() - merge_start
+    debug_trace.log_glossary_merge("merge_done", page=-1, elapsed=f"{elapsed:.2f}")

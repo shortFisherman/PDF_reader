@@ -1,7 +1,8 @@
+import csv
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from translation_lifecycle import finish_translation
+from translation_lifecycle import finish_translation, merge_glossary_only
 
 
 def test_finish_translation_mono_non_none():
@@ -90,3 +91,31 @@ def test_finish_translation_auto_extracted_none():
         Path("/tmp/cache") / "cumulative_glossary.csv",
         None,
     )
+
+
+def test_merge_glossary_only_does_not_replace(tmp_path):
+    glossary_cache = tmp_path / "cache"
+    glossary_cache.mkdir()
+    cumulative_file = glossary_cache / "cumulative_glossary.csv"
+    with open(cumulative_file, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["source", "target"])
+        w.writerow(["alpha", "阿尔法"])
+
+    auto_file = glossary_cache / "auto.csv"
+    with open(auto_file, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["source", "target"])
+        w.writerow(["beta", "贝塔"])
+
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "should_not_be_used.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = str(auto_file)
+
+    merge_glossary_only(mock_result, glossary_cache)
+
+    with open(cumulative_file, newline="", encoding="utf-8") as f:
+        rows = {r["source"]: r["target"] for r in csv.DictReader(f)}
+    assert rows.get("alpha") == "阿尔法"
+    assert rows.get("beta") == "贝塔"
