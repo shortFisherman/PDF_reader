@@ -22,7 +22,7 @@ STAGE_LABELS = {
     "finish": "\u7ffb\u8bd1\u5b8c\u6210",
 }
 
-logger = logging.getLogger("pdf_reader")
+logger = logging.getLogger("pdf_reader.translate")
 
 
 def _safe_rmtree(path: Path) -> None:
@@ -128,7 +128,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
     ctx.settings.translation.output = str(output_dir)
     try:
         with debug_trace.debug_session(ctx.glossary_cache_path, ctx.page):
-            debug_trace.log_step("submit translate page %d", ctx.page)
+            logger.info("[page=%d] submit translate", ctx.page)
 
             translate_start = time.time()
             translate_result = None
@@ -136,7 +136,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
 
             single_page_pdf = ctx.extract_page(ctx.page, tmpdir, pdf_extraction.extract_single_page)
 
-            for evt in run_translation(ctx.settings, str(single_page_pdf)):
+            for evt in run_translation(ctx.settings, str(single_page_pdf), flow_label=f"page={ctx.page}"):
                 if not isinstance(evt, dict):
                     yield ""
                     continue
@@ -155,7 +155,8 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                 yield f"data: {json.dumps({'type': 'error', 'error': 'no translation result'})}\n\n"
                 return
 
-            debug_trace.log_step("translate page %d done (%.2fs)", ctx.page, time.time() - translate_start)
+            elapsed = time.time() - translate_start
+            logger.info("[page=%d] translate done (%.2fs)", ctx.page, elapsed)
             if token_usage_finish:
                 debug_trace.log_token_usage(token_usage_finish)
 
@@ -183,7 +184,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
     except TranslationError as e:
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     except Exception as e:
-        logging.getLogger("pdf_reader").warning("translate_page generate error", exc_info=True)
+        logger.warning("translate_page generate error", exc_info=True)
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     finally:
         _safe_rmtree(tmpdir)
@@ -196,7 +197,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
     ctx.settings.translation.output = str(output_dir)
     try:
         with debug_trace.debug_session(ctx.glossary_cache_path, ctx.from_page):
-            debug_trace.log_step("submit translate batch %d-%d", ctx.from_page, ctx.to_page)
+            logger.info("[batch=%d-%d] submit translate", ctx.from_page, ctx.to_page)
 
             translate_start = time.time()
             translate_result = None
@@ -206,7 +207,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
 
             yield format_batch_info(ctx.from_page, ctx.to_page, len(ctx.page_indices))
 
-            for evt in run_translation(ctx.settings, str(multi_page_pdf)):
+            for evt in run_translation(ctx.settings, str(multi_page_pdf), flow_label=f"batch={ctx.from_page}-{ctx.to_page}"):
                 if not isinstance(evt, dict):
                     yield ""
                     continue
@@ -225,10 +226,8 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
                 yield f"data: {json.dumps({'type': 'error', 'error': 'no translation result'})}\n\n"
                 return
 
-            debug_trace.log_step(
-                "translate batch %d-%d done (%.2fs)",
-                ctx.from_page, ctx.to_page, time.time() - translate_start,
-            )
+            elapsed = time.time() - translate_start
+            logger.info("[batch=%d-%d] translate done (%.2fs)", ctx.from_page, ctx.to_page, elapsed)
             if token_usage_finish:
                 debug_trace.log_token_usage(token_usage_finish)
 
@@ -253,7 +252,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
     except TranslationError as e:
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     except Exception as e:
-        logging.getLogger("pdf_reader").warning("translate_batch generate error", exc_info=True)
+        logger.warning("translate_batch generate error", exc_info=True)
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     finally:
         _safe_rmtree(tmpdir)

@@ -1,16 +1,19 @@
 import asyncio
+import logging
 import queue
 import threading
 from collections.abc import Iterator
 
 from pdf2zh_next import SettingsModel, do_translate_async_stream
 
+logger = logging.getLogger("pdf_reader.translate")
+
 
 class TranslationError(Exception):
     pass
 
 
-def run_translation(settings: SettingsModel, pdf_path: str) -> Iterator[dict | str]:
+def run_translation(settings: SettingsModel, pdf_path: str, flow_label: str = "") -> Iterator[dict | str]:
     event_queue: queue.Queue = queue.Queue()
     error_info: str | None = None
 
@@ -28,6 +31,7 @@ def run_translation(settings: SettingsModel, pdf_path: str) -> Iterator[dict | s
 
             loop.run_until_complete(_run())
         except Exception as e:
+            logger.error("[%s] thread exception", flow_label, exc_info=True)
             error_info = str(e)
         finally:
             if loop is not None:
@@ -44,6 +48,7 @@ def run_translation(settings: SettingsModel, pdf_path: str) -> Iterator[dict | s
 
     thread = threading.Thread(target=run_translation_thread, daemon=True)
     thread.start()
+    logger.info("[%s] thread start", flow_label)
 
     while True:
         try:
@@ -57,7 +62,10 @@ def run_translation(settings: SettingsModel, pdf_path: str) -> Iterator[dict | s
 
         yield evt
 
+    logger.info("[%s] thread end", flow_label)
     thread.join(timeout=5.0)
+    if thread.is_alive():
+        logger.warning("[%s] thread join timeout", flow_label)
 
     if error_info:
         raise TranslationError(error_info)

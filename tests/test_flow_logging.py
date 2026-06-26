@@ -1,12 +1,15 @@
-"""TDD tests for INFO/ERROR logging in state.py: open_pdf, replace_page, replace_pages."""
+"""TDD tests for INFO/ERROR logging in state.py: open_pdf, replace_page, replace_pages, and in translate flow."""
 
 import logging
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+import debug_trace
 from logging_config import setup_logging
 from state import AppState
+from translation_orchestrator import TranslationError, run_translation
 
 
 def test_open_pdf_logs_info_with_hash_and_pages(sample_pdf, tmp_path, caplog):
@@ -152,3 +155,72 @@ def test_replace_pages_logs_error_and_reraises_on_failure(app_state, sample_pdf,
     assert "[batch]" in records[0].message
     assert "replace pages failed" in records[0].message
     assert records[0].exc_info is not None
+
+
+# --- translate flow logging ---
+
+
+def test_translate_thread_lifecycle_logging_debug_off(caplog):
+    """debug off: run_translation logs [page=N] thread start, thread end at INFO."""
+    setup_logging(False)
+    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+
+    events = [
+        {"type": "progress_start", "stage": "layout_analysis"},
+        {"type": "finish", "translate_result": MagicMock()},
+    ]
+
+    async def fake_stream(settings, file):
+        for evt in events:
+            yield evt
+
+    with patch("translation_orchestrator.do_translate_async_stream", fake_stream):
+        list(run_translation(MagicMock(), "fake.pdf", flow_label="page=1"))
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
+    messages = [r.message for r in records]
+    assert any("[page=1] thread start" in msg for msg in messages), f"Got: {messages}"
+    assert any("[page=1] thread end" in msg for msg in messages), f"Got: {messages}"
+
+
+def test_translate_thread_exception_logging(caplog):
+    """run_translation logs ERROR with exc_info on thread exception."""
+    setup_logging(False)
+    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+
+    async def failing_stream(settings, file):
+        yield {"type": "progress_start"}
+        raise RuntimeError("translation crash")
+
+    with patch("translation_orchestrator.do_translate_async_stream", failing_stream):
+        with pytest.raises(TranslationError, match="translation crash"):
+            list(run_translation(MagicMock(), "fake.pdf", flow_label="page=1"))
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
+    assert len(records) >= 1, f"Got: {[r.message for r in caplog.records]}"
+    assert "[page=1] thread exception" in records[0].message
+    assert records[0].exc_info is not None
+
+
+def test_translate_token_usage_not_visible_debug_off(caplog):
+    """debug off: debug_trace.log_token_usage logs at DEBUG — not visible at INFO."""
+    setup_logging(False)
+    caplog.set_level(logging.INFO, logger="pdf_reader.debug_trace")
+
+    debug_trace.log_token_usage({"main": {"total": 100}, "term": {"total": 50}})
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace"]
+    assert len(records) == 0, f"expected no token_usage log at INFO, got: {[r.message for r in records]}"
+
+
+def test_translate_token_usage_visible_debug_on(caplog):
+    """debug on: debug_trace.log_token_usage logs at DEBUG with token counts."""
+    caplog.set_level(logging.DEBUG, logger="pdf_reader.debug_trace")
+
+    debug_trace.log_token_usage({"main": {"total": 100}, "term": {"total": 50}})
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace" and r.levelno == logging.DEBUG]
+    assert len(records) >= 1, f"expected token_usage log, got: {[r.message for r in records]}"
+    msg = records[0].message
+    assert "main=100" in msg
+    assert "term=50" in msg
