@@ -4,7 +4,6 @@ import logging
 from flask import Flask
 
 import config
-import debug_trace
 import logging_config
 from state import AppState
 
