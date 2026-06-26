@@ -1,9 +1,12 @@
+import logging
 import os
 import shutil
 import threading
 from pathlib import Path
 
 import pymupdf
+
+logger = logging.getLogger("pdf_reader.state")
 
 
 class AppState:
@@ -65,7 +68,8 @@ class AppState:
             cache_subdir = self._cache_dir / pdf_hash
             cache_subdir.mkdir(parents=True, exist_ok=True)
             right_pdf_path = cache_subdir / "right.pdf"
-            if not right_pdf_path.exists():
+            cache_status = "reused" if right_pdf_path.exists() else "new"
+            if cache_status == "new":
                 shutil.copy2(pdf_path, right_pdf_path)
             self._left_doc = pymupdf.open(pdf_path)
             self._right_doc = pymupdf.open(str(right_pdf_path))
@@ -76,6 +80,14 @@ class AppState:
             sample_page = self._left_doc[0]
             self._page_height = sample_page.rect.height
             self._page_width = sample_page.rect.width
+            logger.info(
+                "[open] hash=%s pages=%d dim=%.0fx%.0f cache=%s",
+                pdf_hash,
+                self._page_count,
+                self._page_width,
+                self._page_height,
+                cache_status,
+            )
             return {
                 "page_count": self._page_count,
                 "page_height": self._page_height,
@@ -105,16 +117,21 @@ class AppState:
 
     def replace_page(self, translated_pdf_path: str, page_num: int) -> None:
         with self._lock:
-            src_doc = pymupdf.open(translated_pdf_path)
-            self._right_doc.delete_page(page_num)
-            self._right_doc.insert_pdf(src_doc, start_at=page_num)
-            tmp_save = self._right_pdf_path + ".tmp"
-            self._right_doc.save(tmp_save)
-            src_doc.close()
-            self._right_doc.close()
-            os.replace(tmp_save, self._right_pdf_path)
-            self._right_doc = pymupdf.open(self._right_pdf_path)
-            self._translated_pages.add(page_num)
+            try:
+                src_doc = pymupdf.open(translated_pdf_path)
+                self._right_doc.delete_page(page_num)
+                self._right_doc.insert_pdf(src_doc, start_at=page_num)
+                tmp_save = self._right_pdf_path + ".tmp"
+                self._right_doc.save(tmp_save)
+                src_doc.close()
+                self._right_doc.close()
+                os.replace(tmp_save, self._right_pdf_path)
+                self._right_doc = pymupdf.open(self._right_pdf_path)
+                self._translated_pages.add(page_num)
+                logger.info("[page=%d] replace into %s", page_num, self._right_pdf_path)
+            except Exception:
+                logger.error("[page=%d] replace failed", page_num, exc_info=True)
+                raise
 
     def extract_pages(self, page_indices: list[int], tmpdir: Path, extract_func) -> Path:
         """Extract multiple pages under the state lock.
@@ -126,17 +143,22 @@ class AppState:
 
     def replace_pages(self, translated_pdf_path: str, page_indices: list[int]) -> None:
         with self._lock:
-            src_doc = pymupdf.open(translated_pdf_path)
-            for j, idx in enumerate(page_indices):
-                self._right_doc.delete_page(idx)
-                self._right_doc.insert_pdf(src_doc, start_at=idx, from_page=j, to_page=j)
-            tmp_save = self._right_pdf_path + ".tmp"
-            self._right_doc.save(tmp_save)
-            src_doc.close()
-            self._right_doc.close()
-            os.replace(tmp_save, self._right_pdf_path)
-            self._right_doc = pymupdf.open(self._right_pdf_path)
-            self._translated_pages.update(page_indices)
+            try:
+                src_doc = pymupdf.open(translated_pdf_path)
+                for j, idx in enumerate(page_indices):
+                    self._right_doc.delete_page(idx)
+                    self._right_doc.insert_pdf(src_doc, start_at=idx, from_page=j, to_page=j)
+                tmp_save = self._right_pdf_path + ".tmp"
+                self._right_doc.save(tmp_save)
+                src_doc.close()
+                self._right_doc.close()
+                os.replace(tmp_save, self._right_pdf_path)
+                self._right_doc = pymupdf.open(self._right_pdf_path)
+                self._translated_pages.update(page_indices)
+                logger.info("[batch] replace pages %s into %s", page_indices, self._right_pdf_path)
+            except Exception:
+                logger.error("[batch] replace pages failed", exc_info=True)
+                raise
 
     def is_doc_open(self) -> bool:
         return self._left_doc is not None
