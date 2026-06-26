@@ -5,10 +5,10 @@ from flask import Flask
 
 import config
 import debug_trace
+import logging_config
 from state import AppState
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("pdf_reader")
+logger = logging.getLogger("pdf_reader.app")
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument("--debug", action="store_true", default=None, help="Enable debug tracing")
@@ -18,7 +18,7 @@ if _cli_args.debug is not None:
 
 
 def create_app() -> Flask:
-    debug_trace.init_debug(config.DEBUG)
+    logging_config.setup_logging(config.DEBUG)
     app = Flask(__name__)
     app.config["app_state"] = AppState(config.CACHE_DIR)
     from routes import register_routes

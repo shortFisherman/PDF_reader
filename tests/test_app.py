@@ -38,16 +38,16 @@ def test_cli_no_debug_flag_does_not_override():
 def test_import_app_does_not_trigger_side_effects():
     """Importing app module does NOT set config.DEBUG=True or apply patches."""
     with patch("config.DEBUG", False):
-        with patch("app.debug_trace.init_debug") as mock_init:
+        with patch("app.logging_config.setup_logging", create=True) as mock_setup:
             import app  # noqa: F401
 
-            mock_init.assert_not_called()
+            mock_setup.assert_not_called()
 
 
-def test_create_app_calls_init_debug():
-    """create_app() explicitly calls init_debug(config.DEBUG)."""
-    with patch("app.debug_trace.init_debug") as mock_init:
+def test_create_app_calls_setup_logging():
+    """create_app() explicitly calls setup_logging(config.DEBUG)."""
+    with patch("app.logging_config.setup_logging") as mock_setup:
         from app import create_app
 
         create_app()
-        mock_init.assert_called_once()
+        mock_setup.assert_called_once()
