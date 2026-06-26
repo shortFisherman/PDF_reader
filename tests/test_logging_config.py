@@ -1,9 +1,12 @@
 import logging
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+import config
+import debug_trace
 import logging_config
 
 
@@ -149,3 +152,88 @@ class TestThirdPartyLoggerDemotion:
         assert len(records) == 0, "第三方 logger INFO 不应进入 pdf_reader handler"
         pdf.removeHandler(isolate)
         isolate.close()
+
+
+class TestApiKeyNeverLogged:
+    """验证 api_key 绝不会出现在任何日志记录中"""
+
+    def test_api_key_not_in_startup_log(self, monkeypatch, caplog, tmp_path):
+        """启动日志包含 provider/model/lang 但不包含 api_key 值"""
+        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-secret-test-123")
+        monkeypatch.setattr(config, "MODEL_PROVIDER", "deepseek")
+        monkeypatch.setattr(config, "MODEL", "deepseek-v4-flash")
+        monkeypatch.setattr(config, "TRANSLATION_LANG_IN", "en")
+        monkeypatch.setattr(config, "TRANSLATION_LANG_OUT", "zh")
+        monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
+        monkeypatch.setattr(config, "DPI", 200)
+        monkeypatch.setattr(config, "DEBUG", False)
+
+        from logging_config import setup_logging
+        setup_logging(False)
+        caplog.set_level(logging.INFO, logger="pdf_reader.app")
+
+        import app as app_module
+        app_module.create_app()
+
+        records = [r for r in caplog.records if r.name == "pdf_reader.app"]
+        assert len(records) >= 1, "expected at least one startup log"
+        all_messages = " ".join(r.message for r in records)
+
+        assert "sk-secret-test-123" not in all_messages, "API key leaked in startup log"
+        assert "provider=deepseek" in all_messages
+        assert "model=deepseek-v4-flash" in all_messages
+
+    def test_no_caplog_contains_api_key_value(self, monkeypatch, caplog, tmp_path):
+        """任何日志记录都不应包含 api_key 明文值"""
+        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-secret-test-123")
+        monkeypatch.setattr(config, "MODEL_PROVIDER", "deepseek")
+        monkeypatch.setattr(config, "MODEL", "deepseek-v4-flash")
+        monkeypatch.setattr(config, "TRANSLATION_LANG_IN", "en")
+        monkeypatch.setattr(config, "TRANSLATION_LANG_OUT", "zh")
+        monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
+        monkeypatch.setattr(config, "DPI", 200)
+        monkeypatch.setattr(config, "DEBUG", False)
+
+        from logging_config import setup_logging
+        setup_logging(False)
+        caplog.set_level(logging.DEBUG)
+
+        import app as app_module
+        app_module.create_app()
+
+        for record in caplog.records:
+            assert "sk-secret-test-123" not in record.message, (
+                f"API key leaked in {record.name}: {record.message}"
+            )
+
+    def test_debug_trace_functions_never_log_api_key(self, monkeypatch, caplog):
+        """debug_trace 日志函数不输出 api_key"""
+        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-secret-test-123")
+        caplog.set_level(logging.DEBUG, logger="pdf_reader.debug_trace")
+
+        debug_trace.log_step("init")
+        debug_trace.log_token_usage({"main": {"total": 100}, "term": {"total": 50}})
+        debug_trace.log_glossary_merge("merge_done", page=1, elapsed="0.5")
+
+        for record in caplog.records:
+            assert "sk-secret-test-123" not in record.message, (
+                f"API key leaked in debug_trace: {record.message}"
+            )
+
+    def test_settings_summary_excludes_api_key(self, monkeypatch):
+        """_settings_summary 输出 provider/model/lang/cache_dir/dpi，不含 api_key"""
+        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-secret-test-123")
+        monkeypatch.setattr(config, "MODEL_PROVIDER", "deepseek")
+        monkeypatch.setattr(config, "MODEL", "deepseek-v4-flash")
+        monkeypatch.setattr(config, "TRANSLATION_LANG_IN", "en")
+        monkeypatch.setattr(config, "TRANSLATION_LANG_OUT", "zh")
+        monkeypatch.setattr(config, "CACHE_DIR", Path("/tmp/cache"))
+        monkeypatch.setattr(config, "DPI", 300)
+
+        from translation_settings import _settings_summary
+        summary = _settings_summary()
+
+        assert "sk-secret-test-123" not in summary
+        assert "provider=deepseek" in summary
+        assert "model=deepseek-v4-flash" in summary
+        assert "lang=en->zh" in summary

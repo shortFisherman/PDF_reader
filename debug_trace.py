@@ -46,7 +46,7 @@ trace_logger = logging.getLogger("pdf_reader.debug_trace")
 
 
 def log_step(step: str, *args: object) -> None:
-    logger.info(f"[step] {step}", *args)
+    logger.info("[step] " + step, *args)
 
 
 def log_token_usage(token_usage: dict) -> None:
