@@ -88,6 +88,7 @@ ENGINE_REGISTRY: list[EngineSpec] = [
             "base_url": "aliyun_dashscope_base_url",
             "temperature": "aliyun_dashscope_temperature",
             "timeout": "aliyun_dashscope_timeout",
+            "enable_json_mode": "aliyun_dashscope_enable_json_mode",
         },
         required_fields=("api_key", "model"),
     ),

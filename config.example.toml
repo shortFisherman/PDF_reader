@@ -7,103 +7,199 @@
 #   3. config.toml 已被 .gitignore 忽略，不会提交到 git
 #
 # API Key 配置方式（二选一）：
-#   方式 A（推荐）：设置环境变量 MODEL_API_KEY
+#   方式 A（推荐）：设置环境变量 MODEL_API_KEY（优先级高于下方 api_key 字段）
 #       PowerShell:  $env:MODEL_API_KEY = "sk-你的密钥"
 #       CMD:          set MODEL_API_KEY=sk-你的密钥
 #   方式 B：直接在下方的 api_key 字段填写
 #       ⚠️ 注意不要将含真实 API Key 的 config.toml 提交到 git
-#
-# 支持的 provider 及高级参数（不支持的参数自动忽略）：
-#   ┌────────────────────┬──────────────────────────────────────────────┐
-#   │ provider           │ 高级参数（可选值）                            │
-#   ├────────────────────┼──────────────────────────────────────────────┤
-#   │ deepseek           │ thinking_mode(enabled/disabled),             │
-#   │                    │ reasoning_effort(high/max)                   │
-#   │ zhipu              │ enable_json_mode(true/false)                 │
-#   │ siliconflow        │ enable_json_mode(true/false)                 │
-#   │ aliyun             │ temperature(0~2), timeout(秒数),              │
-#   │                    │ enable_json_mode(true/false)                 │
-#   │ gemini             │ enable_json_mode(true/false)                 │
-#   │ groq               │ enable_json_mode(true/false)                 │
-#   │ grok               │ enable_json_mode(true/false)                 │
-#   │ modelscope         │ enable_json_mode(true/false)                 │
-#   │ openai             │ temperature(0~2), timeout(秒数),              │
-#   │                    │ reasoning_effort(high/max),                  │
-#   │                    │ enable_json_mode(true/false)                 │
-#   │ openai_compatible  │ temperature(0~2), timeout(秒数),              │
-#   │                    │ reasoning_effort(high/max),                  │
-#   │                    │ enable_json_mode(true/false)                 │
-#   └────────────────────┴──────────────────────────────────────────────┘
-#   未列出的 provider 名自动走 openai_compatible 兜底（OpenAI 兼容接口）
 # =============================================================================
+#
+# 引擎参数速查（✓ = 支持  — = 不支持，设了会输出 warning 并忽略）
+#
+#   provider            默认模型               base_url   thinking   reasoning    json_mode   temp   timeout
+#   ─────────────────  ─────────────────────  ────────   ────────   ──────────   ─────────   ────   ───────
+#   deepseek            deepseek-chat          固定       ✓          ✓ high/max   ✓           —      —
+#   zhipu               glm-4-flash            固定       —          —            ✓           —      —
+#   siliconflow         Qwen/Qwen2.5-7B        可选       —          —            ✓           —      —
+#   aliyun              qwen-plus-latest       可选       —          —            ✓           ✓      ✓
+#   gemini              gemini-1.5-flash       固定       —          —            ✓           —      —
+#   groq                llama-3.3-70b          固定       —          —            ✓           —      —
+#   grok                grok-2-1212            固定       —          —            ✓           —      —
+#   modelscope          Qwen/Qwen2.5-32B       固定       —          —            ✓           —      —
+#   openai              gpt-4o-mini            可选       —          ✓ min/low/.. ✓           ✓      ✓
+#   openai_compatible   （自定义）             必填       —          ✓ min/low/.. ✓           ✓      ✓
+#
+#   base_url:  固定 = 引擎内置官方地址，设了无效  可选 = 可自定义  必填 = 必须填写
+#   未列出的 provider 名 → 自动走 openai_compatible 兜底
+# =============================================================================
+
 
 # -----------------------------------------------------------------------------
 # PDF 阅读器设置
 # -----------------------------------------------------------------------------
 [pdf_reader]
-# 页面渲染 DPI（越高越清晰，但图片越大）
+# 页面渲染 DPI（越高越清晰，但图片越大，默认 200）
 dpi = 200
-# 翻译缓存目录（保存 right.pdf 等中间文件）
+# 翻译缓存目录（保存中间文件，默认 "cache"）
 cache_dir = "cache"
+
 
 # -----------------------------------------------------------------------------
 # 模型配置（翻译服务使用的 LLM 模型）
 # -----------------------------------------------------------------------------
 [model]
 # 模型供应商（必填）
-#   可选值：deepseek / zhipu / siliconflow / aliyun / gemini / groq / grok
-#          modelscope / openai / openai_compatible
+#   可选值见上方速查表；未列出的名称自动走 openai_compatible 兜底
 provider = "deepseek"
 
 # API Key（必填）
-#   - 也可通过环境变量 MODEL_API_KEY 设置（优先级更高）
+#   环境变量 MODEL_API_KEY 优先级更高
 api_key = "sk-your-api-key-here"
 
 # 模型名称（必填）
-model = "deepseek-v4-flash"
+#   各引擎默认值 & 常见可选值（完整列表请查阅各供应商文档）：
+#     deepseek:          deepseek-chat / deepseek-reasoner
+#                        deepseek-v4-* 系列支持 thinking_mode（如 deepseek-v4-flash）
+#     zhipu:             glm-4-flash / glm-4-plus / glm-4-air
+#     siliconflow:       Qwen/Qwen2.5-7B-Instruct / deepseek-ai/DeepSeek-V3 ...
+#     aliyun:            qwen-plus-latest / qwen-turbo / qwen-max
+#     gemini:            gemini-1.5-flash / gemini-2.0-flash / gemini-1.5-pro
+#     groq:              llama-3.3-70b-versatile / llama-3.1-8b-instant
+#     grok:              grok-2-1212 / grok-2-latest
+#     modelscope:        Qwen/Qwen2.5-32B-Instruct
+#     openai:            gpt-4o-mini / gpt-4o / o1-mini / o1
+#     openai_compatible: 取决于你的中转服务所提供的模型
+model = "deepseek-chat"
 
-# API 基础地址（可选，留空则使用引擎内置默认值）
-#   - 仅 siliconflow / aliyun / openai / openai_compatible 支持自定义
-#   - 其余引擎（deepseek / zhipu / gemini 等）使用内置官方地址
-base_url = "https://api.deepseek.com/v1"
+# API 基础地址（可选）
+#   仅 siliconflow / aliyun / openai / openai_compatible 生效
+#   deepseek / zhipu / gemini / groq / grok / modelscope 使用内置官方地址，设了无效
+#   openai_compatible 下为必填，其余可选（留空用引擎默认地址）
+# base_url = "https://api.siliconflow.cn/v1"
+
 
 # -----------------------------------------------------------------------------
-# 高级参数（全部可选）
+# 高级参数（全部可选，仅对应引擎支持时生效；不支持时输出 warning 并忽略）
 # -----------------------------------------------------------------------------
-# 仅在对应引擎支持时生效，不支持的引擎自动忽略并输出 warning
-#
+
+# thinking_mode — 深度思考开关（字符串）
+#   仅 deepseek 引擎，且仅对 deepseek-v4-* 系列模型生效
+#   "enabled"  开启深度思考（模型在回答前先进行推理链）
+#   "disabled" 关闭深度思考
 # thinking_mode = "enabled"
-#   引擎: deepseek
-#   可选值: "enabled"（开启深度思考）/ "disabled"（关闭）
-#
+
+# reasoning_effort — 推理深度（字符串）
+#   deepseek:            "high" / "max"
+#     ⚠️ 需同时设 thinking_mode = "enabled"，且模型为 deepseek-v4-* 系列
+#   openai / openai_compatible: "minimal" / "low" / "medium" / "high"
+#     控制推理型模型（如 o1 系列）的思考力度，非推理模型可能忽略此参数
 # reasoning_effort = "high"
-#   引擎: deepseek / openai / openai_compatible
-#   可选值: "high"（高推理深度）/ "max"（最大推理深度）
-#   前置: deepseek 引擎需同时设置 thinking_mode = "enabled"
-#
+
+# enable_json_mode — 强制 JSON 输出模式（布尔值）
+#   适用: deepseek / zhipu / siliconflow / aliyun / gemini / groq / grok /
+#         modelscope / openai / openai_compatible
+#   true 时模型被要求以合法 JSON 格式输出，适合结构化解析场景
 # enable_json_mode = true
-#   引擎: deepseek / zhipu / siliconflow / gemini / groq / grok /
-#         modelscope / openai / aliyun / openai_compatible
-#   可选值: true（强制 JSON 输出）/ false（关闭）
-#
+
+# temperature — 输出随机性（字符串形式，范围 "0"~"2"）
+#   仅 openai / aliyun / openai_compatible
+#   值越低 → 输出越确定/保守；值越高 → 输出越随机/多样
+#   ⚠️ 必须用字符串，不要写裸数字（写成 "0.7" 而非 0.7）
 # temperature = "0.7"
-#   引擎: openai / aliyun / openai_compatible
-#   可选值: 0~2 之间的浮点数（控制输出随机性）
-#
+
+# timeout — 请求超时秒数（字符串形式，正整数）
+#   仅 openai / aliyun / openai_compatible
+#   ⚠️ 必须用字符串，不要写裸数字（写成 "500" 而非 500）
 # timeout = "500"
-#   引擎: openai / aliyun / openai_compatible
-#   可选值: 正整数（请求超时秒数）
+
+
+# =============================================================================
+# 各引擎配置示例（将需要的块复制到上方 [model] 段即可）
+# =============================================================================
+# ---- deepseek ----
+# provider = "deepseek"
+# api_key = "sk-..."
+# model = "deepseek-chat"               # 或 deepseek-v4-flash（配合 thinking_mode）
+# thinking_mode = "enabled"             # 仅 v4 系列
+# reasoning_effort = "high"             # 需 thinking_mode = "enabled"
+# enable_json_mode = true
+
+# ---- zhipu（智谱）----
+# provider = "zhipu"
+# api_key = "..."
+# model = "glm-4-flash"
+# enable_json_mode = true
+
+# ---- siliconflow（硅基流动）----
+# provider = "siliconflow"
+# api_key = "sk-..."
+# model = "Qwen/Qwen2.5-7B-Instruct"
+# base_url = "https://api.siliconflow.cn/v1"   # 可选，留空用默认
+# enable_json_mode = true
+
+# ---- aliyun（阿里云 DashScope）----
+# provider = "aliyun"
+# api_key = "sk-..."
+# model = "qwen-plus-latest"
+# base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # 可选
+# enable_json_mode = true
+# temperature = "0.0"
+# timeout = "500"
+
+# ---- gemini ----
+# provider = "gemini"
+# api_key = "AIza..."
+# model = "gemini-1.5-flash"
+# enable_json_mode = true
+
+# ---- groq ----
+# provider = "groq"
+# api_key = "gsk_..."
+# model = "llama-3.3-70b-versatile"
+# enable_json_mode = true
+
+# ---- grok ----
+# provider = "grok"
+# api_key = "xai-..."
+# model = "grok-2-1212"
+# enable_json_mode = true
+
+# ---- modelscope（魔搭）----
+# provider = "modelscope"
+# api_key = "ms-..."
+# model = "Qwen/Qwen2.5-32B-Instruct"
+# enable_json_mode = true
+
+# ---- openai ----
+# provider = "openai"
+# api_key = "sk-..."
+# model = "gpt-4o-mini"
+# base_url = "https://api.openai.com/v1"   # 可选（用于代理/中转）
+# reasoning_effort = "high"
+# enable_json_mode = true
+# temperature = "0.7"
+# timeout = "500"
+
+# ---- openai_compatible（OpenAI 兼容接口 / 中转服务）----
+# provider = "openai_compatible"
+# api_key = "sk-..."
+# model = "your-model-name"
+# base_url = "https://your-proxy.com/v1"   # 必填！
+# reasoning_effort = "high"
+# enable_json_mode = true
+# temperature = "0.7"
+# timeout = "500"
+
 
 # -----------------------------------------------------------------------------
 # 翻译设置
 # -----------------------------------------------------------------------------
 [translation]
-# 源语言（ISO 639-1 代码）
+# 源语言（ISO 639-1 代码，默认 "en"）
 lang_in = "en"
-# 目标语言（ISO 639-1 代码）
+# 目标语言（ISO 639-1 代码，默认 "zh"）
 lang_out = "zh"
-# 每秒最大翻译请求数（避免触发 API 限流）
-qps = 4
+
 
 # -----------------------------------------------------------------------------
 # 服务器设置
@@ -111,7 +207,7 @@ qps = 4
 [server]
 # 监听地址（127.0.0.1 = 仅本机访问，0.0.0.0 = 局域网内可访问）
 host = "127.0.0.1"
-# 监听端口
+# 监听端口（默认 5000）
 port = 5000
 # 调试模式（开发时开启，生产环境关闭）
 debug = true

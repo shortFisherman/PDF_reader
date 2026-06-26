@@ -64,6 +64,17 @@ def test_unknown_provider_falls_back_to_openai_compatible(mock_config):
     assert spec.settings_cls is OpenAICompatibleSettings
 
 
+def test_aliyun_enable_json_mode_is_mapped(monkeypatch):
+    """aliyun field_map 必须映射 enable_json_mode，且值能透传到 engine_kwargs。"""
+    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
+    monkeypatch.setattr(config, "MODEL", "qwen-plus-latest")
+    monkeypatch.setattr(config, "MODEL_ENABLE_JSON_MODE", True)
+    spec = resolve_engine("aliyun")
+    assert "enable_json_mode" in spec.field_map, "aliyun field_map 漏映射 enable_json_mode"
+    kwargs = build_engine_kwargs(spec)
+    assert kwargs.get("aliyun_dashscope_enable_json_mode") is True
+
+
 def test_all_engines_build_kwargs_structure(monkeypatch):
     monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
     monkeypatch.setattr(config, "MODEL", "test-model")
@@ -133,6 +144,7 @@ _OLD_FIELD_MAP = {
         "DeepSeekSettings": "deepseek_enable_json_mode",
         "ZhipuSettings": "zhipu_enable_json_mode",
         "SiliconFlowSettings": "siliconflow_enable_json_mode",
+        "AliyunDashScopeSettings": "aliyun_dashscope_enable_json_mode",
         "GeminiSettings": "gemini_enable_json_mode",
         "GroqSettings": "groq_enable_json_mode",
         "GrokSettings": "grok_enable_json_mode",
