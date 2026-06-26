@@ -7,7 +7,7 @@ from typing import Protocol
 import debug_trace
 from glossary_service import merge_after_translate
 
-logger = logging.getLogger("pdf_reader")
+logger = logging.getLogger("pdf_reader.lifecycle")
 
 
 class TranslateResult(Protocol):
@@ -20,6 +20,7 @@ def finish_translation(
     translate_result: TranslateResult,
     replace_page: Callable[[str], None],
     glossary_cache_path: Path | None,
+    page: int = -1,
 ) -> None:
     translated_pdf = translate_result.mono_pdf_path
     if translated_pdf is None and translate_result.dual_pdf_path is not None:
@@ -37,12 +38,14 @@ def finish_translation(
         translate_result.auto_extracted_glossary_path,
     )
     elapsed = time.time() - merge_start
-    debug_trace.log_glossary_merge("merge_done", page=-1, elapsed=f"{elapsed:.2f}")
+    logger.info("[page=%d] translation finished: page processed", page)
+    debug_trace.log_glossary_merge("merge_done", page=page, elapsed=f"{elapsed:.2f}")
 
 
 def merge_glossary_only(
     translate_result: TranslateResult,
     glossary_cache_path: Path | None,
+    page: int = -1,
 ) -> None:
     cumulative_glossary_file: Path | None = None
     if glossary_cache_path is not None:
@@ -53,4 +56,5 @@ def merge_glossary_only(
         translate_result.auto_extracted_glossary_path,
     )
     elapsed = time.time() - merge_start
-    debug_trace.log_glossary_merge("merge_done", page=-1, elapsed=f"{elapsed:.2f}")
+    logger.info("[page=%d] glossary merge completed in %.2fs", page, elapsed)
+    debug_trace.log_glossary_merge("merge_done", page=page, elapsed=f"{elapsed:.2f}")

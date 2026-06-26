@@ -165,6 +165,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                 translate_result,
                 ctx.replace_page,
                 ctx.glossary_cache_path,
+                ctx.page,
             )
 
             yield (
@@ -238,7 +239,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
             if translated_pdf is not None:
                 ctx.replace_pages(str(translated_pdf))
 
-            merge_glossary_only(translate_result, ctx.glossary_cache_path)
+            merge_glossary_only(translate_result, ctx.glossary_cache_path, ctx.from_page)
 
             yield (
                 "data: "
