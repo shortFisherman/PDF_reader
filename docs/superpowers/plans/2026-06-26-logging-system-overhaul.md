@@ -418,12 +418,12 @@ pytest -q
 
 ### 收尾检查清单
 
-- [ ] `ruff check .` 绿
-- [ ] `ruff format --check .` 绿
-- [ ] `pytest -q` 全绿
-- [ ] `app.py` 无 `logging.basicConfig`（5.2 源码断言通过）
-- [ ] `debug_trace.py` 无 `AutomaticTermExtractor` / monkey-patch
-- [ ] 全项目 grep 无日志语句输出 api_key 原值
-- [ ] 翻译流日志均带 `[page=` / `[batch=`（5.3 约定断言通过）
-- [ ] `AGENTS.md` 已更新日志约定
+- [x] `ruff check .` 绿
+- [x] `ruff format --check .` 绿
+- [x] `pytest -q` 全绿
+- [x] `app.py` 无 `logging.basicConfig`（5.2 源码断言通过）
+- [x] `debug_trace.py` 无 `AutomaticTermExtractor` / monkey-patch
+- [x] 全项目 grep 无日志语句输出 api_key 原值
+- [x] 翻译流日志均带 `[page=` / `[batch=`（5.3 约定断言通过）
+- [x] `AGENTS.md` 已更新日志约定
 - [ ] 手动验证 1-5 全通过
