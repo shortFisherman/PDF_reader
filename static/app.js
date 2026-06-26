@@ -240,7 +240,6 @@ async function onTranslateClick() {
 }
 
 const BATCH_CONFIRM_THRESHOLD = 10;
-const BATCH_CONFIRM_HINT = '通常十页约需 300–400 秒';
 
 function setBatchControlsDisabled(disabled) {
     els.rangeTranslateBtn.disabled = disabled;
@@ -271,7 +270,11 @@ async function runBatchTranslate(from, to) {
 
     const rangeCount = to - from + 1;
     if (rangeCount > BATCH_CONFIRM_THRESHOLD) {
-        if (!window.confirm(BATCH_CONFIRM_HINT)) return;
+        const lowSec = rangeCount * 30;
+        const highSec = rangeCount * 40;
+        const lowMin = Math.round(lowSec / 60);
+        const highMin = Math.round(highSec / 60);
+        if (!window.confirm(`共 ${rangeCount} 页，预计 ${lowSec}–${highSec} 秒（约 ${lowMin}–${highMin} 分钟），确认翻译？`)) return;
     }
 
     isTranslating = true;
