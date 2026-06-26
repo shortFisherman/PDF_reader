@@ -2,7 +2,7 @@ import { getElements, createPageEl, calculatePlaceholderHeight } from './modules
 import { setupIntersectionObserver } from './modules/lazy-loader.js';
 import { setupScrollSync, setupPageDetection, createSettleGate } from './modules/scroll-sync.js';
 import { fetchStageLabels, getStageLabel } from './modules/stages.js';
-import { translateCurrentPage } from './modules/translator.js';
+import { translateCurrentPage, translateBatch } from './modules/translator.js';
 import { setupZoom } from './modules/zoom.js';
 
 const API = '/api';
@@ -32,6 +32,8 @@ function init() {
         els.promptToggle.textContent = promptVisible ? '- Prompt' : '+ Prompt';
     });
     els.translateBtn.addEventListener('click', onTranslateClick);
+    els.rangeTranslateBtn.addEventListener('click', onBatchTranslateClick);
+    els.fullTranslateBtn.addEventListener('click', onFullTranslateClick);
     els.zoomReset.addEventListener('click', () => {
         if (zoomInst) zoomInst.resetZoom();
     });
@@ -170,6 +172,7 @@ async function onTranslateClick() {
     if (isTranslating) return;
     const targetPage = currentPage;
     isTranslating = true;
+    setBatchControlsDisabled(true);
     els.translateBtn.disabled = true;
     els.translateBtn.textContent = 'Translating...';
     els.progressBar.classList.add('active');
@@ -231,8 +234,126 @@ async function onTranslateClick() {
     } finally {
         isTranslating = false;
         els.translateBtn.disabled = false;
+        setBatchControlsDisabled(false);
         els.translateBtn.textContent = 'Translate';
     }
+}
+
+const BATCH_CONFIRM_THRESHOLD = 10;
+const BATCH_CONFIRM_HINT = '通常十页约需 300–400 秒';
+
+function setBatchControlsDisabled(disabled) {
+    els.rangeTranslateBtn.disabled = disabled;
+    els.fullTranslateBtn.disabled = disabled;
+    els.fromPage.disabled = disabled;
+    els.toPage.disabled = disabled;
+}
+
+async function runBatchTranslate(from, to) {
+    if (isTranslating) return;
+
+    const pageCnt = pageCount;
+    if (!Number.isInteger(from) || !Number.isInteger(to)) {
+        els.progressStatusText.textContent = '请输入有效页码';
+        els.progressStatusText.classList.add('error');
+        return;
+    }
+    if (from < 1 || to < 1 || from > pageCnt || to > pageCnt) {
+        els.progressStatusText.textContent = '页码超出范围';
+        els.progressStatusText.classList.add('error');
+        return;
+    }
+    if (from > to) {
+        els.progressStatusText.textContent = '起页不能大于止页';
+        els.progressStatusText.classList.add('error');
+        return;
+    }
+
+    const rangeCount = to - from + 1;
+    if (rangeCount > BATCH_CONFIRM_THRESHOLD) {
+        if (!window.confirm(BATCH_CONFIRM_HINT)) return;
+    }
+
+    isTranslating = true;
+    setBatchControlsDisabled(true);
+    els.translateBtn.disabled = true;
+    els.translateBtn.textContent = 'Translating...';
+    els.progressBar.classList.add('active');
+    els.progressFill.style.width = '0%';
+    els.progressStatusText.textContent = `翻译第 ${from}-${to} 页（共 ${rangeCount} 页）· `;
+    els.progressStatusText.classList.remove('error', 'done');
+    if (statusTimer) { clearTimeout(statusTimer); statusTimer = null; }
+
+    try {
+        await translateBatch(from, to, {
+            prompt: els.promptInput.value.trim() || null,
+            onBatchInfo(f, t, total) {
+                els.progressStatusText.textContent = `翻译第 ${f}-${t} 页（共 ${total} 页）· `;
+            },
+            onStageChange(stage, labelText) {
+                const base = `翻译第 ${from}-${to} 页（共 ${rangeCount} 页）· `;
+                els.progressStatusText.textContent = base + labelText;
+                if (stage === 'finish') {
+                    els.progressStatusText.classList.add('done');
+                    els.progressStatusText.classList.remove('error');
+                } else {
+                    els.progressStatusText.classList.remove('done', 'error');
+                }
+            },
+            onProgress(percent) {
+                els.progressFill.style.width = `${percent}%`;
+            },
+            onFinish() {
+                els.progressFill.style.width = '100%';
+                els.progressStatusText.textContent = getStageLabel('finish');
+                els.progressStatusText.classList.add('done');
+                els.progressStatusText.classList.remove('error');
+                statusTimer = setTimeout(() => {
+                    els.progressBar.classList.remove('active');
+                    els.progressStatusText.textContent = '';
+                    els.progressStatusText.classList.remove('done', 'error');
+                }, 2000);
+
+                // Batch refresh right-column translated images in range
+                for (let p = from - 1; p <= to - 1; p++) {
+                    const rightEl = els.rightCol.querySelector(`.page-container[data-page="${p}"]`);
+                    if (rightEl) {
+                        if (rightEl.dataset.loaded === 'true') {
+                            unloadPageImage(rightEl);
+                            loadPageImage(rightEl);
+                        }
+                        rightEl.classList.add('translated');
+                    }
+                }
+                loadTranslatedState();
+            },
+            onError(message) {
+                els.progressBar.classList.remove('active');
+                els.progressStatusText.textContent = message;
+                els.progressStatusText.classList.add('error');
+                els.progressStatusText.classList.remove('done');
+                statusTimer = setTimeout(() => {
+                    els.progressStatusText.textContent = '';
+                    els.progressStatusText.classList.remove('error', 'done');
+                }, 3000);
+            },
+        });
+    } finally {
+        isTranslating = false;
+        setBatchControlsDisabled(false);
+        els.translateBtn.disabled = false;
+        els.translateBtn.textContent = 'Translate';
+    }
+}
+
+async function onBatchTranslateClick() {
+    const from = parseInt(els.fromPage.value, 10);
+    const to = parseInt(els.toPage.value, 10);
+    await runBatchTranslate(from, to);
+}
+
+async function onFullTranslateClick() {
+    await runBatchTranslate(1, pageCount);
 }
 
 init();
