@@ -67,9 +67,9 @@ const allCode = [
     stripExports(readFileSync(resolve(__dirname, '..', 'static', 'modules', 'translator.js'), 'utf-8')),
 ].join('\n');
 
-const wrappedCode = `\n${allCode}\nreturn { readSSEStream, translateCurrentPage, getStageLabel };\n`;
+const wrappedCode = `\n${allCode}\nreturn { readSSEStream, translateCurrentPage, translateBatch, getStageLabel };\n`;
 
-const { readSSEStream, translateCurrentPage, getStageLabel } = (new Function(wrappedCode))();
+const { readSSEStream, translateCurrentPage, translateBatch, getStageLabel } = (new Function(wrappedCode))();
 
 // ============================================================
 // sse-client Tests
@@ -279,6 +279,81 @@ console.log('--- Test 3.5: prompt forwarding ---');
         onError: () => {},
     });
     assert(capturedBody === '{"prompt":null}', `Test 3.5.2: null prompt in body, got "${capturedBody}"`);
+}
+
+// ============================================================
+// translator translateBatch Tests
+// ============================================================
+
+// Test 4.1: translateBatch emits batch_info -> progress -> finish
+console.log('--- Test 4.1: translateBatch batch_info/progress/finish ---');
+{
+    const record = [];
+    const sseBody = [
+        'data: {"type":"batch_info","from":2,"to":5,"total":4}\n',
+        '\n',
+        'data: {"type":"progress","progress":10,"stage":"layout_analysis","stage_current":0,"stage_total":0}\n',
+        '\n',
+        'data: {"type":"progress","progress":60,"stage":"translating","stage_current":1,"stage_total":2}\n',
+        '\n',
+        'data: {"type":"finish"}\n',
+        '\n',
+    ].join('');
+    const stream = makeSSEStream(sseBody);
+    const mockFetchResp = createMockResponse({ ok: true, body: stream });
+    globalThis.fetch = async (url, init) => mockFetchResp;
+
+    const callbacks = {
+        onBatchInfo: (f, t, total) => record.push({ type: 'batchInfo', f, t, total }),
+        onStageChange: (stage, label) => record.push({ type: 'stage', stage, label }),
+        onProgress: (p) => record.push({ type: 'progress', p }),
+        onFinish: () => record.push({ type: 'finish' }),
+        onError: (msg) => record.push({ type: 'error', msg }),
+        prompt: null,
+    };
+
+    await translateBatch(2, 5, callbacks);
+
+    assert(record[0].type === 'batchInfo' && record[0].f === 2 && record[0].t === 5 && record[0].total === 4, 'Test 4.1.1: onBatchInfo first');
+    assert(record.some(r => r.type === 'progress' && r.p === 60), 'Test 4.1.2: onProgress(60) called');
+    assert(record.some(r => r.type === 'stage' && r.label.includes('正在翻译')), 'Test 4.1.3: onStageChange translating');
+    assert(record.some(r => r.type === 'stage' && r.label.includes('第 1/2 段')), 'Test 4.1.4: stage suffix');
+    assert(record[record.length - 1].type === 'finish', 'Test 4.1.5: onFinish last');
+    assert(!record.some(r => r.type === 'error'), 'Test 4.1.6: no onError');
+}
+
+// Test 4.2: translateBatch HTTP !ok -> onError
+console.log('--- Test 4.2: translateBatch HTTP not ok -> onError ---');
+{
+    const record = [];
+    const mockFetchResp = createMockResponse({ ok: false, jsonData: { error: 'page out of range' } });
+    globalThis.fetch = async (url, init) => mockFetchResp;
+
+    await translateBatch(0, 1, {
+        onBatchInfo: () => {}, onStageChange: () => {}, onProgress: () => {},
+        onFinish: () => record.push('finish'),
+        onError: (msg) => record.push({ type: 'error', msg }),
+        prompt: null,
+    });
+
+    assert(record.length === 1, 'Test 4.2.1: exactly 1 callback');
+    assert(record[0].type === 'error' && record[0].msg === 'page out of range', 'Test 4.2.2: onError(msg)');
+    assert(!record.includes('finish'), 'Test 4.2.3: no onFinish');
+}
+
+// Test 4.3: translateBatch prompt forwarded in body
+console.log('--- Test 4.3: translateBatch prompt forwarding ---');
+{
+    let capturedBody = null;
+    const stream = makeSSEStream('data: {"type":"batch_info","from":1,"to":1,"total":1}\n\ndata: {"type":"finish"}\n\n');
+    const mockFetchResp = createMockResponse({ ok: true, body: stream });
+    globalThis.fetch = async (url, init) => { capturedBody = init.body; return mockFetchResp; };
+
+    await translateBatch(1, 1, {
+        onBatchInfo: () => {}, onStageChange: () => {}, onProgress: () => {},
+        onFinish: () => {}, onError: () => {}, prompt: '正式语气',
+    });
+    assert(capturedBody === '{"from":1,"to":1,"prompt":"正式语气"}', `Test 4.3.1: body has from/to/prompt`);
 }
 
 // ============================================================
