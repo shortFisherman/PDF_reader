@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 
 from flask import (
@@ -19,6 +20,8 @@ from file_hash import sha256
 from pdf_renderer import render_page
 from translation_settings import build_settings
 
+logger = logging.getLogger("pdf_reader.routes")
+
 bp = Blueprint("main", __name__)
 
 
@@ -34,7 +37,9 @@ def _get_state():
 def open_pdf():
     data = request.get_json(silent=True) or {}
     pdf_path = data.get("path", "").strip()
+    logger.debug("[route] open_pdf path=%s", pdf_path)
     if not pdf_path or not os.path.isfile(pdf_path):
+        logger.debug("[route] open_pdf invalid path")
         return error_response("file not found", 400)
 
     state = _get_state()
@@ -76,10 +81,13 @@ def index():
 
 @bp.route("/api/translate/<int:page>", methods=["POST"])
 def translate_page(page: int):
+    logger.debug("[route] translate_page page=%d", page)
     state = _get_state()
     if state.left_doc is None:
+        logger.debug("[route] translate_page no doc")
         return error_response("no document opened", 400)
     if page < 0 or page >= state.page_count:
+        logger.debug("[route] translate_page page out of range")
         return error_response("page out of range", 400)
 
     data = request.get_json(silent=True) or {}
@@ -111,18 +119,23 @@ def translate_page(page: int):
 def translate_batch():
     state = _get_state()
     if state.left_doc is None:
+        logger.debug("[route] translate_batch no doc")
         return error_response("no document opened", 400)
 
     data = request.get_json(silent=True) or {}
     from_page = data.get("from")
     to_page = data.get("to")
+    logger.debug("[route] translate_batch from=%s to=%s", from_page, to_page)
     page_count = state.page_count
 
     if not isinstance(from_page, int) or not isinstance(to_page, int):
+        logger.debug("[route] translate_batch invalid page numbers")
         return error_response("invalid page numbers", 400)
     if from_page < 1 or to_page < 1 or from_page > page_count or to_page > page_count:
+        logger.debug("[route] translate_batch page out of range")
         return error_response("page out of range", 400)
     if from_page > to_page:
+        logger.debug("[route] translate_batch invalid page range")
         return error_response("invalid page range", 400)
 
     user_prompt = (data.get("prompt") or "").strip() or None
