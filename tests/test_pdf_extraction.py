@@ -1,3 +1,4 @@
+import logging
 import tempfile
 from pathlib import Path
 
@@ -80,3 +81,65 @@ def test_extract_pages_non_contiguous_indices():
     assert "P4" in out_doc[2].get_text()
     out_doc.close()
     src_doc.close()
+
+
+def test_extract_single_page_debug_off_no_output(caplog):
+    caplog.set_level(logging.INFO, logger="pdf_reader.extract")
+
+    src_doc = pymupdf.open()
+    src_doc.new_page(width=612, height=792)
+    src_doc.new_page(width=612, height=792)
+    tmpdir = Path(tempfile.mkdtemp())
+    extract_single_page(src_doc, 0, tmpdir)
+    src_doc.close()
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.extract"]
+    assert len(records) == 0, f"expected no DEBUG from extract_single_page, got: {[r.message for r in records]}"
+
+
+def test_extract_single_page_debug_on_logs_debug(caplog):
+    caplog.set_level(logging.DEBUG, logger="pdf_reader.extract")
+
+    src_doc = pymupdf.open()
+    src_doc.new_page(width=612, height=792)
+    src_doc.new_page(width=612, height=792)
+    tmpdir = Path(tempfile.mkdtemp())
+    extract_single_page(src_doc, 1, tmpdir)
+    src_doc.close()
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.extract" and r.levelno == logging.DEBUG]
+    assert len(records) >= 1, f"expected DEBUG from extract_single_page, got: {[r.message for r in caplog.records]}"
+    msg = records[0].message
+    assert "[page=1]" in msg
+    assert str(tmpdir / "page.pdf") in msg
+
+
+def test_extract_pages_debug_off_no_output(caplog):
+    caplog.set_level(logging.INFO, logger="pdf_reader.extract")
+
+    src_doc = pymupdf.open()
+    for i in range(4):
+        src_doc.new_page(width=612, height=792)
+    tmpdir = Path(tempfile.mkdtemp())
+    extract_pages(src_doc, [0, 1, 2], tmpdir)
+    src_doc.close()
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.extract"]
+    assert len(records) == 0, f"expected no DEBUG from extract_pages, got: {[r.message for r in records]}"
+
+
+def test_extract_pages_debug_on_logs_debug(caplog):
+    caplog.set_level(logging.DEBUG, logger="pdf_reader.extract")
+
+    src_doc = pymupdf.open()
+    for i in range(4):
+        src_doc.new_page(width=612, height=792)
+    tmpdir = Path(tempfile.mkdtemp())
+    extract_pages(src_doc, [0, 1, 2], tmpdir)
+    src_doc.close()
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.extract" and r.levelno == logging.DEBUG]
+    assert len(records) >= 1, f"expected DEBUG from extract_pages, got: {[r.message for r in caplog.records]}"
+    msg = records[0].message
+    assert "[batch=1-3]" in msg
+    assert str(tmpdir / "pages.pdf") in msg
