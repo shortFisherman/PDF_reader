@@ -94,23 +94,18 @@ trace_logger = logging.getLogger("pdf_reader.debug_trace")
 
 
 def log_step(step: str, *args: object) -> None:
-    if config.DEBUG:
-        trace_logger.info(f"[step] {step}", *args)
+    logger.info(f"[step] {step}", *args)
 
 
 def log_token_usage(token_usage: dict) -> None:
-    if not config.DEBUG:
-        return
     if not token_usage:
         return
     total = token_usage.get("main", {}).get("total", 0)
     term_total = token_usage.get("term", {}).get("total", 0)
     if total or term_total:
-        trace_logger.info("Token usage: main=%d, term=%d", total, term_total)
+        logger.debug("Token usage: main=%d, term=%d", total, term_total)
 
 
 def log_glossary_merge(action: str, **fields) -> None:
-    if not config.DEBUG:
-        return
     parts = [f"{k}={v}" for k, v in fields.items()]
-    trace_logger.info("[glossary %s] %s", action, " ".join(parts))
+    logger.info("[glossary %s] %s", action, " ".join(parts))

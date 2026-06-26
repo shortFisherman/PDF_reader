@@ -13,37 +13,32 @@ def test_trace_logger_exists():
     assert debug_trace.trace_logger.level == logging.NOTSET
 
 
-def test_log_step_no_op_when_debug_false():
-    with patch("debug_trace.config") as mock_config:
-        mock_config.DEBUG = False
-        with patch.object(debug_trace.trace_logger, "info") as mock_info:
-            debug_trace.log_step("test step %d", 1)
-            mock_info.assert_not_called()
+def test_log_step_logs_info_when_debug_false():
+    """log_step produces INFO output even when config.DEBUG is False."""
+    with patch.object(debug_trace.logger, "info") as mock_info:
+        debug_trace.log_step("test step %d", 1)
+        mock_info.assert_called_once_with("[step] test step %d", 1)
 
 
-def test_log_step_logs_when_debug_true():
-    with patch("debug_trace.config") as mock_config:
-        mock_config.DEBUG = True
-        with patch.object(debug_trace.trace_logger, "info") as mock_info:
-            debug_trace.log_step("test step %d", 1)
-            mock_info.assert_called_once_with("[step] test step %d", 1)
+def test_log_step_logs_info():
+    """log_step always produces INFO output."""
+    with patch.object(debug_trace.logger, "info") as mock_info:
+        debug_trace.log_step("test step %d", 1)
+        mock_info.assert_called_once_with("[step] test step %d", 1)
 
 
 def test_log_token_usage_no_op_when_empty():
-    with patch("debug_trace.config") as mock_config:
-        mock_config.DEBUG = True
-        with patch.object(debug_trace.trace_logger, "info") as mock_info:
-            debug_trace.log_token_usage({})
-            mock_info.assert_not_called()
+    with patch.object(debug_trace.logger, "debug") as mock_debug:
+        debug_trace.log_token_usage({})
+        mock_debug.assert_not_called()
 
 
 def test_log_token_usage_logs_when_has_data():
-    with patch("debug_trace.config") as mock_config:
-        mock_config.DEBUG = True
-        token_usage = {"main": {"total": 100}, "term": {"total": 50}}
-        with patch.object(debug_trace.trace_logger, "info") as mock_info:
-            debug_trace.log_token_usage(token_usage)
-            mock_info.assert_called_once_with("Token usage: main=%d, term=%d", 100, 50)
+    """log_token_usage logs at DEBUG level when data is present."""
+    token_usage = {"main": {"total": 100}, "term": {"total": 50}}
+    with patch.object(debug_trace.logger, "debug") as mock_debug:
+        debug_trace.log_token_usage(token_usage)
+        mock_debug.assert_called_once_with("Token usage: main=%d, term=%d", 100, 50)
 
 
 def test_full_debug_trace_bytes_identical(tmp_path):
@@ -59,6 +54,7 @@ def test_full_debug_trace_bytes_identical(tmp_path):
     for h in original_handlers:
         debug_trace.trace_logger.removeHandler(h)
     debug_trace.trace_logger.addHandler(stream_handler)
+    debug_trace.trace_logger.setLevel(logging.DEBUG)
 
     try:
         with patch("debug_trace.config") as mock_config:
@@ -72,6 +68,7 @@ def test_full_debug_trace_bytes_identical(tmp_path):
                 debug_trace.log_step("merge glossary done (%.2fs)", 0.02)
     finally:
         debug_trace.trace_logger.removeHandler(stream_handler)
+        debug_trace.trace_logger.setLevel(logging.NOTSET)
         for h in original_handlers:
             debug_trace.trace_logger.addHandler(h)
 
@@ -90,8 +87,8 @@ def test_full_debug_trace_bytes_identical(tmp_path):
     assert "=== Debug session start: page 1 ===" in content
 
 
-def test_zero_overhead_no_io_when_debug_false(tmp_path):
-    """DEBUG=False: log_step, log_token_usage produce no IO with debug_session."""
+def test_level_stratification_when_debug_false(tmp_path):
+    """With DEBUG=False: log_step(INFO) still appears, log_token_usage(DEBUG) is suppressed."""
     glossary_path = tmp_path / "glossary"
     glossary_path.mkdir()
 
@@ -103,6 +100,7 @@ def test_zero_overhead_no_io_when_debug_false(tmp_path):
     for h in original_handlers:
         debug_trace.trace_logger.removeHandler(h)
     debug_trace.trace_logger.addHandler(stream_handler)
+    debug_trace.trace_logger.setLevel(logging.INFO)
 
     try:
         with patch("debug_trace.config") as mock_config:
@@ -113,11 +111,13 @@ def test_zero_overhead_no_io_when_debug_false(tmp_path):
                 debug_trace.log_token_usage({"main": {"total": 100}})
     finally:
         debug_trace.trace_logger.removeHandler(stream_handler)
+        debug_trace.trace_logger.setLevel(logging.NOTSET)
         for h in original_handlers:
             debug_trace.trace_logger.addHandler(h)
 
     output = buffer.getvalue()
-    assert output == ""
+    assert "[step] submit translate page 1" in output
+    assert "Token usage" not in output
 
     log_file = glossary_path / "debug_trace.log"
     assert not log_file.exists()
@@ -255,19 +255,17 @@ def test_debug_session_exception_safe(tmp_path):
     assert len(handlers_after) == len(handlers_before)
 
 
-def test_log_glossary_merge_logs_when_debug_true():
-    with patch("debug_trace.config") as mock_config:
-        mock_config.DEBUG = True
-        with patch.object(debug_trace.trace_logger, "info") as mock_info:
-            debug_trace.log_glossary_merge("merge_done", page=1, elapsed=0.02, entries=5)
-            mock_info.assert_called_once()
-            call_args = mock_info.call_args
-            assert "merge_done" in str(call_args)
+def test_log_glossary_merge_logs_info_always():
+    """log_glossary_merge always produces INFO output regardless of debug flag."""
+    with patch.object(debug_trace.logger, "info") as mock_info:
+        debug_trace.log_glossary_merge("merge_done", page=1, elapsed=0.02, entries=5)
+        mock_info.assert_called_once()
+        call_args = mock_info.call_args
+        assert "merge_done" in str(call_args)
 
 
-def test_log_glossary_merge_no_op_when_debug_false():
-    with patch("debug_trace.config") as mock_config:
-        mock_config.DEBUG = False
-        with patch.object(debug_trace.trace_logger, "info") as mock_info:
-            debug_trace.log_glossary_merge("merge_done", page=1)
-            mock_info.assert_not_called()
+def test_log_glossary_merge_logs_info_even_when_debug_false():
+    """log_glossary_merge produces INFO output even with config.DEBUG=False."""
+    with patch.object(debug_trace.logger, "info") as mock_info:
+        debug_trace.log_glossary_merge("merge_done", page=1)
+        mock_info.assert_called_once()
