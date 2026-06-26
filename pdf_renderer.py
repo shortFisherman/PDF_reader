@@ -1,4 +1,8 @@
+import logging
+
 import pymupdf
+
+logger = logging.getLogger("pdf_reader.render")
 
 
 def render_page(doc: pymupdf.Document, page_num: int, dpi: int) -> bytes:
@@ -6,4 +10,5 @@ def render_page(doc: pymupdf.Document, page_num: int, dpi: int) -> bytes:
         raise ValueError("page out of range")
     page = doc[page_num]
     pix = page.get_pixmap(dpi=dpi)
+    logger.debug("[render] page=%d dpi=%d", page_num, dpi)
     return pix.tobytes(output="png")
