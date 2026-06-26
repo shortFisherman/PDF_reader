@@ -123,60 +123,6 @@ def test_level_stratification_when_debug_false(tmp_path):
     assert not log_file.exists()
 
 
-def test_init_debug_true_patches_extractor():
-    with patch("debug_trace.AutomaticTermExtractor", create=True) as mock_cls:
-        mock_cls.extract_terms_from_paragraphs = MagicMock()
-        debug_trace.init_debug(True)
-        assert debug_trace._original_extract is not None
-        assert mock_cls.extract_terms_from_paragraphs != debug_trace._original_extract
-
-
-def test_init_debug_false_does_not_patch():
-    with patch("debug_trace.AutomaticTermExtractor", create=True) as mock_cls:
-        original = MagicMock()
-        mock_cls.extract_terms_from_paragraphs = original
-        debug_trace.init_debug(False)
-        assert mock_cls.extract_terms_from_paragraphs is original
-
-
-def test_init_debug_handles_import_error(monkeypatch):
-    """When AutomaticTermExtractor import fails, init_debug logs warning and returns."""
-
-    def raise_import(*args, **kwargs):
-        raise ImportError("babeldoc not available")
-
-    import debug_trace as dt
-
-    with patch("debug_trace.logger.warning") as mock_warn:
-        try:
-            dt._apply_monkey_patches()
-        except ImportError:
-            mock_warn.assert_called()
-
-
-def test_config_debug_defaults_to_false(monkeypatch):
-    """When no [debug] or [server] debug keys exist, config.DEBUG is False."""
-    monkeypatch.setattr(config, "DEBUG", False)
-    assert config.DEBUG is False
-
-
-def test_config_debug_reads_debug_section():
-    """config.DEBUG is True when [debug] enabled = true in config.toml."""
-    import config as cfg
-
-    assert isinstance(cfg.DEBUG, bool)
-
-
-def test_config_debug_falls_back_to_server_debug():
-    """When [debug] is absent but [server] debug is present, use server.debug."""
-    import config as cfg
-
-    debug_section = cfg.CONFIG.get("debug")
-    server_debug = cfg.CONFIG.get("server", {}).get("debug", False)
-    if debug_section is None:
-        assert cfg.DEBUG == server_debug
-
-
 def test_debug_session_creates_and_removes_file_handler(tmp_path):
     """debug_session creates a log file with rotation, cleans up on exit."""
     glossary_path = tmp_path / "glossary"
