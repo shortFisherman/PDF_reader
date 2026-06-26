@@ -8,6 +8,12 @@ import pytest
 
 import debug_trace
 from logging_config import setup_logging
+from sse_stream import (
+    GenerateBatchContext,
+    GenerateContext,
+    generate,
+    generate_batch,
+)
 from state import AppState
 from translation_orchestrator import TranslationError, run_translation
 
@@ -224,3 +230,90 @@ def test_translate_token_usage_visible_debug_on(caplog):
     msg = records[0].message
     assert "main=100" in msg
     assert "term=50" in msg
+
+
+# --- sse_stream generate / generate_batch logging ---
+
+
+def test_generate_logging_info_messages(caplog, tmp_path):
+    """generate() produces [page=N] submit, thread start/end, translate done at INFO. Token usage not visible."""
+    setup_logging(False)
+    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+
+    mock_result = MagicMock()
+    events = [
+        {"type": "progress_start", "stage": "layout_analysis"},
+        {"type": "finish", "translate_result": mock_result, "token_usage": {"main": {"total": 100}}},
+    ]
+
+    async def fake_stream(settings, file):
+        for evt in events:
+            yield evt
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = GenerateContext(
+        settings=MagicMock(),
+        replace_page=MagicMock(),
+        glossary_cache_path=None,
+        page=0,
+        glossary_paths=None,
+        cache_dir=cache_dir,
+        extract_page=MagicMock(return_value=Path(tmp_path / "fake_page.pdf")),
+    )
+
+    with patch("translation_orchestrator.do_translate_async_stream", fake_stream):
+        list(generate(ctx))
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
+    messages = [r.message for r in records]
+    assert any("[page=0] submit translate" in msg for msg in messages), f"Messages: {messages}"
+    assert any("[page=0] thread start" in msg for msg in messages), f"Messages: {messages}"
+    assert any("[page=0] thread end" in msg for msg in messages), f"Messages: {messages}"
+    assert any("translate done" in msg for msg in messages), f"Messages: {messages}"
+
+    token_records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace" and "Token usage" in r.message]
+    assert len(token_records) == 0, f"token_usage should not be visible at INFO, got: {[r.message for r in token_records]}"
+
+
+def test_generate_batch_logging_info_messages(caplog, tmp_path):
+    """generate_batch() produces [batch=N-M] submit, thread start/end, translate done at INFO. Token usage not visible."""
+    setup_logging(False)
+    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+
+    mock_result = MagicMock()
+    events = [
+        {"type": "progress_start", "stage": "layout_analysis"},
+        {"type": "finish", "translate_result": mock_result, "token_usage": {"main": {"total": 200}}},
+    ]
+
+    async def fake_stream(settings, file):
+        for evt in events:
+            yield evt
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = GenerateBatchContext(
+        settings=MagicMock(),
+        from_page=2,
+        to_page=5,
+        page_indices=[1, 2, 3, 4],
+        replace_pages=MagicMock(),
+        glossary_cache_path=None,
+        glossary_paths=None,
+        cache_dir=cache_dir,
+        extract_pages=MagicMock(return_value=Path(tmp_path / "fake_pages.pdf")),
+    )
+
+    with patch("translation_orchestrator.do_translate_async_stream", fake_stream):
+        list(generate_batch(ctx))
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
+    messages = [r.message for r in records]
+    assert any("[batch=2-5] submit translate" in msg for msg in messages), f"Messages: {messages}"
+    assert any("[batch=2-5] thread start" in msg for msg in messages), f"Messages: {messages}"
+    assert any("[batch=2-5] thread end" in msg for msg in messages), f"Messages: {messages}"
+    assert any("[batch=2-5] translate done" in msg for msg in messages), f"Messages: {messages}"
+
+    token_records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace" and "Token usage" in r.message]
+    assert len(token_records) == 0, f"token_usage should not be visible at INFO, got: {[r.message for r in token_records]}"
