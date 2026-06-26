@@ -168,16 +168,21 @@ def test_debug_session_rotates_existing_log(tmp_path):
     existing_log = glossary_path / "debug_trace.log"
     existing_log.write_text("old content", encoding="utf-8")
 
-    with patch("debug_trace.config") as mock_config:
-        mock_config.DEBUG = True
+    original_level = debug_trace.trace_logger.level
+    debug_trace.trace_logger.setLevel(logging.DEBUG)
+    try:
+        with patch("debug_trace.config") as mock_config:
+            mock_config.DEBUG = True
 
-        with debug_trace.debug_session(glossary_path, page=1):
-            new_content = (glossary_path / "debug_trace.log").read_text(encoding="utf-8")
-            assert "=== Debug session start: page 1 ===" in new_content
+            with debug_trace.debug_session(glossary_path, page=1):
+                new_content = (glossary_path / "debug_trace.log").read_text(encoding="utf-8")
+                assert "=== Debug session start: page 1 ===" in new_content
 
-        rotated_files = list(glossary_path.glob("debug_trace.*.log"))
-        assert len(rotated_files) == 1
-        assert rotated_files[0].read_text(encoding="utf-8") == "old content"
+            rotated_files = list(glossary_path.glob("debug_trace.*.log"))
+            assert len(rotated_files) == 1
+            assert rotated_files[0].read_text(encoding="utf-8") == "old content"
+    finally:
+        debug_trace.trace_logger.setLevel(original_level)
 
 
 def test_debug_session_exception_safe(tmp_path):

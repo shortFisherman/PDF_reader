@@ -2,6 +2,8 @@
 comet_change: logging-system-overhaul
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-26-logging-system-overhaul
+status: final
 ---
 
 # Design Doc: Logging System Overhaul

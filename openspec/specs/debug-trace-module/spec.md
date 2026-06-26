@@ -5,7 +5,7 @@ TBD - created by archiving change isolate-debug-tracing. Update Purpose after ar
 ## Requirements
 ### Requirement: Debug trace module isolation
 
-The system SHALL provide a dedicated `debug_trace` module that encapsulates all debug tracing concerns: conditional monkey-patching, per-translation file handler management with log rotation, and step/token/glossary trace logging. Business code SHALL interact with debug tracing only through this module's interfaces. The `debug_session` context manager SHALL internally handle file handler creation and cleanup without exposing separate `setup_file_handler` / `cleanup_file_handler` public functions that duplicate its logic.
+The system SHALL provide a `debug_trace` module that encapsulates debug-detail tracing concerns: per-translation file handler management with log rotation (via `debug_session`), and step/token/glossary trace logging. Business code SHALL interact with debug tracing only through this module's interfaces. The `debug_session` context manager SHALL internally handle file handler creation and cleanup without exposing separate `setup_file_handler` / `cleanup_file_handler` public functions that duplicate its logic. The module SHALL NOT perform monkey-patching of third-party libraries; the former `AutomaticTermExtractor` monkey-patch is removed.
 
 #### Scenario: Business code uses debug_trace interfaces
 
@@ -21,6 +21,11 @@ The system SHALL provide a dedicated `debug_trace` module that encapsulates all 
 
 - **WHEN** `debug_trace.py` is inspected
 - **THEN** the file handler creation/cleanup logic SHALL exist in exactly one place (`debug_session`), not duplicated in separate public functions
+
+#### Scenario: No monkey-patching
+
+- **WHEN** `debug_trace.py` is inspected
+- **THEN** there is no `_apply_monkey_patches`, no `patched_extract`, no `_original_extract`, and no `AutomaticTermExtractor` import or attribute reassignment
 
 #### Scenario: No inline debug checks in route/service code
 

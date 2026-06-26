@@ -106,17 +106,24 @@ class TestSetupLoggingIdempotent:
 
 
 class TestThirdPartyLoggerDemotion:
-    """第三方 logger 降级为 DEBUG"""
+    """第三方 logger：debug off 时抬到 WARNING 屏蔽 INFO；debug on 时降到 DEBUG 放行细节"""
 
     @pytest.mark.parametrize("logger_name", ["werkzeug", "pdf2zh_next", "babeldoc"])
-    def test_effective_level_is_debug_after_setup(self, tmp_path, logger_name):
-        """setup_logging(False) 后第三方 logger effective level 为 DEBUG"""
+    def test_level_is_warning_when_debug_off(self, tmp_path, logger_name):
+        """setup_logging(False) 后第三方 logger effective level 为 WARNING"""
         with patch("logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
+        assert logging.getLogger(logger_name).getEffectiveLevel() == logging.WARNING
+
+    @pytest.mark.parametrize("logger_name", ["werkzeug", "pdf2zh_next", "babeldoc"])
+    def test_level_is_debug_when_debug_on(self, tmp_path, logger_name):
+        """setup_logging(True) 后第三方 logger effective level 为 DEBUG"""
+        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+            logging_config.setup_logging(True)
         assert logging.getLogger(logger_name).getEffectiveLevel() == logging.DEBUG
 
-    def test_debug_messages_pass_through_when_demoted(self, tmp_path):
-        """降级后第三方 logger 的 DEBUG 消息可通过（证明门限未抬高）"""
+    def test_info_blocked_when_debug_off(self, tmp_path):
+        """debug off 时第三方 logger 的 INFO/DEBUG 消息被 logger 级别拦下"""
         with patch("logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
 
@@ -129,8 +136,28 @@ class TestThirdPartyLoggerDemotion:
 
         wk.debug("debug msg")
         wk.info("info msg")
+        wk.warning("warn msg")
 
-        assert len(records) == 2, "DEBUG 与 INFO 消息均应通过"
+        assert len(records) == 1, "仅 WARNING 应通过；DEBUG/INFO 被拦下"
+        assert records[0].levelno == logging.WARNING
+        wk.removeHandler(handler)
+        handler.close()
+
+    def test_info_passes_when_debug_on(self, tmp_path):
+        """debug on 时第三方 logger 的 INFO 消息可通过（细节可见）"""
+        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+            logging_config.setup_logging(True)
+
+        wk = logging.getLogger("werkzeug")
+        records = []
+        handler = logging.Handler()
+        handler.emit = lambda record: records.append(record)
+        handler.setLevel(logging.DEBUG)
+        wk.addHandler(handler)
+
+        wk.info("info msg")
+
+        assert len(records) == 1, "DEBUG 模式下 INFO 应通过"
         wk.removeHandler(handler)
         handler.close()
 
@@ -147,9 +174,9 @@ class TestThirdPartyLoggerDemotion:
         pdf.addHandler(isolate)
 
         wk = logging.getLogger("werkzeug")
-        wk.info("should not reach pdf_reader handler")
+        wk.warning("should not reach pdf_reader handler")
 
-        assert len(records) == 0, "第三方 logger INFO 不应进入 pdf_reader handler"
+        assert len(records) == 0, "第三方 logger 消息不应进入 pdf_reader handler"
         pdf.removeHandler(isolate)
         isolate.close()
 

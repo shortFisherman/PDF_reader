@@ -1,5 +1,8 @@
-## ADDED Requirements
+# application-logging Specification
 
+## Purpose
+TBD - created by archiving change logging-system-overhaul. Update Purpose after archive.
+## Requirements
 ### Requirement: Centralized logging configuration
 
 The system SHALL provide a `logging_config` module that performs all logging setup via a single `setup_logging(debug: bool)` entry point, called once at application startup. The setup SHALL configure the root `pdf_reader.*` logger namespace, per-module child loggers, console + rotating file handlers, and formatters. `app.py` SHALL NOT use `logging.basicConfig`; all logging configuration SHALL flow through `logging_config.setup_logging`.
@@ -120,12 +123,14 @@ The system SHALL, when `sse_stream.generate` / `generate_batch` catches an excep
 
 The system SHALL, at startup, emit one INFO record under `pdf_reader.app` summarizing the active configuration: provider, model, lang_in, lang_out, cache_dir, dpi, and debug state. The API key SHALL NOT appear in the summary.
 
+#### Scenario: Startup log contains config summary and excludes api_key
+
 - **WHEN** the application starts
 - **THEN** an INFO record under `pdf_reader.app` lists provider, model, lang_in, lang_out, cache_dir, dpi, and debug flag, and does not contain the api_key value
 
 ### Requirement: Third-party library noise demotion
 
-The system SHALL set the `werkzeug`, `pdf2zh_next`, and `babeldoc` top-level loggers to DEBUG by default, so their INFO records do not appear when debug is off. When debug is on, these loggers SHALL remain at DEBUG (their detail becomes visible because the root handler level permits DEBUG).
+The system SHALL demote the `werkzeug`, `pdf2zh_next`, and `babeldoc` top-level loggers based on the debug flag: WARNING when debug is off (suppressing their INFO/DEBUG records) and DEBUG when debug is on (so their detail becomes visible because the root handler level permits DEBUG).
 
 #### Scenario: Werkzeug request logs hidden when debug off
 
@@ -135,7 +140,7 @@ The system SHALL set the `werkzeug`, `pdf2zh_next`, and `babeldoc` top-level log
 #### Scenario: Third-party detail visible when debug on
 
 - **WHEN** debug is on
-- **THEN** INFO records from `pdf2zh_next` and `babeldoc` are visible because the handlers accept DEBUG-and-above
+- **THEN** the third-party loggers are at DEBUG, and INFO records from `pdf2zh_next` and `babeldoc` are visible because the handlers accept DEBUG-and-above
 
 ### Requirement: Console and rotating file dual output
 
@@ -159,3 +164,4 @@ The system SHALL NOT log API keys or the raw `api_key` config value. Settings su
 
 - **WHEN** any logging statement executes, including startup summary and error context
 - **THEN** the api_key value does not appear in any log record
+

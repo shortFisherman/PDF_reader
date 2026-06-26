@@ -11,21 +11,9 @@ If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is 
 
 ## 日志约定 (Logging Conventions)
 
-### Logger 命名空间
-| Namespace | Module | Level Strategy |
-|-----------|--------|---------------|
-| `pdf_reader.app` | app.py | INFO startup summary |
-| `pdf_reader.state` | state.py | INFO success / ERROR failure |
-| `pdf_reader.render` | pdf_renderer.py | DEBUG only |
-| `pdf_reader.extract` | pdf_extraction.py | DEBUG only |
-| `pdf_reader.translate` | translation_orchestrator.py, sse_stream.py | INFO flow / ERROR exceptions / WARNING timeout / DEBUG token |
-| `pdf_reader.lifecycle` | translation_lifecycle.py | INFO |
-| `pdf_reader.glossary` | glossary_service.py | DEBUG resolve / WARNING failure |
-| `pdf_reader.routes` | routes.py | DEBUG only |
-| `pdf_reader.engine` | engine_resolver.py, translation_settings.py | INFO engine / DEBUG settings |
-| `pdf_reader.debug_trace` | debug_trace.py | INFO flow skeleton / DEBUG details |
+新模块写日志前先看 `logging_config.py` / `debug_trace.py` 顶部的 `getLogger("pdf_reader.<concern>")` 命名空间分配，沿用同款命名。
 
-### 日志级别策略
+### 级别策略
 - **ERROR**: 请求级失败，带 exc_info
 - **WARNING**: 可恢复降级（超时、文件缺失）
 - **INFO**: 流程里程碑常驻（开启、翻译、替换、合并完成）
@@ -34,11 +22,6 @@ If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is 
 ### page 关联前缀
 - 翻译流日志自带 `[page=N]` 或 `[batch=from-to]` 前缀
 - 由调用点在消息文本中内联拼入，formatter 不注入
-
-### 配置入口
-- `logging_config.setup_logging(debug)` 统一配置，替代以往的 `logging.basicConfig`
-- `debug=True` → 根 logger 为 DEBUG，第三方 logger 降级为 DEBUG
-- `debug=False` → 根 logger 为 INFO，第三方 logger 降级为 DEBUG
 
 ### 安全
 - 日志中不输出 api_key 原值

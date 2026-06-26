@@ -2,6 +2,7 @@
 change: logging-system-overhaul
 design-doc: docs/superpowers/specs/2026-06-26-logging-system-overhaul-design.md
 base-ref: 022162846f082e987df8eb9ab1c0cc081c22ab7b
+archived-with: 2026-06-26-logging-system-overhaul
 ---
 
 # 实现计划：Logging System Overhaul
@@ -43,6 +44,7 @@ base-ref: 022162846f082e987df8eb9ab1c0cc081c22ab7b
 - **[TDD-可选]**：可写测试但实现简单，先实现再补测亦可。
 - **[非TDD]**：纯删除/文档/配置类，无行为可先测，直接改 + 事后回归。
 
+archived-with: 2026-06-26-logging-system-overhaul
 ---
 
 ## 1. 日志配置基础设施
@@ -91,6 +93,7 @@ base-ref: 022162846f082e987df8eb9ab1c0cc081c22ab7b
 - **依赖**：1.1；与 2.4 协同。
 - **TDD**：先更新 `tests/test_app.py`（5.6）断言 `setup_logging` 被调用、`init_debug` 不再被调用，见红再改。
 
+archived-with: 2026-06-26-logging-system-overhaul
 ---
 
 ## 2. 重构 debug_trace.py
@@ -136,6 +139,7 @@ base-ref: 022162846f082e987df8eb9ab1c0cc081c22ab7b
 - **完成判定**：`debug_trace.py` 无 `init_debug`；`app.py` 无 `debug_trace.init_debug` 调用；`create_app()` 只调 `setup_logging`。
 - **依赖**：1.4、2.1。
 
+archived-with: 2026-06-26-logging-system-overhaul
 ---
 
 ## 3. 按模块插桩 — INFO 流程日志
@@ -262,6 +266,7 @@ base-ref: 022162846f082e987df8eb9ab1c0cc081c22ab7b
 - **完成判定**：`Using engine` INFO 出现在 `pdf_reader.engine`；`build_settings` 产 DEBUG 摘要无 api_key。
 - **依赖**：1.1；与 4.1 共享摘要构造器。
 
+archived-with: 2026-06-26-logging-system-overhaul
 ---
 
 ## 4. 启动配置摘要与安全
@@ -283,6 +288,7 @@ base-ref: 022162846f082e987df8eb9ab1c0cc081c22ab7b
 - **完成判定**：grep 结果中无任何日志语句直接输出 `config.MODEL_API_KEY` / `api_key` 原值；5.5 安全测试绿。
 - **依赖**：3.10、4.1。
 
+archived-with: 2026-06-26-logging-system-overhaul
 ---
 
 ## 5. 测试更新与新增
@@ -358,6 +364,7 @@ base-ref: 022162846f082e987df8eb9ab1c0cc081c22ab7b
 - **完成判定**：`pytest tests/test_app.py` 绿；无引用 `debug_trace.init_debug`。
 - **依赖**：1.4、2.4。
 
+archived-with: 2026-06-26-logging-system-overhaul
 ---
 
 ## 6. 文档与收尾
@@ -381,6 +388,7 @@ base-ref: 022162846f082e987df8eb9ab1c0cc081c22ab7b
 - **完成判定**：见下方「手动验证步骤」全部通过。
 - **依赖**：6.2 绿。
 
+archived-with: 2026-06-26-logging-system-overhaul
 ---
 
 ## 验证与收尾

@@ -38,9 +38,8 @@ def create_app() -> Flask:
     return app
 
 
-app = create_app()
-
 if __name__ == "__main__":
+    app = create_app()
     server_debug = config.CONFIG.get("server", {}).get("debug", True)
     host = config.CONFIG.get("server", {}).get("host", "127.0.0.1")
     port = config.CONFIG.get("server", {}).get("port", 5000)

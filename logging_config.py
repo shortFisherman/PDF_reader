@@ -36,7 +36,7 @@ def setup_logging(debug: bool = False) -> None:
 
     root_pdf.setLevel(level)
 
-    # 第三方 logger 降级为 DEBUG，阻止其 INFO 消息干扰控制台/文件输出
-    logging.getLogger("werkzeug").setLevel(logging.DEBUG)
-    logging.getLogger("pdf2zh_next").setLevel(logging.DEBUG)
-    logging.getLogger("babeldoc").setLevel(logging.DEBUG)
+    # 第三方 logger：debug off 时抬到 WARNING 屏蔽其 INFO 噪音；debug on 时降到 DEBUG 放行细节
+    third_party_level = logging.DEBUG if debug else logging.WARNING
+    for name in ("werkzeug", "pdf2zh_next", "babeldoc"):
+        logging.getLogger(name).setLevel(third_party_level)
