@@ -1,11 +1,11 @@
 ## 1. 后端：进度持久化与读取（state.py）
 
-- [ ] 1.1 在 `AppState` 新增私有属性 `_reading_progress_path` 派生（由 `glossary_cache_path` 同源逻辑）或私有方法 `_reading_progress_path()`，返回 `cache_dir/<pdf_hash>/reading_progress.json` 或 `None`
-- [ ] 1.2 新增 `AppState.save_reading_progress(page: int) -> None`：在 `self._lock` 内校验文档已打开（无则抛 `ValueError`），校验 `0 <= page < self._page_count`（越界抛错），原子写入进度文件（`tmp` + `os.replace` 保证不被半写损坏）
-- [ ] 1.3 新增 `AppState.load_reading_progress() -> int | None`：在锁内读取对应 hash 目录进度文件；解析失败/文件缺失返回 `None`；对越界（`>= page_count`）钳制为 0
-- [ ] 1.4 在 `open_pdf` 成功打开后调用 `load_reading_progress()`，把 `saved_page`（钳制后整数或 `None`）并入返回 dict
-- [ ] 1.5 在 `open_pdf` 开始的 `_close_docs`/重置路径确认进度读写不被误清（进度文件独立于 `right.pdf`，不应被删除）
-- [ ] 1.6 按 `logging_config.py` 既有 `getLogger("pdf_reader.state")` 命名空间，在保存/读取/钳制处加 INFO/DEBUG 日志（如 `[progress] save page=N`、`[progress] load page=N clamp=c`），不输出敏感信息
+- [x] 1.1 在 `AppState` 新增私有属性 `_reading_progress_path` 派生（由 `glossary_cache_path` 同源逻辑）或私有方法 `_reading_progress_path()`，返回 `cache_dir/<pdf_hash>/reading_progress.json` 或 `None`
+- [x] 1.2 新增 `AppState.save_reading_progress(page: int) -> None`：在 `self._lock` 内校验文档已打开（无则抛 `ValueError`），校验 `0 <= page < self._page_count`（越界抛错），原子写入进度文件（`tmp` + `os.replace` 保证不被半写损坏）
+- [x] 1.3 新增 `AppState.load_reading_progress() -> int | None`：在锁内读取对应 hash 目录进度文件；解析失败/文件缺失返回 `None`；对越界（`>= page_count`）钳制为 0
+- [x] 1.4 在 `open_pdf` 成功打开后调用 `load_reading_progress()`，把 `saved_page`（钳制后整数或 `None`）并入返回 dict
+- [x] 1.5 在 `open_pdf` 开始的 `_close_docs`/重置路径确认进度读写不被误清（进度文件独立于 `right.pdf`，不应被删除）
+- [x] 1.6 按 `logging_config.py` 既有 `getLogger("pdf_reader.state")` 命名空间，在保存/读取/钳制处加 INFO/DEBUG 日志（如 `[progress] save page=N`、`[progress] load page=N clamp=c`），不输出敏感信息
 
 ## 2. 后端：HTTP 接口（routes.py）
 

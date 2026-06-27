@@ -73,7 +73,7 @@ base-ref: c3107ab04dd0ea62e76de151b5303c9f9b7ae369
 6. 日志命中 `[progress] save` / `[progress] load` 前缀，不输出敏感信息。
 7. 新增测试全绿（`pytest tests/test_state.py -q`）。
 
-- [ ] **Step 1.1: 写失败测试（`save_reading_progress` 正常落盘）**
+- [x] **Step 1.1: 写失败测试（`save_reading_progress` 正常落盘）**
 
 在 `tests/test_state.py` 末尾追加：
 
@@ -94,12 +94,12 @@ def test_save_reading_progress_writes_file(app_state, sample_pdf):
     app_state._close_docs()
 ```
 
-- [ ] **Step 1.2: 运行测试，确认失败**
+- [x] **Step 1.2: 运行测试，确认失败**
 
 Run: `pytest tests/test_state.py::test_save_reading_progress_writes_file -q`
 Expected: FAIL — `AttributeError: 'AppState' object has no attribute '_reading_progress_path'`（或 `save_reading_progress`）。
 
-- [ ] **Step 1.3: 写失败测试（文档未开抛错 + 越界抛错 + 原子写 tmp 不残留）**
+- [x] **Step 1.3: 写失败测试（文档未开抛错 + 越界抛错 + 原子写 tmp 不残留）**
 
 继续追加：
 
@@ -137,12 +137,12 @@ def test_save_reading_progress_leaves_no_tmp_on_failure(app_state, sample_pdf):
     app_state._close_docs()
 ```
 
-- [ ] **Step 1.4: 运行测试，确认失败**
+- [x] **Step 1.4: 运行测试，确认失败**
 
 Run: `pytest tests/test_state.py -q -k save_reading_progress`
 Expected: 4 个 FAIL（方法未实现）。
 
-- [ ] **Step 1.5: 写失败测试（`load_reading_progress`：命中/缺失/损坏/越界钳制/负值钳制）**
+- [x] **Step 1.5: 写失败测试（`load_reading_progress`：命中/缺失/损坏/越界钳制/负值钳制）**
 
 继续追加：
 
@@ -217,12 +217,12 @@ def test_load_reading_progress_negative_clamped_to_zero(app_state, sample_pdf):
     app_state._close_docs()
 ```
 
-- [ ] **Step 1.6: 运行测试，确认失败**
+- [x] **Step 1.6: 运行测试，确认失败**
 
 Run: `pytest tests/test_state.py -q -k load_reading_progress`
 Expected: 6 个 FAIL（方法未实现）。
 
-- [ ] **Step 1.7: 写失败测试（`open_pdf` 响应含 `saved_page`）**
+- [x] **Step 1.7: 写失败测试（`open_pdf` 响应含 `saved_page`）**
 
 继续追加：
 
@@ -267,12 +267,12 @@ def test_open_pdf_does_not_delete_progress_file(app_state, sample_pdf):
     app_state._close_docs()
 ```
 
-- [ ] **Step 1.8: 运行测试，确认失败**
+- [x] **Step 1.8: 运行测试，确认失败**
 
 Run: `pytest tests/test_state.py -q -k "open_pdf and saved_page or open_pdf does_not"`
 Expected: 3 个 FAIL（`saved_page` 键不存在）。
 
-- [ ] **Step 1.9: 实现 `_reading_progress_path` / `save_reading_progress` / `load_reading_progress`**
+- [x] **Step 1.9: 实现 `_reading_progress_path` / `save_reading_progress` / `load_reading_progress`**
 
 在 `state.py` 的 `glossary_cache_path` property（第 58-62 行）之后、`open_pdf`（第 64 行）之前插入：
 
@@ -333,7 +333,7 @@ Expected: 3 个 FAIL（`saved_page` 键不存在）。
 
 > 注：`import json` 已在文件顶部需要；若文件顶部未 import json，请将其上提至 `import logging` 之后（见 Step 1.11）。`os` 已在顶部 import（第 2 行）。
 
-- [ ] **Step 1.10: 修改 `open_pdf` 返回 dict 追加 `saved_page`**
+- [x] **Step 1.10: 修改 `open_pdf` 返回 dict 追加 `saved_page`**
 
 在 `state.py` 的 `open_pdf`（第 64-96 行）logger.info 调用之后、`return` 之前插入读取并入响应：
 
@@ -352,7 +352,7 @@ Expected: 3 个 FAIL（`saved_page` 键不存在）。
 
 > 注意：`load_reading_progress` 内部也 `with self._lock`，而 `open_pdf` 已持锁。`threading.Lock` 不可重入。因此需把 `load_reading_progress` 改为**不自行加锁**，由调用方持锁；或在 `open_pdf` 内内联读取逻辑。采用前者：见 Step 1.11 调整。
 
-- [ ] **Step 1.11: 调整锁策略（`load_reading_progress` 不自持锁，文档化调用方持锁）**
+- [x] **Step 1.11: 调整锁策略（`load_reading_progress` 不自持锁，文档化调用方持锁）**
 
 将 Step 1.9 中 `load_reading_progress` 的 `with self._lock:` 移除，改为在 docstring/调用约定说明"调用方必须持有 `self._lock`"：
 
@@ -382,17 +382,17 @@ Expected: 3 个 FAIL（`saved_page` 键不存在）。
 
 并确保 `state.py` 顶部 import 区已含 `import json`（当前未 import，需加；放在 `import os` 之后）。
 
-- [ ] **Step 1.12: 运行全部新测试，确认通过**
+- [x] **Step 1.12: 运行全部新测试，确认通过**
 
 Run: `pytest tests/test_state.py -q -k "reading_progress or saved_page or does_not_delete"`
 Expected: PASS（13 个新增用例全绿）。
 
-- [ ] **Step 1.13: 运行整个 test_state.py 确认无回归**
+- [x] **Step 1.13: 运行整个 test_state.py 确认无回归**
 
 Run: `pytest tests/test_state.py -q`
 Expected: 全绿。
 
-- [ ] **Step 1.14: 提交**
+- [x] **Step 1.14: 提交**
 
 ```bash
 git add state.py tests/test_state.py
