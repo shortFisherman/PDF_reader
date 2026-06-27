@@ -193,9 +193,17 @@ function saveProgress() {
     if (!pageCount || !Number.isInteger(currentPage)) return;
     if (currentPage < 0 || currentPage >= pageCount) return;
     const body = JSON.stringify({ page: currentPage });
-    if (navigator.sendBeacon) {
+    if (typeof navigator.sendBeacon === 'function') {
         const blob = new Blob([body], { type: 'application/json' });
-        navigator.sendBeacon(`${API}/reading-progress`, blob);
+        const sent = navigator.sendBeacon(`${API}/reading-progress`, blob);
+        if (!sent) {
+            fetch(`${API}/reading-progress`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body,
+                keepalive: true,
+            }).catch(() => {});
+        }
     } else {
         fetch(`${API}/reading-progress`, {
             method: 'POST',
