@@ -1,43 +1,38 @@
-﻿# Task 3 Report: finish_translation 移除 tmpdir/output_dir 参数和 rmtree 调用
+﻿# Task 3 Report: 前端 — 打开后恢复定位
 
-## Status: COMPLETE
+## Status: DONE
 
-## Summary
+| 项目 | 详情 |
+|------|------|
+| Commit | `42cd822` `feat(frontend): 打开后按 saved_page 自动恢复定位` |
+| 修改文件 | `static/app.js` (+11 lines) |
 
-Removed `tmpdir: Path` and `output_dir: str` parameters from `finish_translation()`, along with the two `shutil.rmtree()` lines and the `import shutil` statement. Cleanup responsibility is now fully consolidated in `sse_stream.generate()`'s `finally` block (Task 2).
+## TDD
 
-## Changes Made
-
-**File**: `translation_lifecycle.py`
-
-| Change | Detail |
-|--------|--------|
-| Removed import | `import shutil` |
-| Removed parameters | `tmpdir: Path`, `output_dir: str` |
-| Removed cleanup lines | `shutil.rmtree(tmpdir, ignore_errors=True)` |
-| | `shutil.rmtree(output_dir, ignore_errors=True)` |
-| Function signature | 5 params -> 3 params |
-
-## TDD Evidence
-
-- Ran `pytest tests/test_services.py -q` **after** the change: **24 passed**
-- The call site in `sse_stream.py:115-119` already passes only 3 arguments (confirming Task 2 is complete)
-- No new tests needed — this is a pure removal of dead code; existing tests cover `finish_translation` behavior and continue to pass
-
-## Test Results
+### RED (baseline syntax check)
 
 ```
-24 passed in 0.09s
+> Copy-Item static\app.js static\app_tmp.mjs; node --check static\app_tmp.mjs
+RED: SYNTAX OK - baseline
 ```
 
-No regressions.
-
-## Commit
+### GREEN (post-implementation syntax check)
 
 ```
-f634234 refactor(translation_lifecycle): remove tmpdir/output_dir cleanup, now in generate() finally
+> Copy-Item static\app.js static\app_tmp.mjs; node --check static\app_tmp.mjs
+GREEN: SYNTAX OK
 ```
 
-## Concerns
+## 预期行为
 
-None.
+1. `scrollToPage(index)` — 取 `els.leftCol` 中 `[data-page="<index>"]` 的 `.page-container`，命中则 `el.scrollIntoView({block:'start'})`，未命中静默返回。
+2. `openPdf` 在 `setupPageDetection` / `setupScrollSync` / `setupZoom` 装配完成后，读取 `data.saved_page`：
+   - `saved_page` 为 `null` / 非整数 / `0` / `>= pageCount` → 不定位，停留在顶部首页。
+   - `saved_page` 为有效整数且 `> 0 && < pageCount` → `requestAnimationFrame(() => scrollToPage(saved))` 定位左列。
+3. 定位后，`setupPageDetection` settle 回调 `onPageChange` 自动刷新 `currentPage` 与 `pageIndicator`，无需手动设指示。
+4. 不恢复缩放（`zoomLevel.textContent = '100%'` 保留）。
+
+## Changes Summary
+
+- 第 175-179 行：新增 `scrollToPage` 模块级函数
+- 第 110-113 行：`openPdf` 内 `loadTranslatedState()` 之后插入恢复定位逻辑

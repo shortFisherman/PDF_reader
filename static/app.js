@@ -18,6 +18,7 @@ let els;
 let io = null;
 let settle = null;
 let zoomInst = null;
+let progressCleanup = null;
 
 function init() {
     els = getElements();
@@ -51,6 +52,7 @@ async function openPdf() {
     if (zoomInst) { zoomInst.dispose(); zoomInst = null; }
     if (io) { io.observer.disconnect(); io = null; }
     if (settle) { settle.dispose(); settle = null; }
+    if (progressCleanup) { progressCleanup(); progressCleanup = null; }
 
     const path = els.pdfPathInput.value.trim();
     if (!path) return;
@@ -112,7 +114,16 @@ async function openPdf() {
             requestAnimationFrame(() => scrollToPage(saved));
         }
 
-        // Initial viewport scan is handled inside setupIntersectionObserver via rAF
+        // 卸载期上报：pagehide（主）+ visibilitychange hidden（兜底）
+        function onPageHide() { saveProgress(); }
+        function onVisibility() { if (document.hidden) saveProgress(); }
+        window.addEventListener('pagehide', onPageHide);
+        document.addEventListener('visibilitychange', onVisibility);
+        progressCleanup = () => {
+            window.removeEventListener('pagehide', onPageHide);
+            document.removeEventListener('visibilitychange', onVisibility);
+        };
+
     } catch (e) {
         els.fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">Network error: ${e.message}</p>`);
     }
@@ -176,6 +187,23 @@ function scrollToPage(index) {
     const el = els.leftCol.querySelector(`.page-container[data-page="${index}"]`);
     if (!el) return;
     el.scrollIntoView({ block: 'start' });
+}
+
+function saveProgress() {
+    if (!pageCount || !Number.isInteger(currentPage)) return;
+    if (currentPage < 0 || currentPage >= pageCount) return;
+    const body = JSON.stringify({ page: currentPage });
+    if (navigator.sendBeacon) {
+        const blob = new Blob([body], { type: 'application/json' });
+        navigator.sendBeacon(`${API}/reading-progress`, blob);
+    } else {
+        fetch(`${API}/reading-progress`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+            keepalive: true,
+        }).catch(() => {});
+    }
 }
 
 function onPageChange(pageNum) {

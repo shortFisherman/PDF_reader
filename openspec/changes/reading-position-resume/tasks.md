@@ -15,11 +15,11 @@
 
 ## 3. 前端：打开后恢复定位（static/app.js）
 
-- [ ] 3.1 `openPdf` 内读取响应 `data.saved_page`；若为有效整数且在 `[1, pageCount]` 之间，在页占位 DOM 构建完成、Observer/页面检测 setup 之后做定位
-- [ ] 3.2 实现 `scrollToPage(index)` helper：定位左列第 `index` 个 `.page-container`，优先 `el.scrollIntoView({block:'start'})`；定位后由现有 `setupPageDetection` 回调刷新 `currentPage`/`els.pageIndicator`
-- [ ] 3.3 定位使用 `requestAnimationFrame`/settle gate 等待占位高度就绪后再执行，避免懒加载占位未撑开导致定位偏移
-- [ ] 3.4 `saved_page` 为 `null`/0/无效时不主动定位（保持顶部首页），不报错
-- [ ] 3.5 恢复后可选地短暂提示页码（沿用 `els.pageIndicator`，不弹窗，符合 spec）
+- [x] 3.1 `openPdf` 内读取响应 `data.saved_page`；若为有效整数且在 `[1, pageCount]` 之间，在页占位 DOM 构建完成、Observer/页面检测 setup 之后做定位
+- [x] 3.2 实现 `scrollToPage(index)` helper：定位左列第 `index` 个 `.page-container`，优先 `el.scrollIntoView({block:'start'})`；定位后由现有 `setupPageDetection` 回调刷新 `currentPage`/`els.pageIndicator`
+- [x] 3.3 定位使用 `requestAnimationFrame`/settle gate 等待占位高度就绪后再执行，避免懒加载占位未撑开导致定位偏移
+- [x] 3.4 `saved_page` 为 `null`/0/无效时不主动定位（保持顶部首页），不报错
+- [x] 3.5 恢复后可选地短暂提示页码（沿用 `els.pageIndicator`，不弹窗，符合 spec）
 
 ## 4. 前端：卸载期上报（static/app.js）
 

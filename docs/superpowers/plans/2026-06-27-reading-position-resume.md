@@ -612,7 +612,7 @@ git commit -m "feat(routes): 新增 POST /api/reading-progress 卸载期进度�
 5. 不恢复缩放（沿用 `zoomLevel.textContent = '100%'` 既有逻辑）。
 6. 手动验证脚本通过（Task 5.3 执行）。
 
-- [ ] **Step 3.1: 新增 `scrollToPage` 函数**
+- [x] **Step 3.1: 新增 `scrollToPage` 函数**
 
 在 `static/app.js` 的 `onPageChange`（第 170 行）之前插入：
 
@@ -625,7 +625,7 @@ function scrollToPage(index) {
 }
 ```
 
-- [ ] **Step 3.2: 在 `openPdf` 内装配恢复定位**
+- [x] **Step 3.2: 在 `openPdf` 内装配恢复定位**
 
 在 `static/app.js` 的 `openPdf` 中，把现有的装配序列尾部（第 100-108 行）
 
@@ -664,12 +664,12 @@ function scrollToPage(index) {
 > 注意命名：响应字段为 `data.saved_page`（下划线，与后端 dict 键一致），不是 `data.savedPage`。
 > 关于 tasks.md 3.1 的 `[1, pageCount]` 描述：spec 为 0 基，恢复到首页（index=0）本身即在顶部，无需滚动；故判据采用 `saved > 0 && saved < pageCount`，等价于"定位到非首页的有效 0 基页码"。越界（`>= pageCount`）已由后端钳制，前端再守一道。
 
-- [ ] **Step 3.3: 手动冒烟验证（先确认无语法错误）**
+- [x] **Step 3.3: 手动冒烟验证（先确认无语法错误）**
 
 Run: 在浏览器开发者工具 Console 加载页面后，确认 `openPdf` 可正常打开一本首次打开的 PDF（`saved_page` 为 `null`），停在首页，无控制台报错；再打开一本此前已保存进度的 PDF（由 Task 4 写入），确认自动滚到该页、`page-indicator` 显示 `Page (saved+1)`。
 （自动化留待 Task 5.3 手动脚本归档。）
 
-- [ ] **Step 3.4: 提交**
+- [x] **Step 3.4: 提交**
 
 ```bash
 git add static/app.js
