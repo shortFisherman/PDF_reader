@@ -402,3 +402,167 @@ def test_replace_pages_holds_lock(app_state, sample_pdf, tmp_path):
     can_finish.set()
     t.join(timeout=10)
     assert lock_held[0] is True
+
+
+def test_save_reading_progress_writes_file(app_state, sample_pdf):
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+
+    app_state.save_reading_progress(1)
+
+    progress_file = app_state._reading_progress_path()
+    assert progress_file is not None
+    assert progress_file.exists()
+    import json
+
+    data = json.loads(progress_file.read_text(encoding="utf-8"))
+    assert data == {"page": 1}
+    app_state._close_docs()
+
+
+def test_save_reading_progress_no_doc_raises(app_state):
+    with pytest.raises(ValueError, match="no document opened"):
+        app_state.save_reading_progress(0)
+
+
+def test_save_reading_progress_out_of_range_raises(app_state, sample_pdf):
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    page_count = app_state.page_count
+
+    with pytest.raises(ValueError, match="page out of range"):
+        app_state.save_reading_progress(-1)
+    with pytest.raises(ValueError, match="page out of range"):
+        app_state.save_reading_progress(page_count)
+    app_state._close_docs()
+
+
+def test_save_reading_progress_leaves_no_tmp_on_failure(app_state, sample_pdf):
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+
+    # 触发越界失败前/后，hash 目录下应无残留 .tmp 文件
+    with pytest.raises(ValueError):
+        app_state.save_reading_progress(9999)
+
+    cache_subdir = app_state.glossary_cache_path
+    tmp_files = list(cache_subdir.glob("reading_progress.json*"))
+    assert all("tmp" not in str(p) for p in tmp_files)
+    app_state._close_docs()
+
+
+def test_load_reading_progress_hit(app_state, sample_pdf):
+    import json
+
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+
+    progress_file = app_state._reading_progress_path()
+    progress_file.write_text(json.dumps({"page": 1}), encoding="utf-8")
+
+    assert app_state.load_reading_progress() == 1
+    app_state._close_docs()
+
+
+def test_load_reading_progress_missing_returns_none(app_state, sample_pdf):
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    assert app_state.load_reading_progress() is None
+    app_state._close_docs()
+
+
+def test_load_reading_progress_corrupt_returns_none(app_state, sample_pdf):
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    progress_file = app_state._reading_progress_path()
+    progress_file.write_text("{not valid json", encoding="utf-8")
+
+    assert app_state.load_reading_progress() is None
+    app_state._close_docs()
+
+
+def test_load_reading_progress_missing_page_key_returns_none(app_state, sample_pdf):
+    import json
+
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    progress_file = app_state._reading_progress_path()
+    progress_file.write_text(json.dumps({"other": 1}), encoding="utf-8")
+
+    assert app_state.load_reading_progress() is None
+    app_state._close_docs()
+
+
+def test_load_reading_progress_out_of_range_clamped_to_zero(app_state, sample_pdf):
+    import json
+
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    page_count = app_state.page_count
+
+    progress_file = app_state._reading_progress_path()
+    progress_file.write_text(json.dumps({"page": page_count + 3}), encoding="utf-8")
+
+    assert app_state.load_reading_progress() == 0
+    app_state._close_docs()
+
+
+def test_load_reading_progress_negative_clamped_to_zero(app_state, sample_pdf):
+    import json
+
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    progress_file = app_state._reading_progress_path()
+    progress_file.write_text(json.dumps({"page": -5}), encoding="utf-8")
+
+    assert app_state.load_reading_progress() == 0
+    app_state._close_docs()
+
+
+def test_open_pdf_response_includes_saved_page_none(app_state, sample_pdf):
+    from file_hash import sha256 as sha256_func
+
+    result = app_state.open_pdf(str(sample_pdf), sha256_func)
+    assert "saved_page" in result
+    assert result["saved_page"] is None
+    app_state._close_docs()
+
+
+def test_open_pdf_response_includes_saved_page_value(app_state, sample_pdf):
+
+    from file_hash import sha256 as sha256_func
+
+    # 先打开写入进度
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    app_state.save_reading_progress(1)
+    app_state._close_docs()
+
+    # 重新打开，应读到保存的页
+    result = app_state.open_pdf(str(sample_pdf), sha256_func)
+    assert result["saved_page"] == 1
+    app_state._close_docs()
+
+
+def test_open_pdf_does_not_delete_progress_file(app_state, sample_pdf):
+
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    app_state.save_reading_progress(1)
+    progress_file = app_state._reading_progress_path()
+    app_state._close_docs()
+
+    # 再次打开（会 _close_docs 重置）后进度文件应仍在
+    assert progress_file.exists()
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    assert progress_file.exists()
+    app_state._close_docs()

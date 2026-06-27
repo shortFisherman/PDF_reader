@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import shutil
@@ -61,6 +62,56 @@ class AppState:
             return None
         return self._cache_dir / self._pdf_hash
 
+    def _reading_progress_path(self) -> Path | None:
+        if self._pdf_hash is None:
+            return None
+        return self._cache_dir / self._pdf_hash / "reading_progress.json"
+
+    def save_reading_progress(self, page: int) -> None:
+        with self._lock:
+            if self._left_doc is None or self._pdf_hash is None:
+                raise ValueError("no document opened")
+            if not isinstance(page, int) or isinstance(page, bool):
+                raise ValueError("page out of range")
+            if page < 0 or page >= self._page_count:
+                raise ValueError("page out of range")
+            path = self._reading_progress_path()
+            if path is None:
+                raise ValueError("no document opened")
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            try:
+                tmp.write_text(json.dumps({"page": page}), encoding="utf-8")
+                os.replace(tmp, path)
+                logger.info("[progress] save hash=%s page=%d", self._pdf_hash, page)
+            except Exception:
+                if tmp.exists():
+                    try:
+                        tmp.unlink()
+                    except OSError:
+                        pass
+                logger.error("[progress] save failed hash=%s page=%d", self._pdf_hash, page, exc_info=True)
+                raise
+
+    def load_reading_progress(self) -> int | None:
+        path = self._reading_progress_path()
+        if path is None or not path.exists():
+            logger.debug("[progress] load hash=%s none", self._pdf_hash)
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            page = data["page"]
+            if not isinstance(page, int) or isinstance(page, bool):
+                logger.debug("[progress] load hash=%s none (bad type)", self._pdf_hash)
+                return None
+            if page >= self._page_count or page < 0:
+                logger.debug("[progress] load hash=%s clamp=%d", self._pdf_hash, page)
+                return 0
+            logger.debug("[progress] load hash=%s page=%d", self._pdf_hash, page)
+            return page
+        except Exception:
+            logger.debug("[progress] load hash=%s none (corrupt)", self._pdf_hash, exc_info=True)
+            return None
+
     def open_pdf(self, pdf_path: str, sha256_func) -> dict:
         with self._lock:
             self._close_docs()
@@ -88,11 +139,13 @@ class AppState:
                 self._page_height,
                 cache_status,
             )
+            saved_page = self.load_reading_progress()
             return {
                 "page_count": self._page_count,
                 "page_height": self._page_height,
                 "page_width": self._page_width,
                 "hash": pdf_hash,
+                "saved_page": saved_page,
             }
 
     def get_doc(self, side: str) -> pymupdf.Document | None:
