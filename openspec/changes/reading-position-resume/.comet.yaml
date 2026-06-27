@@ -1,5 +1,5 @@
 workflow: full
-phase: build
+phase: verify
 context_compression: off
 build_mode: subagent-driven-development
 build_pause: null
@@ -7,7 +7,7 @@ subagent_dispatch: confirmed
 tdd_mode: tdd
 review_mode: off
 isolation: branch
-verify_mode: null
+verify_mode: full
 auto_transition: true
 base_ref: c3107ab04dd0ea62e76de151b5303c9f9b7ae369
 design_doc: docs/superpowers/specs/2026-06-27-reading-position-resume-design.md
@@ -20,3 +20,5 @@ verified_at: null
 archived: false
 handoff_context: openspec/changes/reading-position-resume/.comet/handoff/design-context.json
 handoff_hash: 3e0cce56d4416dc9c0c33661b9a190cfc096eed83070f58ae338736ec4240cd4
+build_command: pytest -q
+verify_command: pytest -q && ruff check . && ruff format --check .
