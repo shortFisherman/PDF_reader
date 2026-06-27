@@ -107,6 +107,11 @@ async function openPdf() {
         els.zoomLevel.textContent = '100%';
         loadTranslatedState();
 
+        const saved = Number.isInteger(data.saved_page) ? data.saved_page : null;
+        if (saved !== null && saved > 0 && saved < pageCount) {
+            requestAnimationFrame(() => scrollToPage(saved));
+        }
+
         // Initial viewport scan is handled inside setupIntersectionObserver via rAF
     } catch (e) {
         els.fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">Network error: ${e.message}</p>`);
@@ -165,6 +170,12 @@ async function loadTranslatedState() {
             if (el) el.classList.add('translated');
         });
     } catch (e) {}
+}
+
+function scrollToPage(index) {
+    const el = els.leftCol.querySelector(`.page-container[data-page="${index}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'start' });
 }
 
 function onPageChange(pageNum) {
