@@ -426,7 +426,7 @@ git commit -m "feat(state): 按 pdf_hash 持久化阅读页码读写与 open_pdf
 7. `/api/open` 响应 schema 含 `saved_page`（随 Task 1 落地，本任务加断言固化）。
 8. 新增测试全绿。
 
-- [ ] **Step 2.1: 写失败测试（成功 / 未开文档 / 越界 / 非整数 / 文件落盘）**
+- [x] **Step 2.1: 写失败测试（成功 / 未开文档 / 越界 / 非整数 / 文件落盘）**
 
 在 `tests/test_routes.py` 末尾追加：
 
@@ -537,12 +537,12 @@ def test_save_reading_progress_route_non_integer(app_state, sample_pdf):
 
 > 注：`test_save_reading_progress_route_no_doc` 用独立 `AppState`，cache 目录在测试中不会真创建；只要 `_left_doc is None` 即在 `save_reading_progress` 抛 `ValueError("no document opened")`，无需真实目录。
 
-- [ ] **Step 2.2: 运行测试，确认失败**
+- [x] **Step 2.2: 运行测试，确认失败**
 
 Run: `pytest tests/test_routes.py -q -k "save_reading_progress or open_response_includes_saved"`
 Expected: FAIL — `404 Not Found`（路由未注册）或 `saved_page` 缺失。
 
-- [ ] **Step 2.3: 实现路由**
+- [x] **Step 2.3: 实现路由**
 
 在 `routes.py` 的 `open_pdf` 路由函数（第 36-47 行）之后插入新路由：
 
@@ -570,17 +570,17 @@ def save_reading_progress():
 
 > 注：`ValueError` 仅可能抛 `"no document opened"` 或 `"page out of range"`（Task 1 已保证），两者都映射 400；`ModelStateError` 分支保持简洁。非整数/bool 在进入 `state` 前已被拦截，仍返回 400 `"invalid page"`，避免写文件侧再校验 bool。
 
-- [ ] **Step 2.4: 运行测试，确认通过**
+- [x] **Step 2.4: 运行测试，确认通过**
 
 Run: `pytest tests/test_routes.py -q -k "save_reading_progress or open_response_includes_saved"`
 Expected: PASS（5 个用例全绿）。
 
-- [ ] **Step 2.5: 运行整个 test_routes.py 确认无回归**
+- [x] **Step 2.5: 运行整个 test_routes.py 确认无回归**
 
 Run: `pytest tests/test_routes.py -q`
 Expected: 全绿。
 
-- [ ] **Step 2.6: 提交**
+- [x] **Step 2.6: 提交**
 
 ```bash
 git add routes.py tests/test_routes.py

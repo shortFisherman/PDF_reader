@@ -9,9 +9,9 @@
 
 ## 2. 后端：HTTP 接口（routes.py）
 
-- [ ] 2.1 新增 `POST /api/reading-progress`：解析 JSON `page`，仅整数；调用 `state.save_reading_progress(page)`，`ValueError("no document opened")` → 400、越界 → 400 "page out of range"，成功返回 `{"ok": true}`，并加 `logger.debug("[route] save-reading-progress page=%d", page)`
-- [ ] 2.2 （可选/对齐）确认 `POST /api/open` 响应已带 `saved_page`（随 1.4 落地，无新增路由）；如后续需独立查询再加 `GET /api/reading-progress`，本次默认不加以减小面
-- [ ] 2.3 路由命名/日志沿用 `logger = logging.getLogger("pdf_reader.routes")` 现有风格
+- [x] 2.1 新增 `POST /api/reading-progress`：解析 JSON `page`，仅整数；调用 `state.save_reading_progress(page)`，`ValueError("no document opened")` → 400、越界 → 400 "page out of range"，成功返回 `{"ok": true}`，并加 `logger.debug("[route] save-reading-progress page=%d", page)`
+- [x] 2.2 （可选/对齐）确认 `POST /api/open` 响应已带 `saved_page`（随 1.4 落地，无新增路由）；如后续需独立查询再加 `GET /api/reading-progress`，本次默认不加以减小面
+- [x] 2.3 路由命名/日志沿用 `logger = logging.getLogger("pdf_reader.routes")` 现有风格
 
 ## 3. 前端：打开后恢复定位（static/app.js）
 
