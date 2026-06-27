@@ -701,7 +701,7 @@ git commit -m "feat(frontend): 打开后按 saved_page 自动恢复定位"
 6. 当前页码非整数或越界时不发起请求。
 7. 手动验证脚本通过（Task 5.3 执行）。
 
-- [ ] **Step 4.1: 新增模块级 teardown 变量**
+- [x] **Step 4.1: 新增模块级 teardown 变量**
 
 在 `static/app.js` 第 13 行 `let isTranslating = false;` 之后、第 17 行 `let els;` 区域内插入（与 `let io = null; let settle = null; let zoomInst = null;` 同组）：
 
@@ -728,7 +728,7 @@ let zoomInst = null;
 let progressCleanup = null;
 ```
 
-- [ ] **Step 4.2: 新增 `saveProgress` 函数**
+- [x] **Step 4.2: 新增 `saveProgress` 函数**
 
 在 `static/app.js` 的 `scrollToPage`（Task 3.1 新增）之后插入：
 
@@ -751,7 +751,7 @@ function saveProgress() {
 }
 ```
 
-- [ ] **Step 4.3: `openPdf` 入口先解绑旧监听**
+- [x] **Step 4.3: `openPdf` 入口先解绑旧监听**
 
 在 `static/app.js` 的 `openPdf` 入口（第 51-53 行）现有 teardown 序列
 
@@ -769,7 +769,7 @@ function saveProgress() {
 
 > 注：顺序上先解绑 progress 监听再走打开流程；此解绑**不**发起 save（仅 removeEventListener），符合"切档不保存"。
 
-- [ ] **Step 4.4: `openPdf` 初始化完成后注册新监听**
+- [x] **Step 4.4: `openPdf` 初始化完成后注册新监听**
 
 在 `static/app.js` 的 `openPdf` 末尾（Task 3.2 新增的恢复定位块之后、函数 `} catch (e) {` 之前）插入：
 
@@ -785,7 +785,7 @@ function saveProgress() {
         };
 ```
 
-- [ ] **Step 4.5: 手动冒烟验证**
+- [x] **Step 4.5: 手动冒烟验证**
 
 1. 启动 app，打开一本 PDF，滚到第 8 页（0 基 index=7）。
 2. 关闭标签页 → 观察 Network 面板有一次 `POST /api/reading-progress`（`sendBeacon` 类型，逐出后仍发送），body `{"page":7}`。
@@ -794,7 +794,7 @@ function saveProgress() {
 5. 未打开文档时关闭标签 → 不发起请求。
 6. 自动化归档见 Task 5.3。
 
-- [ ] **Step 4.6: 提交**
+- [x] **Step 4.6: 提交**
 
 ```bash
 git add static/app.js
@@ -820,17 +820,17 @@ git commit -m "feat(frontend): pagehide/visibilitychange 卸载期 sendBeacon �
 3. 手动验证脚本已写入 design.md 第 7 节备注。
 4. 质量门全绿：`ruff check .`、`ruff format --check .`、`pytest -q`。
 
-- [ ] **Step 5.1: 确认 test_state.py 覆盖完整（已在 Task 1 写入）**
+- [x] **Step 5.1: 确认 test_state.py 覆盖完整（已在 Task 1 写入）**
 
 Run: `pytest tests/test_state.py -q -k "reading_progress or saved_page or does_not_delete"`
 Expected: 全部 PASS（13 个用例）。
 
-- [ ] **Step 5.2: 确认 test_routes.py 覆盖完整（已在 Task 2 写入）**
+- [x] **Step 5.2: 确认 test_routes.py 覆盖完整（已在 Task 2 写入）**
 
 Run: `pytest tests/test_routes.py -q -k "save_reading_progress or open_response_includes_saved"`
 Expected: 全部 PASS（5 个用例 + 1 个 open schema 用例 = 6 个）。
 
-- [ ] **Step 5.3: 归档前端手动验证脚本至 design.md**
+- [x] **Step 5.3: 归档前端手动验证脚本至 design.md**
 
 在 `docs/superpowers/specs/2026-06-27-reading-position-resume-design.md` 第 7 节"前端"小节的现有手动验证脚本列表之后追加一行备注：
 
@@ -838,7 +838,7 @@ Expected: 全部 PASS（5 个用例 + 1 个 open schema 用例 = 6 个）。
 > 已执行验证（实现期）：见 `docs/superpowers/plans/2026-06-27-reading-position-resume.md` Task 3.3 / Task 4.5 步骤；通过判定为左右列自动滚到目标页顶部、`page-indicator` 显示 `Page (saved_page+1)`；首次打开新 PDF 停首页；越界降级首页；切换文档无额外 save 请求、无控制台报错。
 ```
 
-- [ ] **Step 5.4: 运行质量门**
+- [x] **Step 5.4: 运行质量门**
 
 Run（按 AGENTS.md 约定命令）：
 
@@ -853,7 +853,7 @@ Expected:
 - `ruff format --check .` → 无需格式改动（若提示文件需格式化，执行 `ruff format <file>` 后重新 check，再 amend 提交或新提交）。
 - `pytest -q` → 全绿（既有用例 + 19 个新增用例）。
 
-- [ ] **Step 5.5: 提交**
+- [x] **Step 5.5: 提交**
 
 ```bash
 git add docs/superpowers/specs/2026-06-27-reading-position-resume-design.md

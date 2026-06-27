@@ -23,15 +23,15 @@
 
 ## 4. 前端：卸载期上报（static/app.js）
 
-- [ ] 4.1 在 `openPdf` 成功并初始化完成后注册 `pagehide` 监听；保存当前 `currentPage` 与 `pageCount` 到用于上报的闭包变量
-- [ ] 4.2 加 `visibilitychange`（`document.hidden`）兜底监听，触发同一 `saveProgress` 函数
-- [ ] 4.3 `saveProgress()`：仅当文档已打开、`pageCount > 0`、`currentPage ∈ [0, pageCount)` 且 `navigator.sendBeacon` 可用时，用 `application/json` Blob 发起 `POST /api/reading-progress`，body `{"page": currentPage}`
-- [ ] 4.4 重开新文档时清理上一份监听，避免重复注册/误写旧 hash 的进度（保存接口按当前 `pdf_hash` 写，重复监听本身不致错乱，但应一致地 teardown）
-- [ ] 4.5 上报不阻塞卸载、不依赖 Promise 解析
+- [x] 4.1 在 `openPdf` 成功并初始化完成后注册 `pagehide` 监听；保存当前 `currentPage` 与 `pageCount` 到用于上报的闭包变量
+- [x] 4.2 加 `visibilitychange`（`document.hidden`）兜底监听，触发同一 `saveProgress` 函数
+- [x] 4.3 `saveProgress()`：仅当文档已打开、`pageCount > 0`、`currentPage ∈ [0, pageCount)` 且 `navigator.sendBeacon` 可用时，用 `application/json` Blob 发起 `POST /api/reading-progress`，body `{"page": currentPage}`
+- [x] 4.4 重开新文档时清理上一份监听，避免重复注册/误写旧 hash 的进度（保存接口按当前 `pdf_hash` 写，重复监听本身不致错乱，但应一致地 teardown）
+- [x] 4.5 上报不阻塞卸载、不依赖 Promise 解析
 
 ## 5. 测试与质量校验
 
-- [ ] 5.1 `tests/test_state.py`：覆盖 `save_reading_progress` 正常落盘、文档未开抛错、越界抛错、文件原子写入；`load_reading_progress` 命中/缺失/损坏/越界钳制；`open_pdf` 响应含 `saved_page`
-- [ ] 5.2 `tests/test_routes.py`：`POST /api/reading-progress` 成功/未开文档/越界分支；`/api/open` 响应 schema 含 `saved_page`
-- [ ] 5.3 视情况为前端恢复/上报补最小化 DOM/事件测试（若项目无前端测试框架则记录手动验证脚本并归档至 design.md 备注）
-- [ ] 5.4 运行 `ruff check .`、`ruff format --check .`、`pytest -q` 全绿后再进入 verify 阶段
+- [x] 5.1 `tests/test_state.py`：覆盖 `save_reading_progress` 正常落盘、文档未开抛错、越界抛错、文件原子写入；`load_reading_progress` 命中/缺失/损坏/越界钳制；`open_pdf` 响应含 `saved_page`
+- [x] 5.2 `tests/test_routes.py`：`POST /api/reading-progress` 成功/未开文档/越界分支；`/api/open` 响应 schema 含 `saved_page`
+- [x] 5.3 视情况为前端恢复/上报补最小化 DOM/事件测试（若项目无前端测试框架则记录手动验证脚本并归档至 design.md 备注）
+- [x] 5.4 运行 `ruff check .`、`ruff format --check .`、`pytest -q` 全绿后再进入 verify 阶段

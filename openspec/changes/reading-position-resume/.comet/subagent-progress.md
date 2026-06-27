@@ -15,7 +15,16 @@
 - commits: 42cd822
 - review: spec ✅ quality Approved (no issues)
 
-## Task 4: 前端卸载上报 + teardown
-- stage: implementing
-- commits: N/A
+## Task 4: 前端卸载上报 + teardown — DONE
+- stage: checkoff
+- commits: 18c16b0 (impl), 6a582a8 (fix)
+- review: spec ✅ quality Approved (fixed: sendBeacon return check + typeof guard); rounds: 2/3
+
+## Task 5: 测试与质量校验 — DONE
+- stage: checkoff
+- commits: 5247863 (docs), 6e9488f (ruff fix)
+- results: 193 passed, ruff ✅, format ✅
+
+## Final Review
+- stage: final-review
 - review rounds: 0/3
