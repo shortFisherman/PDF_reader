@@ -1,5 +1,29 @@
 # 更新日志
 
+## 2026-06-27 — 断点恢复
+
+### `reading-position-resume`
+
+新增阅读进度持久化功能：按 PDF 内容哈希（`pdf_hash`）在 `cache_dir/<hash>/reading_progress.json` 记录上次阅读页码，打开文档时自动跳回，卸载/关闭时通过 `navigator.sendBeacon` 可靠落盘。
+
+- **进度存储**：`AppState` 新增 `_reading_progress_path` / `save_reading_progress` / `load_reading_progress`，原子写（`.tmp` + `os.replace`），越界钳制为 0，锁策略正确处理 `threading.Lock` 不可重入
+- **HTTP 接口**：新增 `POST /api/reading-progress`（校验整数/文档已开/越界三层守卫），`POST /api/open` 响应新增 `saved_page` 字段
+- **前端恢复**：`scrollToPage(index)` 通过 `scrollIntoView` 自动定位到上次页码，`requestAnimationFrame` 等占位高度就绪后执行
+- **前端上报**：`pagehide`（主）+ `visibilitychange hidden`（兜底）触发 `saveProgress()`，优先 `sendBeacon` + 检查返回值 → 回退 `fetch keepalive`；`typeof` 类型防御；`progressCleanup` 闭包模式在切换文档时正确解绑
+- **仅页码粒度**：不恢复缩放/页内偏移，不弹询问弹窗，仅卸载保存（切档不保存）
+
+| 文件 | 变更 |
+|------|------|
+| `state.py` | 新增 `_reading_progress_path` / `save_reading_progress` / `load_reading_progress`；`open_pdf` 返回 `saved_page`；锁策略调用方持锁约定 |
+| `routes.py` | 新增 `POST /api/reading-progress`（三层守卫 → 400/200） |
+| `static/app.js` | 新增 `scrollToPage` 恢复定位 + `saveProgress` 卸载上报（sendBeacon + fetch keepalive）+ `progressCleanup` teardown |
+| `tests/test_state.py` | +13 用例：save/load 全分支 + open_pdf saved_page + 原子写 + 进度文件不删除 |
+| `tests/test_routes.py` | +6 用例：save 成功/未开/越界/非整数/文件落盘 + open 响应 schema |
+
+**测试**：pytest 193/193、ruff check 全通过、ruff format 全通过
+
+---
+
 ## 2026-06-26 — 日志系统改造
 
 ### `logging-system-overhaul`
