@@ -2,6 +2,8 @@
 comet_change: reading-position-resume
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-27-reading-position-resume
+status: final
 ---
 
 # Technical Design — reading-position-resume

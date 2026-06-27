@@ -17,7 +17,7 @@ verification_report: docs/superpowers/reports/2026-06-27-reading-position-resume
 branch_status: handled
 created_at: 2026-06-27
 verified_at: 2026-06-27
-archived: false
+archived: true
 handoff_context: openspec/changes/reading-position-resume/.comet/handoff/design-context.json
 handoff_hash: 3e0cce56d4416dc9c0c33661b9a190cfc096eed83070f58ae338736ec4240cd4
 build_command: pytest -q

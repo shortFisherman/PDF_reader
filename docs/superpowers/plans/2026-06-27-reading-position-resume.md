@@ -2,6 +2,7 @@
 change: reading-position-resume
 design-doc: docs/superpowers/specs/2026-06-27-reading-position-resume-design.md
 base-ref: c3107ab04dd0ea62e76de151b5303c9f9b7ae369
+archived-with: 2026-06-27-reading-position-resume
 ---
 
 # reading-position-resume 实现计划
@@ -25,6 +26,7 @@ base-ref: c3107ab04dd0ea62e76de151b5303c9f9b7ae369
 - `POST /api/reading-progress` 解析 `page` 非整数 → 400；文档未开 → 400 `"no document opened"`；越界 → 400 `"page out of range"`；成功 → `{"ok": true}` 200。
 - 不新增 `GET /api/reading-progress`：`/api/open` 响应已携带 `saved_page`。
 
+archived-with: 2026-06-27-reading-position-resume
 ---
 
 ## 文件结构（新增/修改一览）
@@ -47,6 +49,7 @@ base-ref: c3107ab04dd0ea62e76de151b5303c9f9b7ae369
 - `routes.py`：`POST /api/reading-progress`，body `{"page": int}`，成功 `{"ok": true}` 200；失败 400 `{"error": "no document opened" | "page out of range" | "invalid page"}`。
 - 前端：`openPdf` 读取 `data.saved_page`；模块级 `let progressCleanup = null;`（或等价闭包）持有当前文档的卸载监听解绑函数；`scrollToPage(index)`、`saveProgress()` 为模块内函数。
 
+archived-with: 2026-06-27-reading-position-resume
 ---
 
 ## Task 1: 后端 state — 进度读写与 open_pdf 集成
@@ -399,6 +402,7 @@ git add state.py tests/test_state.py
 git commit -m "feat(state): 按 pdf_hash 持久化阅读页码读写与 open_pdf 集成"
 ```
 
+archived-with: 2026-06-27-reading-position-resume
 ---
 
 ## Task 2: 后端 routes — `POST /api/reading-progress`
@@ -587,6 +591,7 @@ git add routes.py tests/test_routes.py
 git commit -m "feat(routes): 新增 POST /api/reading-progress 卸载期进度上报接口"
 ```
 
+archived-with: 2026-06-27-reading-position-resume
 ---
 
 ## Task 3: 前端 — 打开后恢复定位
@@ -676,6 +681,7 @@ git add static/app.js
 git commit -m "feat(frontend): 打开后按 saved_page 自动恢复定位"
 ```
 
+archived-with: 2026-06-27-reading-position-resume
 ---
 
 ## Task 4: 前端 — 卸载期上报 + 监听 teardown
@@ -801,6 +807,7 @@ git add static/app.js
 git commit -m "feat(frontend): pagehide/visibilitychange 卸载期 sendBeacon 上报页码与监听 teardown"
 ```
 
+archived-with: 2026-06-27-reading-position-resume
 ---
 
 ## Task 5: 测试与质量校验
@@ -867,6 +874,7 @@ git add -A
 git commit -m "style: ruff format 修正"
 ```
 
+archived-with: 2026-06-27-reading-position-resume
 ---
 
 ## Self-Review
