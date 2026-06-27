@@ -213,6 +213,108 @@ def test_translate_batch_no_doc(test_client):
     assert "error" in json.loads(resp.data)
 
 
+def test_open_response_includes_saved_page_key(app_state, sample_pdf):
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    from flask import Flask
+    from routes import register_routes
+
+    app = Flask(__name__)
+    app.config["app_state"] = app_state
+    app.config["TESTING"] = True
+    register_routes(app)
+
+    with app.test_client() as client:
+        resp = client.post("/api/open", json={"path": str(sample_pdf)})
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert "saved_page" in data
+    app_state._close_docs()
+
+
+def test_save_reading_progress_route_success(app_state, sample_pdf, tmp_path):
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    from flask import Flask
+    from routes import register_routes
+
+    app = Flask(__name__)
+    app.config["app_state"] = app_state
+    app.config["TESTING"] = True
+    register_routes(app)
+
+    with app.test_client() as client:
+        resp = client.post("/api/reading-progress", json={"page": 1})
+        assert resp.status_code == 200
+        assert json.loads(resp.data) == {"ok": True}
+
+    progress_file = app_state._reading_progress_path()
+    assert progress_file is not None and progress_file.exists()
+    assert json.loads(progress_file.read_text(encoding="utf-8")) == {"page": 1}
+    app_state._close_docs()
+
+
+def test_save_reading_progress_route_no_doc():
+    from flask import Flask
+    from state import AppState
+    from routes import register_routes
+
+    app = Flask(__name__)
+    app.config["app_state"] = AppState(Path("/tmp/cache_no_doc_routes"))
+    app.config["TESTING"] = True
+    register_routes(app)
+
+    with app.test_client() as client:
+        resp = client.post("/api/reading-progress", json={"page": 0})
+        assert resp.status_code == 400
+        assert json.loads(resp.data)["error"] == "no document opened"
+
+
+def test_save_reading_progress_route_out_of_range(app_state, sample_pdf):
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    page_count = app_state.page_count
+    from flask import Flask
+    from routes import register_routes
+
+    app = Flask(__name__)
+    app.config["app_state"] = app_state
+    app.config["TESTING"] = True
+    register_routes(app)
+
+    with app.test_client() as client:
+        resp = client.post("/api/reading-progress", json={"page": page_count})
+        assert resp.status_code == 400
+        assert json.loads(resp.data)["error"] == "page out of range"
+
+        assert not app_state._reading_progress_path().exists()
+    app_state._close_docs()
+
+
+def test_save_reading_progress_route_non_integer(app_state, sample_pdf):
+    from file_hash import sha256 as sha256_func
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    from flask import Flask
+    from routes import register_routes
+
+    app = Flask(__name__)
+    app.config["app_state"] = app_state
+    app.config["TESTING"] = True
+    register_routes(app)
+
+    with app.test_client() as client:
+        for bad in [{"page": "x"}, {"page": True}, {}, {"page": 1.5}]:
+            resp = client.post("/api/reading-progress", json=bad)
+            assert resp.status_code == 400
+            assert "error" in json.loads(resp.data)
+        assert not app_state._reading_progress_path().exists()
+    app_state._close_docs()
+
+
 def test_translate_batch_emits_batch_info_and_finish(app_state, sample_pdf, monkeypatch):
     from pathlib import Path
     from unittest.mock import MagicMock

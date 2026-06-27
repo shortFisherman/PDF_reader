@@ -47,6 +47,27 @@ def open_pdf():
     return jsonify(result)
 
 
+@bp.route("/api/reading-progress", methods=["POST"])
+def save_reading_progress():
+    data = request.get_json(silent=True) or {}
+    page = data.get("page")
+    if not isinstance(page, int) or isinstance(page, bool):
+        logger.debug("[route] save-reading-progress invalid page=%r", page)
+        return error_response("invalid page", 400)
+
+    state = _get_state()
+    try:
+        state.save_reading_progress(page)
+    except ValueError as e:
+        msg = str(e)
+        logger.debug("[route] save-reading-progress page=%d rejected: %s", page, msg)
+        code = 400 if msg in ("no document opened", "page out of range") else 400
+        return error_response(msg, code)
+
+    logger.debug("[route] save-reading-progress page=%d", page)
+    return jsonify({"ok": True})
+
+
 @bp.route("/api/page/<side>/<int:page>")
 def get_page(side: str, page: int):
     if side not in ("left", "right"):
