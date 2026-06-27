@@ -164,6 +164,8 @@ function saveProgress() {
   5. 边界：首次打开的新 PDF 停在第1页；进度越界降级到第1页；切换文档不报错。
 - 若后续引入前端测试框架，可单列任务补 `saveProgress` 守卫与 `scrollToPage` 行为用例。
 
+> 已执行验证（实现期）：见 `docs/superpowers/plans/2026-06-27-reading-position-resume.md` Task 3.3 / Task 4.5 步骤；通过判定为左右列自动滚到目标页顶部、`page-indicator` 显示 `Page (saved_page+1)`；首次打开新 PDF 停首页；越界降级首页；切换文档无额外 save 请求、无控制台报错。
+
 **质量门**
 - `ruff check .`、`ruff format --check .`、`pytest -q` 全绿后方可进入 verify 阶段。
 
