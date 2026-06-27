@@ -218,6 +218,7 @@ def test_open_response_includes_saved_page_key(app_state, sample_pdf):
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     from flask import Flask
+
     from routes import register_routes
 
     app = Flask(__name__)
@@ -238,6 +239,7 @@ def test_save_reading_progress_route_success(app_state, sample_pdf, tmp_path):
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     from flask import Flask
+
     from routes import register_routes
 
     app = Flask(__name__)
@@ -258,8 +260,9 @@ def test_save_reading_progress_route_success(app_state, sample_pdf, tmp_path):
 
 def test_save_reading_progress_route_no_doc():
     from flask import Flask
-    from state import AppState
+
     from routes import register_routes
+    from state import AppState
 
     app = Flask(__name__)
     app.config["app_state"] = AppState(Path("/tmp/cache_no_doc_routes"))
@@ -278,6 +281,7 @@ def test_save_reading_progress_route_out_of_range(app_state, sample_pdf):
     app_state.open_pdf(str(sample_pdf), sha256_func)
     page_count = app_state.page_count
     from flask import Flask
+
     from routes import register_routes
 
     app = Flask(__name__)
@@ -299,6 +303,7 @@ def test_save_reading_progress_route_non_integer(app_state, sample_pdf):
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     from flask import Flask
+
     from routes import register_routes
 
     app = Flask(__name__)
