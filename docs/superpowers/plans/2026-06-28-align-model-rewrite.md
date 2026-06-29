@@ -71,9 +71,9 @@ base-ref: 5f4f414a5fa3d1012c995b741ca3f85c22f30d1a
   <task standards> 先写测试（红：无保护时派生被回触发、`getLockTarget` 漂移）→ 实现保护（绿）。
 - [x] **2.4 实现 `onImageLoaded(side, pageIndex)`** — 仅 `realign()`（写两栏 `scrollTop` 拉回 target），**不**改 `currentTarget`。写测试：spy `realign`，`onImageLoaded` 触发后断言 `realign` 调一次、`getLockTarget()` 与调用前一致。
   <task standards> 红→绿：先红（stub 不调 realign 或改了 target）→ 绿。
-- [ ] **2.5 实现 `onZoomChange(newZoom, oldZoom)`** — `intraPageOffsetPx *= newZoom/oldZoom`、`pageIndex` 不变、再 `realign()`。写测试覆盖比例缩放正确（如 target `(2, 100)`、`r = 1.1` → realign 后两栏 page2 顶在 `110px`）。
+- [x] **2.5 实现 `onZoomChange(newZoom, oldZoom)`** — `intraPageOffsetPx *= newZoom/oldZoom`、`pageIndex` 不变、再 `realign()`。写测试覆盖比例缩放正确（如 target `(2, 100)`、`r = 1.1` → realign 后两栏 page2 顶在 `110px`）。
   <task standards> 测试断言 `getLockTarget().intraPageOffsetPx === 100 * 1.1` 且 `pageIndex` 未变。
-- [ ] **2.6 `getBoundingClientRect` 几何测试（含 negative offset）** — fixture 构造视口顶位于页容器上方一截的情形，`onScroll(src)` 派生应触发 negative offset 规则：`pageIndex -= 1, intraOffset += nextPage.offsetHeight`。写测试断言派生后的 `(pageIndex, intraPageOffsetPx)` 取整后等价于"原 src 的 scrollTop 处的内容点"。
+- [x] **2.6 `getBoundingClientRect` 几何测试（含 negative offset）** — fixture 构造视口顶位于页容器上方一截的情形，`onScroll(src)` 派生应触发 negative offset 规则：`pageIndex -= 1, intraOffset += nextPage.offsetHeight`。写测试断言派生后的 `(pageIndex, intraPageOffsetPx)` 取整后等价于"原 src 的 scrollTop 处的内容点"。
   <task standards> 红若跨页规则未实现（offset 仍为负、pageIndex 不回退） → 绿实现回退规则后。
 
 ### Section 3. 拆解 scroll-sync 的比例互推
