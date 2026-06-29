@@ -25,6 +25,7 @@
 2. Ctrl+滚轮缩放后左右栏不对齐 — `onZoomChange(r)` 比例缩放 `intraOffset` 后 `realign()` 双栏
 3. 页面边界处左栏持续偏高 — 跨页标准化改用两页 `offsetTop` 之差而非 `offsetHeight`
 4. 水平滚动条拖动后左右不同步 — `realign()` 新增 `scrollLeft` 比例同步
+5. **`scrollToPage` 断点恢复失效** — `scrollToPage()` 调用 `realign()` 时未传入列参数，导致 `TypeError` 被 `requestAnimationFrame` 静默吞咽。修复：显式传入 `els.leftCol` / `els.rightCol`
 
 **测试**：controller 20/20 + zoom 31/31 + translator 40/40 + pytest 193/193
 
