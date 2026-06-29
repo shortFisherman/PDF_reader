@@ -1,7 +1,7 @@
 ## 1. 锚定"翻译后失对齐"复现（红：复现样例测试，不改代码）
 
 - [x] 1.1 在 `static/modules/__tests__/` 下新建对齐复现 fixture：用 jsdom 构造两栏 × 多页容器（占位符 + `<img>` 用 `naturalHeight` 让图片高度与占位符预留高度差 2px），断言"翻译完成后替换图后，两栏 `pageIndex` 顶部偏移之差 > 0"。预期：在当前实现下应失败（红）。运行自测脚本（沿用 `scroll-sync.js` 末尾 `window.__TEST_*__` 模式）记录失败输出。
-- [ ] 1.2 同样在 jsdom fixture 下复现"Ctrl+滚轮放大大约一档后两栏页内偏移不一致"诱因——构造 zoom 模拟器，断言 zoom 后两栏 `pageIndex` 顶部偏移之差 > 0。预期：在当前实现下应失败（红）。
+- [x] 1.2 同样在 jsdom fixture 下复现"Ctrl+滚轮放大大约一档后两栏页内偏移不一致"诱因——构造 zoom 模拟器，断言 zoom 后两栏 `pageIndex` 顶部偏移之差 > 0。预期：在当前实现下应失败（红）。
 
 ## 2. AlignmentController 核心 (红 → 绿)
 

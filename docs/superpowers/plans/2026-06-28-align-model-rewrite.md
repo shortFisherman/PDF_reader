@@ -56,7 +56,7 @@ base-ref: 5f4f414a5fa3d1012c995b741ca3f85c22f30d1a
 
 - [x] **1.1 翻译后失对齐复现红测试** — 新建 jsdom fixture（两栏 × 多页 `.page-container`，占位符 `--page-ratio` 与 `<img naturalHeight>` 故意差 2px）。模拟"翻译完成后替换右栏图后"流程：右栏某页卸载占位符 → 新图 `onload` 触发；断言"两栏同 `pageIndex` 的页面容器顶在视口坐标系下偏移差 == 0"。在当前 `setupScrollSync` 比例实现 + 无 controller 兜底下应失败（即偏移差 > 0）。
   <task standards> 预期 RED：fixture 在当前实现下断言 `Math.abs(leftTop - rightTop) <= 0.5` 不成立、输出 `1 passed, 1 FAILED` 或等价。完成后 GREEN 由 Section 6.1 接管。
-- [ ] **1.2 Ctrl+滚轮失对齐复现红测试** — 同 fixture 上加 zoom 模拟器：模拟一次 Ctrl+wheel 触发 `handleWheel` 把 `--zoom` 从 1 改为 1.1、当前列按锚点公式算 `scrollTop`，断言"两栏同 `pageIndex` 页内偏移一致"。当前实现下右栏靠被动 scroll 事件兜底、未被对齐拉回 → 失败（偏移不一致）。
+- [x] **1.2 Ctrl+滚轮失对齐复现红测试** — 同 fixture 上加 zoom 模拟器：模拟一次 Ctrl+wheel 触发 `handleWheel` 把 `--zoom` 从 1 改为 1.1、当前列按锚点公式算 `scrollTop`，断言"两栏同 `pageIndex` 页内偏移一致"。当前实现下右栏靠被动 scroll 事件兜底、未被对齐拉回 → 失败（偏移不一致）。
   <task standards> 预期 RED：两栏 `intraPageOffset` 差 > 0（即不对齐）；完成后 GREEN 由 Section 6.2 接管。
 
 ### Section 2. AlignmentController 核心 (红 → 绿)
