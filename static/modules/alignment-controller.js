@@ -85,7 +85,10 @@ export function createAlignmentController({ leftEl, rightEl }) {
         realign(dst);
     }
 
-    function onImageLoaded(side, pageIndex) { /* stub */ }
+    function onImageLoaded(side, pageIndex) {
+        realign(leftEl);
+        realign(rightEl);
+    }
     function onZoomChange(newZoom, oldZoom) { /* stub */ }
 
     function installScrollListeners() {
@@ -147,7 +150,7 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
             }
         }
 
-        let pending = 4;
+        let pending = 5;
 
         // Test (a): Write exclusivity — after realign(dst), only dst.scrollTop changes
         {
@@ -364,6 +367,61 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
                 'Test d: pageIndex should not change during realign (got ' + targetAfter.pageIndex + ', expected ' + targetBefore.pageIndex + ')');
             assert(targetAfter.intraPageOffsetPx === targetBefore.intraPageOffsetPx,
                 'Test d: intraPageOffsetPx should not change during realign (got ' + targetAfter.intraPageOffsetPx + ', expected ' + targetBefore.intraPageOffsetPx + ')');
+
+            pending--;
+            done(pending);
+        }
+
+        // Test (e): onImageLoaded calls realign on both columns, does not mutate currentTarget
+        {
+            const leftEl = document.createElement('div');
+            const rightEl = document.createElement('div');
+
+            // Add page-containers so realign has DOM to work with
+            const page0L = document.createElement('div');
+            page0L.className = 'page-container';
+            page0L.dataset.page = '1';
+            page0L.style.height = '400px';
+            page0L.getBoundingClientRect = function () {
+                return { top: 400, bottom: 800, height: 400, left: 0, right: 100, width: 100, x: 0, y: 400 };
+            };
+            leftEl.appendChild(page0L);
+
+            const page0R = document.createElement('div');
+            page0R.className = 'page-container';
+            page0R.dataset.page = '1';
+            page0R.style.height = '400px';
+            page0R.getBoundingClientRect = function () {
+                return { top: 400, bottom: 800, height: 400, left: 0, right: 100, width: 100, x: 0, y: 400 };
+            };
+            rightEl.appendChild(page0R);
+
+            leftEl.getBoundingClientRect = function () {
+                return { top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 };
+            };
+            rightEl.getBoundingClientRect = function () {
+                return { top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 };
+            };
+
+            const ctrl = createAlignmentController({ leftEl: leftEl, rightEl: rightEl });
+            ctrl.setLockTarget(1, 50);
+            const targetBefore = ctrl.getLockTarget();
+
+            ctrl.onImageLoaded('right', 1);
+
+            // realign scrollTop = pageContainerOffsetTop + intraPageOffsetPx
+            // pageContainerOffsetTop = pcRect.top - colRect.top + column.scrollTop
+            // = 400 - 0 + 0 = 400, + 50 = 450
+            assert(leftEl.scrollTop === 450,
+                'Test e: leftEl.scrollTop should be 450 after onImageLoaded, got ' + leftEl.scrollTop);
+            assert(rightEl.scrollTop === 450,
+                'Test e: rightEl.scrollTop should be 450 after onImageLoaded, got ' + rightEl.scrollTop);
+
+            const targetAfter = ctrl.getLockTarget();
+            assert(targetAfter.pageIndex === targetBefore.pageIndex,
+                'Test e: pageIndex should not change (was ' + targetBefore.pageIndex + ', got ' + targetAfter.pageIndex + ')');
+            assert(targetAfter.intraPageOffsetPx === targetBefore.intraPageOffsetPx,
+                'Test e: intraPageOffsetPx should not change (was ' + targetBefore.intraPageOffsetPx + ', got ' + targetAfter.intraPageOffsetPx + ')');
 
             pending--;
             done(pending);
