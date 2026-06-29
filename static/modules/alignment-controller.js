@@ -1,12 +1,103 @@
 export function createAlignmentController({ leftEl, rightEl }) {
-    function onScroll(src) { /* stub */ }
+    const state = {
+        currentTarget: { pageIndex: 0, intraPageOffsetPx: 0 },
+        lockSide: null,
+    };
+
+    let leftScrollHandler = null;
+    let rightScrollHandler = null;
+
+    function setLockTarget(pageIndex, offsetPx) {
+        state.currentTarget.pageIndex = pageIndex;
+        state.currentTarget.intraPageOffsetPx = offsetPx;
+    }
+
+    function getLockTarget() {
+        const t = state.currentTarget;
+        return { pageIndex: t.pageIndex, intraPageOffsetPx: t.intraPageOffsetPx };
+    }
+
+    function realign(column) {
+        const pageContainer = column.querySelector('.page-container[data-page="' + state.currentTarget.pageIndex + '"]');
+        if (!pageContainer) return;
+
+        const pcRect = pageContainer.getBoundingClientRect();
+        const colRect = column.getBoundingClientRect();
+        const pageContainerOffsetTop = pcRect.top - colRect.top + column.scrollTop;
+
+        column.scrollTop = pageContainerOffsetTop + state.currentTarget.intraPageOffsetPx;
+    }
+
+    function onScroll(src) {
+        const containers = src.querySelectorAll('.page-container');
+        if (!containers || containers.length === 0) return;
+
+        let bestPage = null;
+        let bestCoverage = 0;
+        const viewTop = src.scrollTop;
+        const viewBottom = viewTop + src.clientHeight;
+
+        containers.forEach(function (c) {
+            const rect = c.getBoundingClientRect();
+            const colRect = src.getBoundingClientRect();
+            const top = rect.top - colRect.top + src.scrollTop;
+            const bottom = top + rect.height;
+            const overlap = Math.min(bottom, viewBottom) - Math.max(top, viewTop);
+            if (overlap <= 0) return;
+            const coverage = overlap / rect.height;
+            if (coverage > bestCoverage) {
+                bestCoverage = coverage;
+                bestPage = c;
+            }
+        });
+
+        if (!bestPage) return;
+
+        let pageIndex = parseInt(bestPage.dataset.page);
+        const pcRect = bestPage.getBoundingClientRect();
+        const colRect = src.getBoundingClientRect();
+        const pageContainerOffsetTop = pcRect.top - colRect.top + src.scrollTop;
+
+        let intraOffset = src.scrollTop - pageContainerOffsetTop;
+
+        if (intraOffset < 0) {
+            pageIndex -= 1;
+            const nextPage = src.querySelector('.page-container[data-page="' + (pageIndex + 1) + '"]');
+            if (nextPage) {
+                intraOffset += nextPage.offsetHeight;
+            }
+        }
+
+        state.currentTarget.pageIndex = pageIndex;
+        state.currentTarget.intraPageOffsetPx = intraOffset;
+
+        const side = src === leftEl ? 'left' : 'right';
+        state.lockSide = side;
+
+        const dst = side === 'left' ? rightEl : leftEl;
+        realign(dst);
+    }
+
     function onImageLoaded(side, pageIndex) { /* stub */ }
     function onZoomChange(newZoom, oldZoom) { /* stub */ }
-    function realign(column) { /* stub */ }
-    function setLockTarget(pageIndex, offsetPx) { /* stub */ }
-    function getLockTarget() { return null; /* stub */ }
-    function installScrollListeners() { /* stub */ }
-    function dispose() { /* stub */ }
+
+    function installScrollListeners() {
+        leftScrollHandler = function () { onScroll(leftEl); };
+        rightScrollHandler = function () { onScroll(rightEl); };
+        leftEl.addEventListener('scroll', leftScrollHandler);
+        rightEl.addEventListener('scroll', rightScrollHandler);
+    }
+
+    function dispose() {
+        if (leftScrollHandler) {
+            leftEl.removeEventListener('scroll', leftScrollHandler);
+            leftScrollHandler = null;
+        }
+        if (rightScrollHandler) {
+            rightEl.removeEventListener('scroll', rightScrollHandler);
+            rightScrollHandler = null;
+        }
+    }
 
     return {
         onScroll,
@@ -26,8 +117,8 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
         console.error('FAIL: createAlignmentController is not defined');
         console.log('0 passed, 4 FAILED (RED phase)');
     } else {
-        let passCount = 0;
-        let failCount = 0;
+        var passCount = 0;
+        var failCount = 0;
 
         function assert(cond, msg) {
             if (cond) {
@@ -49,21 +140,35 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
             }
         }
 
-        let pending = 4;
+        var pending = 4;
 
         // Test (a): Write exclusivity — after realign(dst), only dst.scrollTop changes
         {
-            const leftEl = document.createElement('div');
-            const rightEl = document.createElement('div');
+            var leftEl = document.createElement('div');
+            var rightEl = document.createElement('div');
             Object.defineProperty(leftEl, 'clientHeight', { value: 500, configurable: true });
             Object.defineProperty(rightEl, 'clientHeight', { value: 500, configurable: true });
             Object.defineProperty(leftEl, 'scrollHeight', { value: 1600, configurable: true });
             Object.defineProperty(rightEl, 'scrollHeight', { value: 1600, configurable: true });
 
-            const ctrl = createAlignmentController({ leftEl, rightEl });
+            // Add page-container[data-page="0"] so realign can compute scrollTop
+            var page0 = document.createElement('div');
+            page0.className = 'page-container';
+            page0.dataset.page = '0';
+            page0.style.height = '400px';
+            page0.getBoundingClientRect = function () {
+                return { top: 200, bottom: 600, height: 400, left: 0, right: 100, width: 100, x: 0, y: 200 };
+            };
+            rightEl.appendChild(page0);
+
+            rightEl.getBoundingClientRect = function () {
+                return { top: 0, bottom: 500, height: 500, left: 100, right: 200, width: 100, x: 100, y: 0 };
+            };
+
+            var ctrl = createAlignmentController({ leftEl: leftEl, rightEl: rightEl });
             ctrl.setLockTarget(0, 0);
-            const beforeLeft = leftEl.scrollTop;
-            const beforeRight = rightEl.scrollTop;
+            var beforeLeft = leftEl.scrollTop;
+            var beforeRight = rightEl.scrollTop;
 
             ctrl.realign(rightEl);
 
@@ -78,38 +183,42 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
 
         // Test (b): Target derivation — onScroll derives {pageIndex, intraPageOffsetPx}
         {
-            const leftEl = document.createElement('div');
-            const rightEl = document.createElement('div');
+            var leftEl = document.createElement('div');
+            var rightEl = document.createElement('div');
             Object.defineProperty(leftEl, 'clientHeight', { value: 500, configurable: true });
             Object.defineProperty(leftEl, 'scrollHeight', { value: 2000, configurable: true });
             leftEl.scrollTop = 350;
 
             // 4 pages, 400px each
-            for (let i = 0; i < 4; i++) {
-                const page = document.createElement('div');
+            for (var i = 0; i < 4; i++) {
+                var page = document.createElement('div');
                 page.className = 'page-container';
                 page.dataset.page = String(i);
                 page.style.height = '400px';
-                const pageTop = i * 400;
-                const visibleTop = pageTop - leftEl.scrollTop;
-                page.getBoundingClientRect = () => ({
-                    top: visibleTop,
-                    bottom: visibleTop + 400,
-                    height: 400,
-                    left: 0,
-                    right: 100,
-                    width: 100,
-                    x: 0,
-                    y: visibleTop,
-                });
+                var pageTop = i * 400;
+                var visibleTop = pageTop - leftEl.scrollTop;
+                page.getBoundingClientRect = function () {
+                    return {
+                        top: visibleTop,
+                        bottom: visibleTop + 400,
+                        height: 400,
+                        left: 0,
+                        right: 100,
+                        width: 100,
+                        x: 0,
+                        y: visibleTop,
+                    };
+                };
                 leftEl.appendChild(page);
             }
-            leftEl.getBoundingClientRect = () => ({ top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 });
+            leftEl.getBoundingClientRect = function () {
+                return { top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 };
+            };
 
-            const ctrl = createAlignmentController({ leftEl, rightEl });
+            var ctrl = createAlignmentController({ leftEl: leftEl, rightEl: rightEl });
             ctrl.onScroll(leftEl);
 
-            const target = ctrl.getLockTarget();
+            var target = ctrl.getLockTarget();
             assert(target !== null, 'Test b: getLockTarget should return a target object, got null');
             assert(target !== null && typeof target.pageIndex === 'number',
                 'Test b: target.pageIndex should be a number');
@@ -122,25 +231,51 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
 
         // Test (c): Realign write — both columns align to the same page top after realign
         {
-            const leftEl = document.createElement('div');
-            const rightEl = document.createElement('div');
+            var leftEl = document.createElement('div');
+            var rightEl = document.createElement('div');
             Object.defineProperty(leftEl, 'clientHeight', { value: 500, configurable: true });
             Object.defineProperty(rightEl, 'clientHeight', { value: 500, configurable: true });
-            // 30px scrollHeight difference (placeholder vs real images, 2px × 15 pages)
+            // 30px scrollHeight difference (placeholder vs real images, 2px * 15 pages)
             Object.defineProperty(leftEl, 'scrollHeight', { value: 1000, configurable: true });
             Object.defineProperty(rightEl, 'scrollHeight', { value: 970, configurable: true });
 
             // Mock getBoundingClientRect so page 2 offsetTop is computable
-            leftEl.getBoundingClientRect = () => ({ top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 });
-            rightEl.getBoundingClientRect = () => ({ top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 });
+            leftEl.getBoundingClientRect = function () {
+                return { top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 };
+            };
+            rightEl.getBoundingClientRect = function () {
+                return { top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 };
+            };
 
-            const ctrl = createAlignmentController({ leftEl, rightEl });
+            // Add 5 page-containers (200px each) to both columns
+            for (var i = 0; i < 5; i++) {
+                var pageL = document.createElement('div');
+                pageL.className = 'page-container';
+                pageL.dataset.page = String(i);
+                pageL.style.height = '200px';
+                var pageTop = i * 200;
+                pageL.getBoundingClientRect = function () {
+                    return { top: pageTop, bottom: pageTop + 200, height: 200, left: 0, right: 100, width: 100, x: 0, y: pageTop };
+                };
+                leftEl.appendChild(pageL);
+
+                var pageR = document.createElement('div');
+                pageR.className = 'page-container';
+                pageR.dataset.page = String(i);
+                pageR.style.height = '200px';
+                pageR.getBoundingClientRect = function () {
+                    return { top: pageTop, bottom: pageTop + 200, height: 200, left: 0, right: 100, width: 100, x: 0, y: pageTop };
+                };
+                rightEl.appendChild(pageR);
+            }
+
+            var ctrl = createAlignmentController({ leftEl: leftEl, rightEl: rightEl });
             ctrl.setLockTarget(2, 0);
             ctrl.realign(leftEl);
             ctrl.realign(rightEl);
 
-            const leftScroll = leftEl.scrollTop;
-            const rightScroll = rightEl.scrollTop;
+            var leftScroll = leftEl.scrollTop;
+            var rightScroll = rightEl.scrollTop;
 
             assert(Math.abs(leftScroll - rightScroll) < 0.5,
                 'Test c: both columns should align to same page top; diff=' + Math.abs(leftScroll - rightScroll).toFixed(1));
@@ -155,17 +290,19 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
 
         // Test (d): Re-entrance guard — derivation must not run during realign
         {
-            const leftEl = document.createElement('div');
-            const rightEl = document.createElement('div');
+            var leftEl = document.createElement('div');
+            var rightEl = document.createElement('div');
             Object.defineProperty(leftEl, 'clientHeight', { value: 500, configurable: true });
             Object.defineProperty(leftEl, 'scrollHeight', { value: 2000, configurable: true });
-            leftEl.getBoundingClientRect = () => ({ top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 });
+            leftEl.getBoundingClientRect = function () {
+                return { top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 };
+            };
 
-            const ctrl = createAlignmentController({ leftEl, rightEl });
+            var ctrl = createAlignmentController({ leftEl: leftEl, rightEl: rightEl });
 
-            let derivationCallsDuringRealign = 0;
-            const _origOnScroll = ctrl.onScroll;
-            const _origRealign = ctrl.realign;
+            var derivationCallsDuringRealign = 0;
+            var _origOnScroll = ctrl.onScroll;
+            var _origRealign = ctrl.realign;
 
             // Spy: wrap onScroll to count derivation attempts
             ctrl.onScroll = function (src) {
@@ -173,8 +310,8 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
                 _origOnScroll(src);
             };
 
-            // Simulate realign flow: realign writes scrollTop → browser fires
-            // synchronous scroll event → onScroll called (potentially re-entrant)
+            // Simulate realign flow: realign writes scrollTop -> browser fires
+            // synchronous scroll event -> onScroll called (potentially re-entrant)
             ctrl.realign = function (col) {
                 _origRealign(col);
                 // This represents the synchronous scroll event that fires
