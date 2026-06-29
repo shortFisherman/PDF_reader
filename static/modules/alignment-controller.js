@@ -342,11 +342,15 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
             };
 
             const ctrl = createAlignmentController({ leftEl: leftEl, rightEl: rightEl });
+
+            // Set a lock target that differs from what onScroll would derive
+            // from the DOM (scrollTop=0, page 0). If the guard fails and
+            // onScroll runs, it would overwrite to {pageIndex:0, intraPageOffsetPx:0}.
+            ctrl.setLockTarget(2, 100);
             const targetBefore = ctrl.getLockTarget();
 
             // Simulate: realign writes scrollTop, then browser fires scroll event
             // which calls onScroll. The re-entrance guard should block derivation.
-            ctrl.setLockTarget(0, 0);
             ctrl.realign(rightEl);
 
             // In jsdom, scrollTop = assignment does NOT fire scroll events
