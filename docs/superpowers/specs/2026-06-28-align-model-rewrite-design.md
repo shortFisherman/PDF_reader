@@ -2,6 +2,8 @@
 comet_change: align-model-rewrite
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-29-align-model-rewrite
+status: final
 ---
 
 # Design Doc — align-model-rewrite (左右栏对齐模型重构)

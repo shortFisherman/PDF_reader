@@ -6,27 +6,27 @@ Display original and translated PDF page images side-by-side in two synchronized
 ## Requirements
 ### Requirement: Two synchronized scrollable columns
 
-The system SHALL display original and translated PDF pages side by side in two vertically scrollable columns. Scroll synchronization SHALL be **bidirectional and proportional**: scrolling either column SHALL synchronize the other column to the same fractional scroll position, computed as `scrollTop / (scrollHeight - clientHeight)`. Synchronization SHALL set the destination `scrollTop` synchronously within the source scroll event handler (no frame deferral), with a `syncing` flag reset via `setTimeout(0)` to prevent feedback loops. The `scroll-sync` frontend module SHALL own this logic.
+The system SHALL display original and translated PDF pages side by side in two vertically scrollable columns. Scroll synchronization SHALL be **page-aligned with intra-page pixel offset**, owned by the `alignment-controller` frontend module: scrolling either column SHALL derive a `scrollTop`-independent alignment target `(pageIndex, intraPageOffsetPx)` and the other column SHALL be realigned to that target via `AlignmentController.realign()` within the source scroll event handler (no frame deferral). A `realigning` guard SHALL prevent feedback loops without relying on `setTimeout(0)` unlock of a `syncing` flag. The prior `scroll-sync` proportional formula `scrollTop / (scrollHeight - clientHeight)` SHALL NOT be used. The `scroll-sync` frontend module SHALL remain responsible for `createSettleGate` and `setupPageDetection`, but SHALL NOT own the sync algorithm.
 
 #### Scenario: Initial layout
 
 - **WHEN** a user opens a PDF
 - **THEN** the system SHALL display two identical columns, each showing all pages of the original PDF stacked vertically, with the left column labeled as original and the right column as translation target
 
-#### Scenario: Left-driven proportional sync
+#### Scenario: Left-driven page-aligned sync
 
-- **WHEN** the user scrolls the left column to a fractional position `f` (0 ≤ f ≤ 1)
-- **THEN** the right column SHALL synchronize to the same fractional position `f` synchronously (no frame deferral), regardless of small differences in total scrollable height
+- **WHEN** the user scrolls the left column so that page N's container top sits 30px below the viewport top
+- **THEN** the right column SHALL realign synchronously (no frame deferral) to the same `(pageIndex = N, intraPageOffsetPx = 30)` target, regardless of differences in total scrollable height between the two columns, instead of matching a fractional scroll position.
 
-#### Scenario: Right-driven proportional sync
+#### Scenario: Right-driven page-aligned sync
 
-- **WHEN** the user scrolls the right column independently to a fractional position `f`
-- **THEN** the left column SHALL synchronize to the same fractional position `f` synchronously (no frame deferral), regardless of small differences in total scrollable height (replacing the prior left-only behavior)
+- **WHEN** the user scrolls the right column independently so that page N's container top sits 30px below the viewport top
+- **THEN** the left column SHALL realign synchronously to `(pageIndex = N, intraPageOffsetPx = 30)`, regardless of differences in total scrollable height, replacing the prior proportional behavior.
 
 #### Scenario: No sync feedback loop
 
-- **WHEN** synchronization writes the target column's `scrollTop`
-- **THEN** the resulting scroll event SHALL NOT trigger a reverse synchronization back to the source column
+- **WHEN** `realign()` writes the destination column's `scrollTop` and the resulting `scroll` event fires back
+- **THEN** AlignmentController SHALL detect the reentrant realign via its `realigning` guard and SHALL NOT re-derive the alignment target from this feedback event; the prior alignment target SHALL remain authoritative.
 
 ### Requirement: Page-level image display
 

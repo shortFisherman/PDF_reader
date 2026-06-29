@@ -2,6 +2,7 @@
 change: align-model-rewrite
 design-doc: docs/superpowers/specs/2026-06-28-align-model-rewrite-design.md
 base-ref: 5f4f414a5fa3d1012c995b741ca3f85c22f30d1a
+archived-with: 2026-06-29-align-model-rewrite
 ---
 
 # 实施计划 — align-model-rewrite
@@ -44,6 +45,7 @@ base-ref: 5f4f414a5fa3d1012c995b741ca3f85c22f30d1a
 
 本计划文件不替用户决定。若使用 worktree，由主会话通过 `superpowers:using-git-worktrees` 在执行时创建隔离工作区；plan 文件本身仅作计划依据。
 
+archived-with: 2026-06-29-align-model-rewrite
 ---
 
 ## 任务清单 (TDD 严格)
@@ -145,6 +147,7 @@ base-ref: 5f4f414a5fa3d1012c995b741ca3f85c22f30d1a
 - [x] **9.4 最后一次 commit 不带 BREAKING 字样** — 全部变更通过既有 OpenSpec guard 后才推进到 verify 阶段。最后一次 commit 描述以"complete"语义而非 BREAKING；OpenSpec delta specs archive 阶段同步主 spec，本变更 PR 内不带 BREAKING CHANGE 标签。
   <task standards> 完成后 GREEN：`git log` 末条 message 无 BREAKING；OpenSpec guard 通过。
 
+archived-with: 2026-06-29-align-model-rewrite
 ---
 
 ## 质量门
