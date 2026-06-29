@@ -1,5 +1,5 @@
 workflow: tweak
-phase: verify
+phase: archive
 context_compression: off
 build_mode: direct
 build_command: pytest -q
@@ -13,9 +13,9 @@ auto_transition: true
 base_ref: 246e095136402c13244c73a0ea0c59c69ce63f86
 design_doc: null
 plan: null
-verify_result: pending
+verify_result: pass
 verification_report: docs/superpowers/reports/2026-06-29-fix-reading-progress-restore-verify.md
 branch_status: handled
 created_at: 2026-06-29
-verified_at: null
-archived: false
+verified_at: 2026-06-29
+archived: true
