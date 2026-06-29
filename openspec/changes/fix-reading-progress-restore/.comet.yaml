@@ -1,7 +1,8 @@
 workflow: tweak
-phase: build
+phase: verify
 context_compression: off
 build_mode: direct
+build_command: pytest -q
 build_pause: null
 subagent_dispatch: null
 tdd_mode: direct
