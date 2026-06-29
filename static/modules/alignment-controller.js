@@ -99,10 +99,22 @@ export function createAlignmentController({ leftEl, rightEl }) {
         let intraOffset = src.scrollTop - pageContainerOffsetTop;
 
         if (intraOffset < 0) {
+            // Viewport top is above the selected page. Roll back to the
+            // previous page and adjust intraOffset to be measured from
+            // the previous page's start.
+            //
+            // Use the actual distance between the two pages' offsetTops
+            // rather than offsetHeight alone. CSS margins between page
+            // containers create gaps that offsetHeight does not account
+            // for — without this, the alignment drifts by the gap width
+            // at every page boundary.
+            var selectedPageOffsetTop = pageContainerOffsetTop;
             pageIndex -= 1;
-            const nextPage = src.querySelector('.page-container[data-page="' + (pageIndex + 1) + '"]');
-            if (nextPage) {
-                intraOffset += nextPage.offsetHeight;
+            var prevPage = src.querySelector('.page-container[data-page="' + pageIndex + '"]');
+            if (prevPage) {
+                var prevRect = prevPage.getBoundingClientRect();
+                var prevPageOffsetTop = prevRect.top - colRect.top + src.scrollTop;
+                intraOffset += (selectedPageOffsetTop - prevPageOffsetTop);
             }
         }
 
