@@ -1,6 +1,7 @@
 import { getElements, createPageEl, calculatePlaceholderHeight } from './modules/dom.js';
 import { setupIntersectionObserver } from './modules/lazy-loader.js';
 import { createSettleGate, setupPageDetection } from './modules/scroll-sync.js';
+import { createAlignmentController } from './modules/alignment-controller.js';
 import { fetchStageLabels, getStageLabel } from './modules/stages.js';
 import { translateCurrentPage, translateBatch } from './modules/translator.js';
 import { setupZoom } from './modules/zoom.js';
@@ -18,6 +19,7 @@ let els;
 let io = null;
 let settle = null;
 let zoomInst = null;
+let alignController = null;
 let progressCleanup = null;
 
 function init() {
@@ -50,6 +52,7 @@ function init() {
 
 async function openPdf() {
     if (zoomInst) { zoomInst.dispose(); zoomInst = null; }
+    if (alignController) { alignController.dispose(); alignController = null; }
     if (io) { io.observer.disconnect(); io = null; }
     if (settle) { settle.dispose(); settle = null; }
     if (progressCleanup) { progressCleanup(); progressCleanup = null; }
@@ -100,10 +103,15 @@ async function openPdf() {
             settle,
         });
         setupPageDetection({ container: els.leftCol, settle }, onPageChange);
+
+        alignController = createAlignmentController({ leftEl: els.leftCol, rightEl: els.rightCol });
+        alignController.installScrollListeners();
+
         zoomInst = setupZoom({
             columns: [els.leftCol, els.rightCol],
             appEl: els.appView,
-            onZoomChange: z => { els.zoomLevel.textContent = Math.round(z * 100) + '%'; }
+            onZoomChange: z => { els.zoomLevel.textContent = Math.round(z * 100) + '%'; },
+            alignmentController: alignController,
         });
         els.zoomLevel.textContent = '100%';
         loadTranslatedState();
@@ -128,7 +136,7 @@ async function openPdf() {
     }
 }
 
-function loadPageImage(container) {
+function loadPageImage(container, onLoadCallback) {
     const page = parseInt(container.dataset.page);
     const side = container.dataset.side;
 
@@ -143,6 +151,7 @@ function loadPageImage(container) {
             placeholder.replaceWith(img);
         }
         container.dataset.loaded = 'true';
+        if (onLoadCallback) onLoadCallback();
     };
 
     img.onerror = () => {
@@ -183,9 +192,9 @@ async function loadTranslatedState() {
 }
 
 function scrollToPage(index) {
-    const el = els.leftCol.querySelector(`.page-container[data-page="${index}"]`);
-    if (!el) return;
-    el.scrollIntoView({ block: 'start' });
+    if (!alignController) return;
+    alignController.setLockTarget(index, 0);
+    alignController.realign();
 }
 
 function saveProgress() {
@@ -266,7 +275,9 @@ async function onTranslateClick() {
                 if (rightEl) {
                     if (rightEl.dataset.loaded === 'true') {
                         unloadPageImage(rightEl);
-                        loadPageImage(rightEl);
+                        loadPageImage(rightEl, function () {
+                            if (alignController) alignController.onImageLoaded('right', targetPage);
+                        });
                     }
                     rightEl.classList.add('translated');
                 }
@@ -371,7 +382,9 @@ async function runBatchTranslate(from, to) {
                     if (rightEl) {
                         if (rightEl.dataset.loaded === 'true') {
                             unloadPageImage(rightEl);
-                            loadPageImage(rightEl);
+                            loadPageImage(rightEl, function () {
+                                if (alignController) alignController.onImageLoaded('right', p);
+                            });
                         }
                         rightEl.classList.add('translated');
                     }
