@@ -1,5 +1,45 @@
 # 更新日志
 
+## 2026-06-29 — 对齐模型重构
+
+### `align-model-rewrite`
+
+将左右双栏对齐从分散在三处的比例同步重构为 `AlignmentController` 单一排他所有者，修复「翻译完成后图替换失对齐」与「Ctrl+滚轮缩放失对齐」两个长期 Bug。
+
+**架构变更**：
+- **新建** `static/modules/alignment-controller.js` — 导出 `createAlignmentController({leftEl, rightEl})`，以 `(pageIndex, intraPageOffsetPx)` 为对齐目标，20 个自测全绿
+- **删除** `scroll-sync.js` 中 `setupScrollSync` 比例互推函数体，保留 `createSettleGate` / `setupPageDetection`
+- **修改** `zoom.js` — 新增 `alignmentController` 参数，Ctrl+滚轮 / reset 后显式调 `controller.onZoomChange(newZoom, oldZoom)`
+- **修改** `app.js` — 装配 controller、`onFinish` 翻译完成路径接入 `onImageLoaded`、`scrollToPage` 改走 `setLockTarget + realign`
+
+**设计决策**：
+- 排他性：仅 controller 写两栏 `scrollTop`（grep 断言通过）
+- 目标语义：`(pageIndex, intraPageOffsetPx)` 用 `getBoundingClientRect` 相对栏计算，与 `scrollHeight` 比例脱钩
+- 三源汇入：`onScroll` / `onImageLoaded` / `onZoomChange` 全部调 `realign()`
+- 水平同步：`realign()` 内按 `lockSide` 比例同步 `scrollLeft`
+- 跨页标准化：使用实际页间距（含 CSS margin）而非 `offsetHeight` 补偿
+- 回流抑制：`suppressNextScrollFrom` 标记防止 `scrollTop` 写入触发的 scroll 事件回灌
+
+**Bug 修复**：
+1. 翻译完成后图替换导致左右栏不对齐 — `onImageLoaded` 在 `<img>.onload` 内调 `realign()` 兜底
+2. Ctrl+滚轮缩放后左右栏不对齐 — `onZoomChange(r)` 比例缩放 `intraOffset` 后 `realign()` 双栏
+3. 页面边界处左栏持续偏高 — 跨页标准化改用两页 `offsetTop` 之差而非 `offsetHeight`
+4. 水平滚动条拖动后左右不同步 — `realign()` 新增 `scrollLeft` 比例同步
+
+**测试**：controller 20/20 + zoom 31/31 + translator 40/40 + pytest 193/193
+
+| 文件 | 变更 |
+|------|------|
+| `static/modules/alignment-controller.js` | 新建 (570 行) |
+| `static/modules/scroll-sync.js` | 修改 (删除比例互推，保留 settle gate) |
+| `static/modules/zoom.js` | 修改 (新增 alignmentController 参数) |
+| `static/app.js` | 修改 (装配 controller 并路由三路径) |
+| `tests/run-alignment-controller-tests.mjs` | 新建 |
+| `tests/run-alignment-repro-tests.mjs` | 新建 |
+| `openspec/specs/column-alignment/spec.md` | 新建 (5 条 Requirement) |
+| `openspec/specs/dual-column-reading/spec.md` | 修改 |
+| `openspec/specs/page-zoom/spec.md` | 修改 |
+
 ## 2026-06-27 — 断点恢复
 
 ### `reading-position-resume`
