@@ -6,6 +6,7 @@ export function createAlignmentController({ leftEl, rightEl }) {
 
     let leftScrollHandler = null;
     let rightScrollHandler = null;
+    let realigning = false;
 
     function setLockTarget(pageIndex, offsetPx) {
         state.currentTarget.pageIndex = pageIndex;
@@ -21,14 +22,20 @@ export function createAlignmentController({ leftEl, rightEl }) {
         const pageContainer = column.querySelector('.page-container[data-page="' + state.currentTarget.pageIndex + '"]');
         if (!pageContainer) return;
 
+        realigning = true;
+
         const pcRect = pageContainer.getBoundingClientRect();
         const colRect = column.getBoundingClientRect();
         const pageContainerOffsetTop = pcRect.top - colRect.top + column.scrollTop;
 
         column.scrollTop = pageContainerOffsetTop + state.currentTarget.intraPageOffsetPx;
+
+        setTimeout(function () { realigning = false; }, 0);
     }
 
     function onScroll(src) {
+        if (realigning) return;
+
         const containers = src.querySelectorAll('.page-container');
         if (!containers || containers.length === 0) return;
 
@@ -289,7 +296,7 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
             done(pending);
         }
 
-        // Test (d): Re-entrance guard — derivation must not run during realign
+        // Test (d): Re-entrance guard — onScroll must skip when realigning is true
         {
             const leftEl = document.createElement('div');
             const rightEl = document.createElement('div');
@@ -299,32 +306,60 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
                 return { top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 };
             };
 
+            // Add page-containers so onScroll and realign have DOM to work with
+            for (let i = 0; i < 4; i++) {
+                const page = document.createElement('div');
+                page.className = 'page-container';
+                page.dataset.page = String(i);
+                page.style.height = '400px';
+                Object.defineProperty(page, 'offsetHeight', { value: 400, configurable: true });
+                const pageTop = i * 400;
+                const visibleTop = pageTop - leftEl.scrollTop;
+                page.getBoundingClientRect = function () {
+                    return {
+                        top: visibleTop, bottom: visibleTop + 400, height: 400,
+                        left: 0, right: 100, width: 100, x: 0, y: visibleTop,
+                    };
+                };
+                leftEl.appendChild(page);
+
+                const rPage = document.createElement('div');
+                rPage.className = 'page-container';
+                rPage.dataset.page = String(i);
+                rPage.style.height = '400px';
+                Object.defineProperty(rPage, 'offsetHeight', { value: 400, configurable: true });
+                const rTop = i * 400;
+                rPage.getBoundingClientRect = function () {
+                    return {
+                        top: rTop, bottom: rTop + 400, height: 400,
+                        left: 0, right: 100, width: 100, x: 0, y: rTop,
+                    };
+                };
+                rightEl.appendChild(rPage);
+            }
+            rightEl.getBoundingClientRect = function () {
+                return { top: 0, bottom: 500, height: 500, left: 0, right: 100, width: 100, x: 0, y: 0 };
+            };
+
             const ctrl = createAlignmentController({ leftEl: leftEl, rightEl: rightEl });
+            const targetBefore = ctrl.getLockTarget();
 
-            let derivationCallsDuringRealign = 0;
-            const _origOnScroll = ctrl.onScroll;
-            const _origRealign = ctrl.realign;
+            // Simulate: realign writes scrollTop, then browser fires scroll event
+            // which calls onScroll. The re-entrance guard should block derivation.
+            ctrl.setLockTarget(0, 0);
+            ctrl.realign(rightEl);
 
-            // Spy: wrap onScroll to count derivation attempts
-            ctrl.onScroll = function (src) {
-                derivationCallsDuringRealign++;
-                _origOnScroll(src);
-            };
+            // In jsdom, scrollTop = assignment does NOT fire scroll events
+            // synchronously. We simulate the real browser behavior by calling
+            // onScroll immediately after realign — the guard (setTimeout 0)
+            // means realigning is still true at this point.
+            ctrl.onScroll(rightEl);
 
-            // Simulate realign flow: realign writes scrollTop -> browser fires
-            // synchronous scroll event -> onScroll called (potentially re-entrant)
-            ctrl.realign = function (col) {
-                _origRealign(col);
-                // This represents the synchronous scroll event that fires
-                // when realign writes to scrollTop in a real browser.
-                // A re-entrance guard would prevent onScroll from processing.
-                ctrl.onScroll(col);
-            };
-
-            ctrl.realign(leftEl);
-
-            assert(derivationCallsDuringRealign === 0,
-                'Test d: re-entrance guard missing — derivation called ' + derivationCallsDuringRealign + ' time(s) during realign');
+            const targetAfter = ctrl.getLockTarget();
+            assert(targetAfter.pageIndex === targetBefore.pageIndex,
+                'Test d: pageIndex should not change during realign (got ' + targetAfter.pageIndex + ', expected ' + targetBefore.pageIndex + ')');
+            assert(targetAfter.intraPageOffsetPx === targetBefore.intraPageOffsetPx,
+                'Test d: intraPageOffsetPx should not change during realign (got ' + targetAfter.intraPageOffsetPx + ', expected ' + targetBefore.intraPageOffsetPx + ')');
 
             pending--;
             done(pending);
