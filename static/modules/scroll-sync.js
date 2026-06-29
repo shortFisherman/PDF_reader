@@ -47,26 +47,14 @@ export function createSettleGate(leftEl, rightEl) {
     };
 }
 
+/**
+ * @deprecated align-model-rewrite: 即将被 AlignmentController 替换。
+ *   比例互推逻辑将迁移到 createAlignmentController.onScroll/realign，
+ *   scroll-sync.js 仅保留 createSettleGate 与 setupPageDetection。
+ */
 export function setupScrollSync({ left, right }) {
-    let syncing = false;
-
-    function sync(src, dst) {
-        if (syncing) return;
-        syncing = true;
-
-        const vf = src.scrollHeight <= src.clientHeight ? 0
-            : src.scrollTop / (src.scrollHeight - src.clientHeight);
-        dst.scrollTop = vf * (dst.scrollHeight - dst.clientHeight);
-
-        const hf = src.scrollWidth <= src.clientWidth ? 0
-            : src.scrollLeft / (src.scrollWidth - src.clientWidth);
-        dst.scrollLeft = hf * (dst.scrollWidth - dst.clientWidth);
-
-        setTimeout(() => { syncing = false; }, 0);
-    }
-
-    left.addEventListener('scroll', () => sync(left, right));
-    right.addEventListener('scroll', () => sync(right, left));
+    // @deprecated align-model-rewrite: 比例互推已由 AlignmentController 替代。
+    //   本函数保留空壳以维持 import 不破坏，将在 align-model-rewrite 完成后移除。
 }
 
 export function setupPageDetection({ container, settle }, onPageChange) {
@@ -329,5 +317,16 @@ if (typeof window !== 'undefined' && window.__TEST_SETUP_PAGE_DETECTION__) {
             done(pending);
         }
     }
+}
+
+// === Tests for setupScrollSync (deprecated existence check) ===
+if (typeof window !== 'undefined' && window.__TEST_SETUP_SCROLL_SYNC_EXISTS__) {
+    if (typeof setupScrollSync !== 'function') {
+        console.error('FAIL: setupScrollSync should still exist during transition');
+        console.log('0 passed, 1 FAILED');
+    } else {
+        console.log('PASS: setupScrollSync exists (@deprecated, pending removal in align-model-rewrite)');
+    }
+    globalThis.__SETUP_SCROLL_SYNC_EXISTS_DONE__ = true;
 }
 

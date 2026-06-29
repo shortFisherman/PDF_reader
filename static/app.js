@@ -1,6 +1,6 @@
 import { getElements, createPageEl, calculatePlaceholderHeight } from './modules/dom.js';
 import { setupIntersectionObserver } from './modules/lazy-loader.js';
-import { setupScrollSync, setupPageDetection, createSettleGate } from './modules/scroll-sync.js';
+import { createSettleGate, setupPageDetection } from './modules/scroll-sync.js';
 import { fetchStageLabels, getStageLabel } from './modules/stages.js';
 import { translateCurrentPage, translateBatch } from './modules/translator.js';
 import { setupZoom } from './modules/zoom.js';
@@ -99,7 +99,6 @@ async function openPdf() {
             unload: unloadPageImage,
             settle,
         });
-        setupScrollSync({ left: els.leftCol, right: els.rightCol });
         setupPageDetection({ container: els.leftCol, settle }, onPageChange);
         zoomInst = setupZoom({
             columns: [els.leftCol, els.rightCol],
