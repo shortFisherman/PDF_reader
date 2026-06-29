@@ -7,7 +7,7 @@
 
 - [x] 2.1 新建 `static/modules/alignment-controller.js`，导出空 `createAlignmentController({ leftEl, rightEl })` 与内嵌自测块 `window.__TEST_ALIGNMENT_CONTROLLER__`。先写自测：4 个失败测试对齐 `column-alignment` 能力的关键 scenario（write 排他性、target 派生、realign 写入、realigning 重入保护），全部红。
 - [x] 2.2 实现 `currentTarget = { pageIndex, intraPageOffsetPx }`、`lockSide`、`setLockTarget(pageIndex, offsetPx)`、`onScroll(src)` 派生 `(pageOf(src), intraOffsetOf(src))`、`realign(column)` 写 `column.scrollTop = pageContainer.offsetTop + intraPageOffsetPx`（用 `getBoundingClientRect` 相对栏算 `offsetTop`），对其暴露 `getLockTarget()`。让 2.1 的 write排他性/target派生/realign 写入测试转绿。
-- [ ] 2.3 实现 `realigning` 重入保护：`realign()` 进入时置 flag、写 `scrollTop`、退出清 flag；`onScroll` 检测到 `realigning` 时跳过派生。写重入保护测试（红→绿）。
+- [x] 2.3 实现 `realigning` 重入保护：`realign()` 进入时置 flag、写 `scrollTop`、退出清 flag；`onScroll` 检测到 `realigning` 时跳过派生。写重入保护测试（红→绿）。
 - [ ] 2.4 实现 `onImageLoaded(side, pageIndex)`：仅 `realign()`，不修改 `currentTarget`。写测试驱动此函数仅调一次 realign。
 - [ ] 2.5 实现 `onZoomChange(newZoom, oldZoom)`：`intraPageOffsetPx *= newZoom/oldZoom`，再 `realign()`，不更新 `pageIndex`。写测试覆盖页内偏移缩放比例正确。
 - [ ] 2.6 用 `getBoundingClientRect` 做 pageOf(src) 与 intraOffsetOf(src) 的几何测试（含 negative offset 即视口顶位于页容器上方一截的情况）。
