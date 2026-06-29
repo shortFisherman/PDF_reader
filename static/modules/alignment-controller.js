@@ -6,7 +6,7 @@ export function createAlignmentController({ leftEl, rightEl }) {
 
     let leftScrollHandler = null;
     let rightScrollHandler = null;
-    let realigning = false;
+    let realignTarget = null;
 
     function setLockTarget(pageIndex, offsetPx) {
         state.currentTarget.pageIndex = pageIndex;
@@ -22,7 +22,11 @@ export function createAlignmentController({ leftEl, rightEl }) {
         const pageContainer = column.querySelector('.page-container[data-page="' + state.currentTarget.pageIndex + '"]');
         if (!pageContainer) return;
 
-        realigning = true;
+        // Mark this column as the realign target so that the async scroll event
+        // triggered by the scrollTop write below is suppressed in onScroll.
+        // This prevents the echo effect: realign writes scrollTop → browser
+        // fires async scroll event → onScroll re-derives → wobble at page boundaries.
+        realignTarget = column;
 
         const pcRect = pageContainer.getBoundingClientRect();
         const colRect = column.getBoundingClientRect();
@@ -30,11 +34,32 @@ export function createAlignmentController({ leftEl, rightEl }) {
 
         column.scrollTop = pageContainerOffsetTop + state.currentTarget.intraPageOffsetPx;
 
-        setTimeout(function () { realigning = false; }, 0);
+        // Sync horizontal scroll from the lock-side (source) column.
+        // Use proportional sync since pages have the same width across both columns.
+        var srcEl = null;
+        if (state.lockSide === 'left') {
+            srcEl = leftEl;
+        } else if (state.lockSide === 'right') {
+            srcEl = rightEl;
+        }
+        if (srcEl && srcEl !== column) {
+            if (srcEl.scrollWidth > srcEl.clientWidth && column.scrollWidth > column.clientWidth) {
+                var hf = srcEl.scrollLeft / (srcEl.scrollWidth - srcEl.clientWidth);
+                column.scrollLeft = hf * (column.scrollWidth - column.clientWidth);
+            }
+        }
     }
 
     function onScroll(src) {
-        if (realigning) return;
+        // Suppress scroll events triggered by realign() on this column.
+        // realign() sets realignTarget before writing scrollTop; the async scroll
+        // event that follows must not re-derive the target, otherwise it creates
+        // a feedback loop that causes vertical wobble at page boundaries.
+        if (src === realignTarget) {
+            realignTarget = null;
+            return;
+        }
+        realignTarget = null;
 
         const containers = src.querySelectorAll('.page-container');
         if (!containers || containers.length === 0) return;
@@ -303,7 +328,8 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
             done(pending);
         }
 
-        // Test (d): Re-entrance guard — onScroll must skip when realigning is true
+        // Test (d): Re-entrance guard — after realign writes scrollTop,
+        // onScroll on the same column must skip derivation to prevent echo.
         {
             const leftEl = document.createElement('div');
             const rightEl = document.createElement('div');
@@ -356,14 +382,14 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
             ctrl.setLockTarget(2, 100);
             const targetBefore = ctrl.getLockTarget();
 
-            // Simulate: realign writes scrollTop, then browser fires scroll event
-            // which calls onScroll. The re-entrance guard should block derivation.
+            // realign marks rightEl as realignTarget. The async scroll event
+            // that real browsers fire after scrollTop write should reach onScroll
+            // and be suppressed because src === realignTarget.
             ctrl.realign(rightEl);
 
-            // In jsdom, scrollTop = assignment does NOT fire scroll events
-            // synchronously. We simulate the real browser behavior by calling
-            // onScroll immediately after realign — the guard (setTimeout 0)
-            // means realigning is still true at this point.
+            // In jsdom, scroll events don't fire synchronously on scrollTop = assign.
+            // We simulate the real browser: onScroll(rightEl) is called by the scroll
+            // event listener that installScrollListeners would set up.
             ctrl.onScroll(rightEl);
 
             const targetAfter = ctrl.getLockTarget();
