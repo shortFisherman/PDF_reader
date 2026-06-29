@@ -80,11 +80,11 @@ base-ref: 5f4f414a5fa3d1012c995b741ca3f85c22f30d1a
 
 > 文件 `static/modules/scroll-sync.js`。本节不动 `createSettleGate` / `setupPageDetection` 的实现与既有 4+3 自测（settlegate 4 + pageDetection 3 个）。
 
-- [ ] **3.1 标记 setupScrollSync 即将被替换** — 在 `scroll-sync.js` 自测块中加一条断言"`setupScrollSync` 在模块导出中存在"的占位测试（仍绿），并用注释标注 `@deprecated align-model-rewrite: 即将被 controller 替换`。本 commit 不删任何代码。
+- [x] **3.1 标记 setupScrollSync 即将被替换** — 在 `scroll-sync.js` 自测块中加一条断言"`setupScrollSync` 在模块导出中存在"的占位测试（仍绿），并用注释标注 `@deprecated align-model-rewrite: 即将被 controller 替换`。本 commit 不删任何代码。
   <task standards> 不改行为；`createSettleGate`/`setupPageDetection` 测试全绿不回退。
-- [ ] **3.2 删除 `setupScrollSync` 比例互推函数体** — 删 `scroll-sync.js` line 50–70 整个 `setupScrollSync({...})` 实现。两种选择二选一：(a) 整体移除 `export function setupScrollSync` 与导出，并同步删 `app.js:3` import 中相关项（与 Section 5.1 同步落地）；(b) 保留空签名壳 `export function setupScrollSync() {}` 以维持 import 不破。**实施时优先 (a)**：删导出+删 app.js import+删 app.js:102 调用一气呵成于本 commit，避免长期残留空壳。
+- [x] **3.2 删除 `setupScrollSync` 比例互推函数体** — 删 `scroll-sync.js` line 50–70 整个 `setupScrollSync({...})` 实现。两种选择二选一：(a) 整体移除 `export function setupScrollSync` 与导出，并同步删 `app.js:3` import 中相关项（与 Section 5.1 同步落地）；(b) 保留空签名壳 `export function setupScrollSync() {}` 以维持 import 不破。**实施时优先 (a)**：删导出+删 app.js import+删 app.js:102 调用一气呵成于本 commit，避免长期残留空壳。
   <task standards> 完成后 GREEN：`scroll-sync.js` 不再含 `scrollTop =` 比例写入；`grep "scrollTop" static/modules/scroll-sync.js` 仅剩自测块无赋值。
-- [ ] **3.3 更新 scroll-sync 自测** — 若 (a) 路径移除了导出，相应 import 测试一并调整；`createSettleGate` 4 个 + `setupPageDetection` 3 个全绿、不得回退。运行 `node tests/run-*-tests.mjs`（含 `run-lazy-loader-tests.mjs` 因为 lazy-loader 依赖 `settle.onSettle` 接口 —— 接口不变所以应仍绿）。
+- [x] **3.3 更新 scroll-sync 自测** — 若 (a) 路径移除了导出，相应 import 测试一并调整；`createSettleGate` 4 个 + `setupPageDetection` 3 个全绿、不得回退。运行 `node tests/run-*-tests.mjs`（含 `run-lazy-loader-tests.mjs` 因为 lazy-loader 依赖 `settle.onSettle` 接口 —— 接口不变所以应仍绿）。
   <task standards> 完成后 GREEN：所有前端 `run-*-tests.mjs` 仍 PASS（除尚未实现 controller 的红测试外）。
 
 ### Section 4. zoom 模块改走 controller
@@ -111,38 +111,38 @@ base-ref: 5f4f414a5fa3d1012c995b741ca3f85c22f30d1a
 
 ### Section 6. 两条失败诱因复现测试转绿（回到 Section 1）
 
-- [ ] **6.1 翻译后失对齐复现转绿** — 重跑 Section 1.1 fixture 测试。装配好 controller + `onImageLoaded` 路径（Section 5.3）后，新 `<img>.onload` 触发 `realign()` 兜底，两栏 `pageIndex` 顶偏移差应收敛到 0。断言 `Math.abs(leftTop - rightTop) <= 0.5` 成立。
+- [x] **6.1 翻译后失对齐复现转绿** — 重跑 Section 1.1 fixture 测试。装配好 controller + `onImageLoaded` 路径（Section 5.3）后，新 `<img>.onload` 触发 `realign()` 兜底，两栏 `pageIndex` 顶偏移差应收敛到 0。断言 `Math.abs(leftTop - rightTop) <= 0.5` 成立。
   <task standards> 完成后 GREEN：Section 1.1 测试从 RED 转 GREEN。
-- [ ] **6.2 Ctrl+滚轮失对齐复现转绿** — 重跑 Section 1.2 fixture 测试。装配 zoom 接入 controller（Section 4.2）后，zoom 完成当前列锚点 → 调 `onZoomChange(r)` → controller `intraOffset *= r` → `realign()` 把另一列拉回同 target，两栏页内偏移一致。
+- [x] **6.2 Ctrl+滚轮失对齐复现转绿** — 重跑 Section 1.2 fixture 测试。装配 zoom 接入 controller（Section 4.2）后，zoom 完成当前列锚点 → 调 `onZoomChange(r)` → controller `intraOffset *= r` → `realign()` 把另一列拉回同 target，两栏页内偏移一致。
   <task standards> 完成后 GREEN：Section 1.2 测试从 RED 转 GREEN。
 
 ### Section 7. 兼顾既有自测不回退 + 残余边界场景
 
-- [ ] **7.1 既有前端自测全绿确认** — 通过 `node` 运行 `tests/run-zoom-tests.mjs`、`tests/run-lazy-loader-tests.mjs`、`tests/run-translator-tests.mjs`、`tests/run-task-4.4-tests.mjs`、`tests/run-task-4.5-tests.mjs`（若存在）确认 Section 3 拆解 scroll-sync 后无回退。
+- [x] **7.1 既有前端自测全绿确认** — 通过 `node` 运行 `tests/run-zoom-tests.mjs`、`tests/run-lazy-loader-tests.mjs`、`tests/run-translator-tests.mjs`、`tests/run-task-4.4-tests.mjs`、`tests/run-task-4.5-tests.mjs`（若存在）确认 Section 3 拆解 scroll-sync 后无回退。
   <task standards> 完成后 GREEN：所有 `__TEST_*__` 块运行通过、`*TESTS_DONE__` 全部置位。
-- [ ] **7.2 视口在两页交界处 zoom 边界场景** — jsdom fixture 构造视口顶恰好跨 page N 与 N+1 交界（page N 仅底下 10px、page N+1 顶上 590px）。触发 `onScroll(src)` 派生：`pageIndex` 应取视口顶中心所在页（即 N+1），`intraOffset` 为该页 `offsetTop` 减 `src.scrollTop` 得负值；按 negative offset 规则回退 `pageIndex -= 1`，`intraOffset += page(N+1).offsetHeight`。断言派生后的目标与原始 scroll 位置等价。然后触发 zoom `r = 1.1`，断言派生后 `intraOffset *= 1.1`、`pageIndex` 不变、两栏 realign 后页内偏移按比例放大。
+- [x] **7.2 视口在两页交界处 zoom 边界场景** — jsdom fixture 构造视口顶恰好跨 page N 与 N+1 交界（page N 仅底下 10px、page N+1 顶上 590px）。触发 `onScroll(src)` 派生：`pageIndex` 应取视口顶中心所在页（即 N+1），`intraOffset` 为该页 `offsetTop` 减 `src.scrollTop` 得负值；按 negative offset 规则回退 `pageIndex -= 1`，`intraOffset += page(N+1).offsetHeight`。断言派生后的目标与原始 scroll 位置等价。然后触发 zoom `r = 1.1`，断言派生后 `intraOffset *= 1.1`、`pageIndex` 不变、两栏 realign 后页内偏移按比例放大。
   <task standards> 完成后 GREEN：边界 fixture 测试 PASS，验证 Risk R2 缓解（跨页标准化规则）。
-- [ ] **7.3 急速滚动期间对齐仍实时** — 写测试：连续派 100 次 scroll 事件（不延时），每次 onScroll 后立刻断言另一栏 `scrollTop` 已被 controller realign 到同 target（无 debounce 滞后）。`column-alignment` 能力 "Immediate alignment during continuous scroll" scenario。
+- [x] **7.3 急速滚动期间对齐仍实时** — 写测试：连续派 100 次 scroll 事件（不延时），每次 onScroll 后立刻断言另一栏 `scrollTop` 已被 controller realign 到同 target（无 debounce 滞后）。`column-alignment` 能力 "Immediate alignment during continuous scroll" scenario。
   <task standards> 完成后 GREEN：每次 onScroll 后 `Math.abs(leftTarget - rightTarget) <= 0.5`；Risk R5 缓解。
-- [ ] **7.4 两栏 scrollHeight 差 30px + 真图 vs 占位符 2px 差兜底** — 在 `column-alignment` 测试组里加 fixture：左栏 scrollHeight = X、右栏 = X-30（占位符 vs 真图差 2px × 多页累计）。设 target `(N, 30)` → `realign()` 后两栏 page N 顶都在视口顶 +30px，无 residual drift。
+- [x] **7.4 两栏 scrollHeight 差 30px + 真图 vs 占位符 2px 差兜底** — 在 `column-alignment` 测试组里加 fixture：左栏 scrollHeight = X、右栏 = X-30（占位符 vs 真图差 2px × 多页累计）。设 target `(N, 30)` → `realign()` 后两栏 page N 顶都在视口顶 +30px，无 residual drift。
   <task standards> 完成后 GREEN：Risk R1 缓解（`getBoundingClientRect`-based `offsetTop` 与 `scrollHeight` 比例脱钩）。
 
 ### Section 8. 文档与 frontend 自测入口接通
 
-- [ ] **8.1 新增 `tests/run-align-tests.mjs` 入口（或复用 Section 2.1 已临时建的 `run-alignment-controller-tests.mjs`）并注册 `package.json scripts`** — 仿 `tests/run-zoom-tests.mjs` 模板：jsdom 新建 `<body>` → `globalThis.window = jsdomWindow` → 读 `static/modules/alignment-controller.js` 源码、用正则剥 `export ` 前缀 → `new Function('window','document','globalThis','setTimeout','console', code)` 执行 → 设 `jsdomWindow.__TEST_ALIGNMENT_CONTROLLER__ = true`。脚本末尾判 `globalThis.__ALIGNMENT_CONTROLLER_TESTS_DONE__`、日志含 FAIL 则 `exit(1)`。`package.json scripts` 增 `"test:align": "node tests/run-alignment-controller-tests.mjs"`。
+- [x] **8.1 新增 `tests/run-align-tests.mjs` 入口（或复用 Section 2.1 已临时建的 `run-alignment-controller-tests.mjs`）并注册 `package.json scripts`** — 仿 `tests/run-zoom-tests.mjs` 模板：jsdom 新建 `<body>` → `globalThis.window = jsdomWindow` → 读 `static/modules/alignment-controller.js` 源码、用正则剥 `export ` 前缀 → `new Function('window','document','globalThis','setTimeout','console', code)` 执行 → 设 `jsdomWindow.__TEST_ALIGNMENT_CONTROLLER__ = true`。脚本末尾判 `globalThis.__ALIGNMENT_CONTROLLER_TESTS_DONE__`、日志含 FAIL 则 `exit(1)`。`package.json scripts` 增 `"test:align": "node tests/run-alignment-controller-tests.mjs"`。
   <task standards> 完成后 GREEN：`node tests/run-alignment-controller-tests.mjs` 退出码 0；既有 `test:zoom`、`test:translator` 不受影响。
-- [ ] **8.2 README 前端测试章节补一行** — 在 `README.md` 末尾「前端测试」章节加一句"alignment-controller 自测运行方式"，与 `scroll-sync.js`/`zoom.js` 既有描述风格一致（一句话 + 命令）。
+- [x] **8.2 README 前端测试章节补一行** — 在 `README.md` 末尾「前端测试」章节加一句"alignment-controller 自测运行方式"，与 `scroll-sync.js`/`zoom.js` 既有描述风格一致（一句话 + 命令）。
   <task standards> 完成后 GREEN：README 增量与既有风格一致。
 
 ### Section 9. 质量 gates + 提交节奏
 
-- [ ] **9.1 一 task 一 commit、前缀 `align-model-rewrite:`** — 每个绿后小 commit；commit message 主语描述设计意图而非步骤（如 `feat(align): page-aligned realign + image-onload hook`、`refactor(scroll-sync): drop proportional sync, keep settle gate`）。
+- [x] **9.1 一 task 一 commit、前缀 `align-model-rewrite:`** — 每个绿后小 commit；commit message 主语描述设计意图而非步骤（如 `feat(align): page-aligned realign + image-onload hook`、`refactor(scroll-sync): drop proportional sync, keep settle gate`）。
   <task standards> 检查 `git log --oneline` 全部 commit 信息均含前缀。
-- [ ] **9.2 后端 lint/test 不回退** — Run `ruff check .`、`ruff format --check .`、`pytest -q`。后端零改动预期，仅验证不回退；若 `ruff format --check` 提示文件需格式化，执行 `ruff format <file>` 后 amend 或新提交。
+- [x] **9.2 后端 lint/test 不回退** — Run `ruff check .`、`ruff format --check .`、`pytest -q`。后端零改动预期，仅验证不回退；若 `ruff format --check` 提示文件需格式化，执行 `ruff format <file>` 后 amend 或新提交。
   <task standards> 完成后 GREEN：三个命令全 PASS。
-- [ ] **9.3 前端自测全绿** — Run `node tests/run-alignment-controller-tests.mjs`、`node tests/run-zoom-tests.mjs`、`node tests/run-lazy-loader-tests.mjs`（及既有 `run-translator-tests.mjs` 等）。所有 `__TEST_*__` 块运行通过。
+- [x] **9.3 前端自测全绿** — Run `node tests/run-alignment-controller-tests.mjs`、`node tests/run-zoom-tests.mjs`、`node tests/run-lazy-loader-tests.mjs`（及既有 `run-translator-tests.mjs` 等）。所有 `__TEST_*__` 块运行通过。
   <task standards> 完成后 GREEN：所有 `run-*-tests.mjs` 退出码 0。
-- [ ] **9.4 最后一次 commit 不带 BREAKING 字样** — 全部变更通过既有 OpenSpec guard 后才推进到 verify 阶段。最后一次 commit 描述以"complete"语义而非 BREAKING；OpenSpec delta specs archive 阶段同步主 spec，本变更 PR 内不带 BREAKING CHANGE 标签。
+- [x] **9.4 最后一次 commit 不带 BREAKING 字样** — 全部变更通过既有 OpenSpec guard 后才推进到 verify 阶段。最后一次 commit 描述以"complete"语义而非 BREAKING；OpenSpec delta specs archive 阶段同步主 spec，本变更 PR 内不带 BREAKING CHANGE 标签。
   <task standards> 完成后 GREEN：`git log` 末条 message 无 BREAKING；OpenSpec guard 通过。
 
 ---
