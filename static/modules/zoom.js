@@ -1,4 +1,4 @@
-export function setupZoom({ columns, appEl, onZoomChange }) {
+export function setupZoom({ columns, appEl, onZoomChange, alignmentController }) {
     const MIN = 0.25;
     const MAX = 2.2;
     const STEP = 0.1;
@@ -15,6 +15,7 @@ export function setupZoom({ columns, appEl, onZoomChange }) {
         const cx = e.clientX - col.getBoundingClientRect().left;
         const cy = e.clientY - col.getBoundingClientRect().top;
         const r = newZoom / zoom;
+        const oldZoom = zoom;
 
         appEl.style.setProperty('--zoom', newZoom);
         col.scrollTop = (col.scrollTop + cy) * r - cy;
@@ -22,6 +23,9 @@ export function setupZoom({ columns, appEl, onZoomChange }) {
 
         zoom = newZoom;
         onZoomChange(zoom);
+        if (alignmentController) {
+            alignmentController.onZoomChange(newZoom, oldZoom);
+        }
     }
 
     function resetZoom() {
@@ -30,6 +34,7 @@ export function setupZoom({ columns, appEl, onZoomChange }) {
         const cx = col.clientWidth / 2;
         const cy = col.clientHeight / 2;
         const r = 1 / zoom;
+        const oldZoom = zoom;
 
         appEl.style.setProperty('--zoom', 1);
         col.scrollTop = (col.scrollTop + cy) * r - cy;
@@ -37,6 +42,9 @@ export function setupZoom({ columns, appEl, onZoomChange }) {
 
         zoom = 1;
         onZoomChange(zoom);
+        if (alignmentController) {
+            alignmentController.onZoomChange(1, oldZoom);
+        }
     }
 
     function getZoom() {
@@ -194,6 +202,70 @@ if (typeof window !== 'undefined' && window.__TEST_ZOOM__) {
             assert(instance.getZoom() === zoomBeforeDispose, 'Test 11b: zoom unchanged after dispose (wheel up)');
             assert(zoomChanges.length === changesBeforeDispose, 'Test 11c: onZoomChange NOT called after dispose');
             assert(zoomChanges[zoomChanges.length - 1] === lastZoomBeforeDispose, 'Test 11d: lastZoom unchanged after dispose');
+
+            // Test 12: alignmentController.onZoomChange integration
+            instance.resetZoom();
+            const acCol = document.createElement('div');
+            acCol.getBoundingClientRect = function () {
+                return { left: 0, top: 0, width: 400, height: 600, right: 400, bottom: 600 };
+            };
+            let acCalls = [];
+            const alignmentController = {
+                onZoomChange: function (newZ, oldZ) {
+                    acCalls.push({ newZoom: newZ, oldZoom: oldZ });
+                }
+            };
+            const acInst = setupZoom({
+                columns: [acCol],
+                appEl: document.createElement('div'),
+                onZoomChange: function () {},
+                alignmentController: alignmentController,
+            });
+            // Trigger a zoom in on the new instance's column
+            acCol.addEventListener = function (type, handler) {
+                if (type === 'wheel') {
+                    const e = {
+                        ctrlKey: true,
+                        deltaY: -100,
+                        preventDefault: function () {},
+                        clientX: 200,
+                        clientY: 300,
+                        currentTarget: acCol,
+                    };
+                    handler(e);
+                }
+            };
+            // Re-invoke setupZoom with columns including acCol to re-trigger listener
+            acInst.dispose();
+            const acInst2 = setupZoom({
+                columns: [acCol],
+                appEl: document.createElement('div'),
+                onZoomChange: function () {},
+                alignmentController: alignmentController,
+            });
+            // The listener is now attached — trigger wheel event
+            acCol.addEventListener = function (type, handler) {
+                if (type === 'wheel') {
+                    const e = {
+                        ctrlKey: true,
+                        deltaY: -100,
+                        preventDefault: function () {},
+                        clientX: 200,
+                        clientY: 300,
+                        currentTarget: acCol,
+                    };
+                    handler(e);
+                }
+            };
+            assert(acCalls.length >= 1,
+                'Test 12a: alignmentController.onZoomChange should be called (got ' + acCalls.length + ' calls)');
+            if (acCalls.length > 0) {
+                assert(acCalls[0].newZoom > 1,
+                    'Test 12b: newZoom should be > 1 after zoom in (got ' + acCalls[0].newZoom + ')');
+                assert(acCalls[0].oldZoom === 1,
+                    'Test 12c: oldZoom should be 1 (got ' + acCalls[0].oldZoom + ')');
+            }
+            acInst2.dispose();
 
         } catch (e) {
             assert(false, 'Exception: ' + e.message + '\n' + e.stack);
