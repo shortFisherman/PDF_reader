@@ -194,7 +194,8 @@ async function loadTranslatedState() {
 function scrollToPage(index) {
     if (!alignController) return;
     alignController.setLockTarget(index, 0);
-    alignController.realign();
+    alignController.realign(els.leftCol);
+    alignController.realign(els.rightCol);
 }
 
 function saveProgress() {
