@@ -14,43 +14,43 @@
 
 ## 3. 拆解 scroll-sync 的比例互推
 
-- [ ] 3.1 在 `scroll-sync.js` 写自测突出 `setupScrollSync` 当前比例互推行为（保留现有 4 个 settle gate 测试不动）。此 commit 暂不删除任何代码，仅添加"该函数仍存在但即将被替换"的标记。
-- [ ] 3.2 删除 `setupScrollSync` 函数体的比例互推实现（保留函数签名导出空壳或移除导出并改 app.js 装配点）。`createSettleGate`、`setupPageDetection` 保留不移。
-- [ ] 3.3 更新 `scroll-sync.js` 末尾自测：若 `setupScrollSync` 被移除导出，相应 import 测试也调整；`createSettleGate` 与 `setupPageDetection` 现有 4 + 3 个测试全绿、不得回退。
+- [x] 3.1 在 `scroll-sync.js` 写自测突出 `setupScrollSync` 当前比例互推行为（保留现有 4 个 settle gate 测试不动）。此 commit 暂不删除任何代码，仅添加"该函数仍存在但即将被替换"的标记。
+- [x] 3.2 删除 `setupScrollSync` 函数体的比例互推实现（保留函数签名导出空壳或移除导出并改 app.js 装配点）。`createSettleGate`、`setupPageDetection` 保留不移。
+- [x] 3.3 更新 `scroll-sync.js` 末尾自测：若 `setupScrollSync` 被移除导出，相应 import 测试也调整；`createSettleGate` 与 `setupPageDetection` 现有 4 + 3 个测试全绿、不得回退。
 
 ## 4. zoom 模块改走 controller
 
-- [ ] 4.1 在 `zoom.js` 自测块新增测试：完成一次 Ctrl+wheel 后，要求 `[columns.map(c => c._realignSpy).filter(Boolean].length === 1`（i.e. 调了一次对齐 controller，而不是依赖 scroll 事件）。预期红。
-- [ ] 4.2 修改 `setupZoom({ columns, appEl, onZoomChange, alignmentController })` 接收 `alignmentController`；`handleWheel`/`resetZoom` 在算完当前列锚点 `scrollTop` 后，调 `alignmentController.onZoomChange(newZoom, oldZoom)`。`onZoomChange` 参数保持向后兼容（显示百分比指示器）。让 4.1 测试转绿。
+- [x] 4.1 在 `zoom.js` 自测块新增测试：完成一次 Ctrl+wheel 后，要求 `[columns.map(c => c._realignSpy).filter(Boolean].length === 1`（i.e. 调了一次对齐 controller，而不是依赖 scroll 事件）。预期红。
+- [x] 4.2 修改 `setupZoom({ columns, appEl, onZoomChange, alignmentController })` 接收 `alignmentController`；`handleWheel`/`resetZoom` 在算完当前列锚点 `scrollTop` 后，调 `alignmentController.onZoomChange(newZoom, oldZoom)`。`onZoomChange` 参数保持向后兼容（显示百分比指示器）。让 4.1 测试转绿。
 
 ## 5. app.js 装配 controller + 翻译完成路径
 
-- [ ] 5.1 在 `openPdf` 装配 `AlignmentController`：装配后两栏 scroll 监听由 controller `onScroll` 接管；移除外部 `setupScrollSync(...)` 调用。
-- [ ] 5.2 `setupPageDetection` 仍从 controller 暴露的 settle 回调处取信号（确认 `controller` 持有 settle gate 或协调之，按 design Open Question 1 暂倾向`createSettleGate` 留在 scroll-sync.js 仅做页检测用）。
-- [ ] 5.3 `onFinish` 翻译完成回调中，右页 `<img>.onload` 后调 `controller.onImageLoaded('right', targetPage)`。
-- [ ] 5.4 将保存页恢复路径 `scrollToPage` 从 `el.scrollIntoView` 改为 `controller.setLockTarget(saved, 0); controller.realign()`。
-- [ ] 5.5 用 grep 或自测断言：除 `alignment-controller.js` 外 `static/modules/**` 与 `static/app.js` 无 `.scrollTop =` 赋值（`column-alignment` 能力 "No silent alignment writes outside controller" scenario）。
+- [x] 5.1 在 `openPdf` 装配 `AlignmentController`：装配后两栏 scroll 监听由 controller `onScroll` 接管；移除外部 `setupScrollSync(...)` 调用。
+- [x] 5.2 `setupPageDetection` 仍从 controller 暴露的 settle 回调处取信号（确认 `controller` 持有 settle gate 或协调之，按 design Open Question 1 暂倾向`createSettleGate` 留在 scroll-sync.js 仅做页检测用）。
+- [x] 5.3 `onFinish` 翻译完成回调中，右页 `<img>.onload` 后调 `controller.onImageLoaded('right', targetPage)`。
+- [x] 5.4 将保存页恢复路径 `scrollToPage` 从 `el.scrollIntoView` 改为 `controller.setLockTarget(saved, 0); controller.realign()`。
+- [x] 5.5 用 grep 或自测断言：除 `alignment-controller.js` 外 `static/modules/**` 与 `static/app.js` 无 `.scrollTop =` 赋值（`column-alignment` 能力 "No silent alignment writes outside controller" scenario）。
 
 ## 6. 两条失败诱因复现测试转绿（回到 Section 1）
 
-- [ ] 6.1 重跑 1.1 测试——翻译完成后替换图后两栏 `pageIndex` 顶部偏移之差应 == 0（绿）。
-- [ ] 6.2 重跑 1.2 测试——Ctrl+滚轮缩放后两栏页内偏移一致（绿）。
+- [x] 6.1 重跑 1.1 测试——翻译完成后替换图后两栏 `pageIndex` 顶部偏移之差应 == 0（绿）。
+- [x] 6.2 重跑 1.2 测试——Ctrl+滚轮缩放后两栏页内偏移一致（绿）。
 
 ## 7. 兼顾既有自测不回退 + 残余边界场景
 
-- [ ] 7.1 通过 `node` 单边运行 `scroll-sync.js` 与 `zoom.js` 末尾既有的全部 `__TEST_*__` 测试块（即以现成 jsdom 环境运行；查 README/`tests/` 看现有运行入口，例如 `node --experimental-vm-modules tests/run-*-tests.mjs`）确认无回退。
-- [ ] 7.2 在 jsdom fixture 写"视口在两页交界处 zoom"的边界场景测试，验证 `intraPageOffsetPx` 跨页标准化正确（offset 走 negative 退一页规则）。
-- [ ] 7.3 写"急速滚动期间对齐仍实时"测试：100 次 scroll 事件分别逐次 onScroll 后断言对齐一致性（无 debounce 滞后）。
-- [ ] 7.4 在 `column-alignment` 测试中覆盖"两栏 scrollHeight 差 30px 时刻意 mock 真图 vs 占位符 2px 差"，断言对齐仍按 page + intraOffset 收敛（设计 Risk 兜底成立）。
+- [x] 7.1 通过 `node` 单边运行 `scroll-sync.js` 与 `zoom.js` 末尾既有的全部 `__TEST_*__` 测试块（即以现成 jsdom 环境运行；查 README/`tests/` 看现有运行入口，例如 `node --experimental-vm-modules tests/run-*-tests.mjs`）确认无回退。
+- [x] 7.2 在 jsdom fixture 写"视口在两页交界处 zoom"的边界场景测试，验证 `intraPageOffsetPx` 跨页标准化正确（offset 走 negative 退一页规则）。
+- [x] 7.3 写"急速滚动期间对齐仍实时"测试：100 次 scroll 事件分别逐次 onScroll 后断言对齐一致性（无 debounce 滞后）。
+- [x] 7.4 在 `column-alignment` 测试中覆盖"两栏 scrollHeight 差 30px 时刻意 mock 真图 vs 占位符 2px 差"，断言对齐仍按 page + intraOffset 收敛（设计 Risk 兜底成立）。
 
 ## 8. 文档与 frontend 自测入口接通
 
-- [ ] 8.1 确认新增的 `alignment-controller.js` 自测块如何被现有 frontend 测试运行器发现。读 README、`tests/run-translator-tests.mjs`、`package.json scripts`，确认 fixture 入口；缺则补一个 `tests/run-align-tests.mjs` 并注册到 `package.json test` 脚本。
-- [ ] 8.2 在 `README.md` 末尾"前端测试"章节补一句"alignment-controller 自测运行方式"，与 `scroll-sync.js`/`zoom.js` 既有描述风格一致。
+- [x] 8.1 确认新增的 `alignment-controller.js` 自测块如何被现有 frontend 测试运行器发现。读 README、`tests/run-translator-tests.mjs`、`package.json scripts`，确认 fixture 入口；缺则补一个 `tests/run-align-tests.mjs` 并注册到 `package.json test` 脚本。
+- [x] 8.2 在 `README.md` 末尾"前端测试"章节补一句"alignment-controller 自测运行方式"，与 `scroll-sync.js`/`zoom.js` 既有描述风格一致。
 
 ## 9. 质量 gates + 提交节奏
 
-- [ ] 9.1 每个绿后小 commit：commit message 以 `align-model-rewrite:` 前缀，按设计意图描述（例如 `feat(align): page-aligned realign + image-onload hook`）。一 task 一 commit。
-- [ ] 9.2 全量后端 lint/test 不回退：`ruff check .`、`ruff format --check .`、`pytest -q` 全绿（后端零改动预期，仅验证）。
-- [ ] 9.3 前端自测全绿：所有 `__TEST_*__` 块运行通过。
-- [ ] 9.4 最后一次 commit 不带 BREAKING 字样，全部变更通过既有 OpenSpec guard 后才推进到 verify 阶段。
+- [x] 9.1 每个绿后小 commit：commit message 以 `align-model-rewrite:` 前缀，按设计意图描述（例如 `feat(align): page-aligned realign + image-onload hook`）。一 task 一 commit。
+- [x] 9.2 全量后端 lint/test 不回退：`ruff check .`、`ruff format --check .`、`pytest -q` 全绿（后端零改动预期，仅验证）。
+- [x] 9.3 前端自测全绿：所有 `__TEST_*__` 块运行通过。
+- [x] 9.4 最后一次 commit 不带 BREAKING 字样，全部变更通过既有 OpenSpec guard 后才推进到 verify 阶段。
