@@ -1,7 +1,7 @@
 {
   "name": "pdf_reader",
   "version": "1.0.0",
-  "description": "用于阅读英文教材的双语对照 PDF 翻译/阅读器。左栏显示原文，右栏显示译文，支持按需逐页翻译、自定义翻译指令、术语表管理。",
+  "description": "用于阅读英文教材和论文的本地双语 PDF 翻译阅读器。",
   "main": "index.js",
   "directories": {
     "doc": "docs",
@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:ui-copy": "node tests/run-ui-copy-tests.mjs",
     "test:translator": "node tests/run-translator-tests.mjs",
     "test:zoom": "node tests/run-zoom-tests.mjs"
   },
