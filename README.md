@@ -37,12 +37,11 @@ PDF 版面翻译由 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-
 ## 安装
 
 ```powershell
-git clone <repository-url>
+git clone https://github.com/shortFisherman/PDF_reader.git
 cd PDF_reader
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.lock
-npm ci
 Copy-Item config.example.toml config.toml
 ```
 
@@ -70,6 +69,12 @@ python app.py --debug
 ```
 
 ## 验证
+
+运行前端测试或完整验证前，需要先安装 Node.js 测试依赖（普通运行不需要）：
+
+```powershell
+npm ci
+```
 
 运行全部受支持的检查：
 
