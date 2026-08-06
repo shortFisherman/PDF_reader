@@ -20,11 +20,17 @@ jobs:
           cache: 'pip'
           cache-dependency-path: requirements.lock
 
-      - name: Install dependencies
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Python dependencies
         run: pip install -r requirements.lock
 
-      - name: Lint with ruff
-        run: ruff check .
+      - name: Install frontend test dependencies
+        run: npm ci
 
-      - name: Test with pytest
-        run: pytest -q
+      - name: Verify repository
+        shell: powershell
+        run: ./scripts/verify.ps1

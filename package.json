@@ -8,7 +8,8 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:frontend",
+    "test:frontend": "npm run test:ui-copy && npm run test:translator && npm run test:zoom && node tests/run-alignment-controller-tests.mjs",
     "test:ui-copy": "node tests/run-ui-copy-tests.mjs",
     "test:translator": "node tests/run-translator-tests.mjs",
     "test:zoom": "node tests/run-zoom-tests.mjs"
