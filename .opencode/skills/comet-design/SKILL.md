@@ -1,11 +1,11 @@
 ---
 name: comet-design
-description: "Use only when explicitly invoked as /comet-design or routed by the root Comet skill/runtime to a full workflow design phase; create or recover the deep technical Design Doc."
+description: "Phase 2 of Comet Classic — produce the deep technical Design Doc behind a change."
 ---
 
 # Comet Phase 2: Deep Design (Design)
 
-Before starting or recovering, read and follow `comet/reference/classic-layout.md`. Every OpenSpec CLI call in this file must use the adapter, and every file path must use the `<classic-*>` logical roots bound by that protocol.
+Before starting or recovering, read and follow `comet-classic/reference/classic-layout.md`. Every OpenSpec CLI call in this file must use the adapter, and every file path must use the `<classic-*>` logical roots bound by that protocol.
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ Before starting or recovering, read and follow `comet/reference/classic-layout.m
 
 ### 0. Entry State Verification (Entry Check)
 
-Locate scripts via `comet/reference/scripts.md`, then run entry verification. When resuming from any entry point, first run the recovery check in `comet/reference/context-recovery.md`:
+Locate scripts via `comet-classic/reference/scripts.md`, then run entry verification. When resuming from any entry point, first run the recovery check in `comet-classic/reference/context-recovery.md`:
 
 ```bash
 comet state select <change-name>
@@ -134,7 +134,7 @@ For context compaction recovery, the agent must incrementally update `brainstorm
 
 ### 1c. User Confirms Design Proposal (Blocking Point)
 
-After brainstorming produces a design proposal, **must follow the `comet/reference/decision-point.md` protocol to pause and wait for the user to explicitly confirm the design proposal**. Must not create the final Design Doc, write `design_doc`, run design guard, or enter `/comet-build` before user confirmation.
+After brainstorming produces a design proposal, **must follow the `comet-classic/reference/decision-point.md` protocol to pause and wait for the user to explicitly confirm the design proposal**. Must not create the final Design Doc, write `design_doc`, run design guard, or enter `/comet-build` before user confirmation.
 
 When pausing, only present essential summary:
 - Technical approach adopted
@@ -205,7 +205,7 @@ If Spec Patches need to be written back, also edit the corresponding `specs/*/sp
 
 ### 3. Update Comet State
 
-First record the design_doc path. If Spec Patches wrote back delta spec (added or modified `specs/*/spec.md`), must regenerate handoff to update hash:
+First record the design_doc path. If Spec Patches wrote back delta spec (added, modified, or removed `specs/*/spec.md`), must regenerate handoff to update hash:
 
 ```bash
 # Record design_doc path
@@ -218,7 +218,7 @@ comet handoff <change-name> design --write
 comet guard <change-name> design --apply
 ```
 
-If there are no delta spec changes, skip the handoff regeneration step. The state file updates automatically; no manual editing of other fields needed.
+Adding, modifying, or removing a delta spec changes the handoff hash, so deleting a delta spec also requires regenerating the handoff; otherwise the recorded `handoff_hash` no longer matches the current OpenSpec artifacts and the design guard blocks progress. If there are no delta spec changes, skip the handoff regeneration step. The state file updates automatically; no manual editing of other fields needed.
 
 ### 3a. Optional Active Context Compaction
 
@@ -248,11 +248,11 @@ comet guard <change-name> design --apply
 
 ## Context Compression Recovery
 
-Follow `comet/reference/context-recovery.md` with phase set to `design`.
+Follow `comet-classic/reference/context-recovery.md` with phase set to `design`.
 
 ## Automatic Handoff to Next Phase
 
-Follow `comet/reference/auto-transition.md`. Key command:
+Follow `comet-classic/reference/auto-transition.md`. Key command:
 
 ```bash
 comet state next <change-name>
