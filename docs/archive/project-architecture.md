@@ -1,5 +1,10 @@
 # PDF Reader 项目运行逻辑完整文档
 
+<!-- HISTORICAL_DOCUMENT_START -->
+> [!NOTE]
+> **历史资料。** 本文保留的是当时的阶段记录，不代表当前项目目的、当前实现或实施授权。请以 [project](../project.md)、[architecture](../architecture.md) 和 [roadmap](../roadmap.md) 为准。
+<!-- HISTORICAL_DOCUMENT_END -->
+
 > 本文档面向非计算机专业背景的开发者，用尽量通俗的语言解释项目的每一个部分是如何协同工作的。
 
 ---

@@ -1,5 +1,8 @@
 # pdf2zh-next 开发参考
 
+> [!IMPORTANT]
+> **版本适用范围。** 本文主体是 2026-06-19 对 pdf2zh-next 2.8.2 的源码研究快照；当前项目锁定 pdf2zh-next 2.9.0 和 BabelDOC 0.6.2。本文用于理解上游接口与内部机制，不是本项目当前架构的事实源。涉及集成改动时，必须同时核对 `requirements.lock`、当前安装源码和 [项目当前架构](architecture.md)。
+
 > 基于 pdf2zh-next v2.8.2 源码阅读。pdf2zh-next 是 BabelDOC 的官方参考实现和公开包装层，把 BabelDOC 的 Internal API 封装为稳定、可取消、带缓存的 Python 接口。
 >
 > 仓库：`C:\Users\Couper\project_from_git\pdf2zh-next`

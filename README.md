@@ -1,7 +1,5 @@
 # 双语 PDF 阅读器
 
-> **项目状态：已冻结。** 当前版本保留为本地单用户工具，不再计划新增功能；仅考虑安全问题、数据损坏或无法启动等严重缺陷。背景、已知限制和恢复建议见 [项目状态](docs/PROJECT_STATUS.md)。
-
 这是一个用于阅读英文教材和论文的本地双语 PDF 阅读器。左栏显示原文，右栏显示译文，支持在阅读过程中按页、按范围或全文调用大模型翻译。
 
 PDF 版面翻译由 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-next/PDFMathTranslate-next) / `pdf2zh-next` 提供。本项目主要负责本地阅读界面、按需翻译编排、双栏对齐、缓存和阅读状态。
@@ -25,7 +23,12 @@ PDF 版面翻译由 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-
 - 没有翻译任务暂停、取消、持久队列或重启后续传。
 - 使用前需要 Python 环境、模型 API Key 和本地 PDF 路径。
 
-更多说明见 [项目状态](docs/PROJECT_STATUS.md)。
+## 文档导航
+
+- [项目记忆](docs/project.md)：项目为什么存在、长期意图、常青原则和产品边界。
+- [当前架构](docs/architecture.md)：当前 HEAD 的模块、数据流、API、状态、依赖、测试和技术约束。
+- [路线图](docs/roadmap.md)：候选方向、开放问题、依赖和决策状态；不构成实施授权。
+- [pdf2zh-next 开发参考](docs/pdf2zh-next-development-guide.md)：涉及上游接口、事件和配置时按版本范围阅读。
 
 ## 环境要求
 
@@ -44,6 +47,8 @@ python -m venv venv
 pip install -r requirements.lock
 Copy-Item config.example.toml config.toml
 ```
+
+## 配置
 
 编辑 `config.toml` 中的 `[model]`，或者通过环境变量提供 API Key：
 
@@ -105,6 +110,8 @@ static/modules/                对齐、懒加载、缩放和翻译模块
 tests/                         Python 与前端测试
 ```
 
-## 授权提醒
+详细模块职责、调用链和运行时状态见 [当前架构](docs/architecture.md)。
+
+## 上游依赖与授权提醒
 
 本项目依赖采用 AGPL-3.0 的 PDFMathTranslate-next / `pdf2zh-next`。重新分发、在线部署或调整许可证前，请先核对上游许可要求。该提醒不构成法律意见。

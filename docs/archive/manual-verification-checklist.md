@@ -1,5 +1,10 @@
 # 前端行为手动验证清单
 
+<!-- HISTORICAL_DOCUMENT_START -->
+> [!NOTE]
+> **历史资料。** 本文保留的是当时的阶段记录，不代表当前项目目的、当前实现或实施授权。请以 [project](../project.md)、[architecture](../architecture.md) 和 [roadmap](../roadmap.md) 为准。
+<!-- HISTORICAL_DOCUMENT_END -->
+
 > 基线记录日期：2026-06-21
 > 基线 commit：`4f85e90`
 > 用途：模块化拆分后逐项核对，确保行为与原版一致

@@ -1,5 +1,10 @@
 # PDF Reader 模块交互图
 
+<!-- HISTORICAL_DOCUMENT_START -->
+> [!NOTE]
+> **历史资料。** 本文保留的是当时的阶段记录，不代表当前项目目的、当前实现或实施授权。请以 [project](../project.md)、[architecture](../architecture.md) 和 [roadmap](../roadmap.md) 为准。
+<!-- HISTORICAL_DOCUMENT_END -->
+
 > 箭头 = 调用方向。从左到右是「谁调用了谁」。
 
 ```mermaid

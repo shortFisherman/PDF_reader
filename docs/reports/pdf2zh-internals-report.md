@@ -1,5 +1,8 @@
 # pdf2zh v1 内部运作报告
 
+> [!IMPORTANT]
+> **历史上游研究。** 本报告是 2026-06-18 对旧 PDFMathTranslate / pdf2zh v1.9.x 管道的源码分析，不是 pdf2zh-next 的当前接口说明。本项目当前锁定 pdf2zh-next 2.9.0 和 BabelDOC 0.6.2；本文只能用于理解历史设计，不能替代 [项目当前架构](../architecture.md)、当前依赖源码或当前测试。
+
 > 基于对 `C:\Users\Couper\PDFMathTranslate\` 源码的完整阅读，版本 v1.9.x
 
 ---

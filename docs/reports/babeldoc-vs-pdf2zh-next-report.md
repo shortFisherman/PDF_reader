@@ -1,5 +1,8 @@
 # BabelDOC vs PDFMathTranslate-next 对比报告
 
+> [!IMPORTANT]
+> **版本对比快照。** 本报告生成于 2026-06-18，比较 BabelDOC 0.6.3 与 pdf2zh-next 2.8.2；报告中的 BabelDOC 版本高于本项目当前锁定的 BabelDOC 0.6.2，而 pdf2zh-next 版本低于当前锁定的 2.9.0。结论可能随版本变化，只能作为选型历史和上游研究参考；当前项目事实以 [architecture.md](../architecture.md)、`requirements.lock`、安装源码和测试为准。
+
 > 基于对两个仓库源码的完整阅读与比较
 > BabelDOC: v0.6.3 | pdf2zh-next: v2.8.2
 
