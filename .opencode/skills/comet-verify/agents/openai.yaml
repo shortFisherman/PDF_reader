@@ -1,5 +1,0 @@
-interface:
-  display_name: "Comet Classic Phase 4: Verify"
-  short_description: "Verify a change, record evidence, drive repair loops"
-policy:
-  allow_implicit_invocation: true

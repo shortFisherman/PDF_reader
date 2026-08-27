@@ -1,4 +1,3 @@
-build_command: venv/Scripts/python.exe -m pytest tests/ -v
 # Configuration schema used by Comet. Do not edit this value.
 schema: comet.project.v1
 # Default workflow entered by /comet. Must also appear in workflows.
@@ -9,23 +8,6 @@ workflows:
 # Enables automatic recovery through the read-only Ambient Resume probe for both Native and Classic. Set false to disable it.
 # ambient_resume: true | false
 ambient_resume: true
-# Classic workflow settings. They do not change Native state or behavior.
-classic:
-  # Selects the Classic artifact layout. The default is docs; update preserves detected root-level legacy artifacts.
-  # artifact_layout: legacy | docs
-  artifact_layout: legacy
-  # Artifact language used by Classic workflow documents.
-  # language: en | zh-CN
-  language: en
-  # Controls beta context compression for new Classic changes.
-  # context_compression: off | beta
-  context_compression: off
-  # Sets the default review depth for new Classic changes.
-  # review_mode: off | standard | thorough
-  review_mode: off
-  # Automatically enters the next Classic phase after a phase passes.
-  # auto_transition: true | false
-  auto_transition: true
 # Native workflow settings. They do not change Classic state or behavior.
 native:
   # Root directory where Native stores Comet specs and changes. Runtime data stays under .comet.
