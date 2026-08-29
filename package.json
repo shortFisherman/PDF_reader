@@ -20,6 +20,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "commonjs",
   "devDependencies": {
     "@eslint/js": "^10.0.1",

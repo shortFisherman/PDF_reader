@@ -167,7 +167,7 @@ def test_redact_secrets_common_tokens(monkeypatch):
     text = (
         "api_key=sk-raw-value Authorization: Bearer abcdef123 "
         '"api_key": "json-secret" "Authorization": "Bearer json-bearer" '
-        "Bearer standalone-token-123 "
+        "Bearer test-standalone-token-123 "
         "sk-secret-123 C:\\Users\\priv /home/user <img src=x onerror=alert(1)> "
         "Bearer of good news and api_key field without colon"
     )
@@ -225,7 +225,7 @@ def test_rotating_file_handler_redacts_on_disk(monkeypatch, tmp_path, capsys):
     sentinel = (
         "sk-secret-123 Authorization: Bearer abcdef123 api_key=mykey "
         '"api_key": "json-secret" "Authorization": "Bearer json-bearer" '
-        "Bearer standalone-token-123 "
+        "Bearer test-standalone-token-123 "
         "<img src=x onerror=alert(1)> C:\\Users\\priv /home/user"
     )
     try:

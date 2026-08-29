@@ -1,5 +1,6 @@
 """P2-04 依赖声明与验证契约的静态/行为测试。"""
 
+import json
 import tomllib
 from pathlib import Path
 
@@ -69,4 +70,17 @@ def test_verify_script_prints_python_and_warns_on_fallback():
     verify = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
     assert "Resolved Python:" in verify
     assert "Python version:" in verify
+    assert "Node version:" in verify
+    assert "Unsupported Python version" in verify
+    assert "Unsupported Node.js version" in verify
     assert "Write-Warning" in verify
+
+
+def test_node_engines_declared_and_consistent():
+    package = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
+    assert package["engines"]["node"] == ">=22"
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "node-version: '22'" in ci
+    assert ">=22" in readme
+    assert "Node.js 22 或更新" in readme

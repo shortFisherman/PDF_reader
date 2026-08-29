@@ -54,6 +54,31 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host "Resolved Python: $($pythonInfo[0])"
     Write-Host "Python version: $($pythonInfo[1])"
 
+    $pythonVersion = [string]$pythonInfo[1]
+    $pythonParts = $pythonVersion.Split('.')
+    $pythonMajorMinor = if ($pythonParts.Length -ge 2) {
+        [int]$pythonParts[0] * 100 + [int]$pythonParts[1]
+    } else {
+        0
+    }
+    if ($pythonMajorMinor -lt 312) {
+        throw "Unsupported Python version $pythonVersion (>= 3.12 required). Fix the interpreter or pass -PythonExecutable."
+    }
+
+    $nodeVersionRaw = & node --version 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $nodeVersionRaw) {
+        throw "Node.js not found or failed to report its version; Node.js >= 22 is required for frontend tests."
+    }
+    Write-Host "Node version: $nodeVersionRaw"
+    $nodeMajorText = ([string]$nodeVersionRaw).TrimStart('v')
+    $nodeMajor = 0
+    if ($nodeMajorText -match '^\d+') {
+        $nodeMajor = [int]($nodeMajorText -split '\.')[0]
+    }
+    if ($nodeMajor -lt 22) {
+        throw "Unsupported Node.js version $nodeVersionRaw (>= 22 required)."
+    }
+
     $coverageArtifactDir = $env:PDF_READER_COVERAGE_ARTIFACT_DIR
     $coverageDir = $coverageArtifactDir
     $tempCoverageDir = $null
@@ -65,6 +90,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     $env:COVERAGE_FILE = Join-Path $coverageDir '.coverage'
     $coverageJson = Join-Path $coverageDir 'coverage.json'
     try {
+        Invoke-Checked 'Secret scan' { & $pythonCommand scripts/secret_scan.py }
         Invoke-Checked 'Ruff lint' { & $pythonCommand -m ruff check . }
         Invoke-Checked 'Ruff format check' { & $pythonCommand -m ruff format --check . }
         Invoke-Checked 'Coverage + Python tests' { & $pythonCommand -m coverage run --branch -m pytest -q }

@@ -221,6 +221,73 @@ def test_full_script_invalid_explicit_fails_fast(tmp_path):
     assert not marker.exists(), "npm must not be invoked when explicit interpreter is invalid"
 
 
+def test_full_script_unsupported_python_fails_before_npm(tmp_path):
+    fake = tmp_path / "fake-bin"
+    _write_cmd(
+        fake / "python.cmd",
+        "@echo off\n@echo %~f0\n@echo 3.11.9\nexit /b 0\n",
+    )
+    marker = tmp_path / "npm-invoked.txt"
+    _write_cmd(fake / "npm.cmd", f'@echo off\necho x > "{marker}"\nexit /b 0\n')
+    env = os.environ.copy()
+    env["PATH"] = str(fake) + os.pathsep + env["PATH"]
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(VERIFY),
+            "-PythonExecutable",
+            str(fake / "python.cmd"),
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode != 0
+    assert "Unsupported Python version 3.11.9" in result.stderr
+    assert not marker.exists(), "npm must not run on unsupported Python"
+
+
+def test_full_script_unsupported_node_fails_before_npm(tmp_path):
+    fake = tmp_path / "fake-bin"
+    _write_cmd(
+        fake / "python.cmd",
+        "@echo off\n@echo %~f0\n@echo 3.12.0\nexit /b 0\n",
+    )
+    _write_cmd(fake / "node.cmd", "@echo off\necho v21.7.3\nexit /b 0\n")
+    marker = tmp_path / "npm-invoked.txt"
+    _write_cmd(fake / "npm.cmd", f'@echo off\necho x > "{marker}"\nexit /b 0\n')
+    env = os.environ.copy()
+    env["PATH"] = str(fake) + os.pathsep + env["PATH"]
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(VERIFY),
+            "-PythonExecutable",
+            str(fake / "python.cmd"),
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode != 0
+    assert "Unsupported Node.js version v21.7.3" in result.stderr
+    assert not marker.exists(), "npm must not run on unsupported Node"
+
+
 def test_full_script_local_coverage_temp_cleaned(tmp_path):
     fake = _fake_bin(tmp_path)
     python = _write_coverage_fake_python(fake)

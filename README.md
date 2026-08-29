@@ -30,12 +30,14 @@ PDF 版面翻译由 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-
 - [路线图](docs/roadmap.md)：候选方向、开放问题、依赖和决策状态；不构成实施授权。
 - [工程与架构长期改进清单](docs/engineering-improvement-plan-829.md)：按优先级跟踪可靠性、任务生命周期、目录结构和工程卫生改进。
 - [pdf2zh-next 开发参考](docs/pdf2zh-next-development-guide.md)：涉及上游接口、事件和配置时按版本范围阅读。
+- [工具与工作流目录治理](docs/governance/tool-directories.md)：`.agents/`、`.codex/`、`.comet/`、`.opencode/`、`openspec/` 等目录的职责、跟踪与重建边界。
+- [依赖升级流程](docs/governance/dependency-upgrade.md)：Python/Node 支持范围与上游翻译依赖升级契约。
 
 ## 环境要求
 
 - Windows 10 或更高版本。
-- Python 3.12。
-- Node.js 22（只在运行前端测试时需要）。
+- Python 3.12（`pyproject.toml` `requires-python` 为 `>=3.12`，锁文件按 3.12 生成）。
+- Node.js 22 或更新版本（`package.json` `engines.node` 为 `>=22`；只在运行前端测试时需要，CI 固定 22）。
 - 可用的 LLM API Key。
 
 ## 安装
@@ -211,9 +213,12 @@ npm ci
 powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
 ```
 
-`scripts/verify.ps1` 会先输出最终选用的 Python 绝对路径与版本：显式 `-PythonExecutable` 优先；未指定时优先仓库 `venv`；仓库 `venv` 缺失而回退 PATH 中的 `python` 时会输出醒目 WARNING（不会静默）。显式路径无效时快速失败、不回退。
+`scripts/verify.ps1` 会先输出最终选用的 Python 绝对路径与版本，并核验 Python `>=3.12` 与
+Node.js `>=22`（版本不满足时快速失败并给出提示）：显式 `-PythonExecutable` 优先；未指定时
+优先仓库 `venv`；仓库 `venv` 缺失而回退 PATH 中的 `python` 时会输出醒目 WARNING（不会静默）。
+显式路径无效时快速失败、不回退。
 
-统一验证依次执行：Ruff lint/format → coverage（`coverage run --branch -m pytest`，含全局与关键模块阈值策略）→ mypy（仅 `src/pdf_reader`）→ JS lint（`npm run lint:js`，ESLint flat config）→ 前端测试（`npm test`）。本地 coverage 数据写入临时目录并在结束后清理；CI 通过 `PDF_READER_COVERAGE_ARTIFACT_DIR=coverage-artifacts` 输出 coverage JSON/XML 并上传 artifact（该目录已加入 .gitignore）。
+统一验证依次执行：密钥扫描（`scripts/secret_scan.py`，只扫描 Git 跟踪内容且不输出 secret 值）→ Ruff lint/format → coverage（`coverage run --branch -m pytest`，含全局与关键模块阈值策略）→ mypy（仅 `src/pdf_reader`）→ JS lint（`npm run lint:js`，ESLint flat config）→ 前端测试（`npm test`）。本地 coverage 数据写入临时目录并在结束后清理；CI 通过 `PDF_READER_COVERAGE_ARTIFACT_DIR=coverage-artifacts` 输出 coverage JSON/XML 并上传 artifact（该目录已加入 .gitignore）。
 
 安装后的关键 Python 依赖可用以下命令快速检查：
 
