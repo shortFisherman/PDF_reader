@@ -1,7 +1,7 @@
 import csv
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from flask import Flask
 
@@ -467,3 +467,99 @@ def test_internal_error_sanitizes_response_and_keeps_log(caplog, monkeypatch, tm
     for secret in ("sk-secret-123", "Users\\secret", "onerror"):
         assert secret not in body
     assert "sk-secret-123" in caplog.text
+
+
+def test_translate_context_uses_injected_settings_not_module_globals(app_state, sample_pdf, monkeypatch):
+    """翻译上下文消费注入的 provider/model/lang/debug/cache，与 config 模块全局冲突时以注入值为准。"""
+    from pdf_reader import config
+    from pdf_reader.file_hash import sha256
+    from pdf_reader.routes import register_routes
+    from pdf_reader.translation_coordinator import TranslationCoordinator
+
+    app_state.open_pdf(str(sample_pdf), sha256)
+    settings = config.AppSettings(
+        debug=False,
+        cache_dir=app_state._cache_dir,
+        dpi=200,
+        glossary_path=config.GLOSSARY_PATH,
+        model_provider="deepseek",
+        model="deepseek-chat",
+        lang_in="en",
+        lang_out="zh",
+    )
+    monkeypatch.setattr(config, "MODEL_PROVIDER", "zhipu")
+    monkeypatch.setattr(config, "MODEL", "zhipu-ai")
+    monkeypatch.setattr(config, "TRANSLATION_LANG_IN", "ja")
+    monkeypatch.setattr(config, "TRANSLATION_LANG_OUT", "ko")
+    monkeypatch.setattr(config, "DEBUG", True)
+
+    app = Flask(__name__)
+    app.config.update(
+        TESTING=True,
+        app_settings=settings,
+        app_state=app_state,
+        translation_coordinator=TranslationCoordinator(),
+    )
+    register_routes(app)
+    captured = {}
+
+    with (
+        patch("pdf_reader.routes.build_settings", return_value=MagicMock()),
+        patch("pdf_reader.routes.sse_stream.generate") as generate,
+    ):
+
+        def capture(ctx) -> object:
+            captured["ctx"] = ctx
+            return iter([""])
+
+        generate.side_effect = capture
+        with app.test_client() as client:
+            resp = client.post("/api/translate/0", json={})
+        assert resp.status_code == 200
+
+    ctx = captured["ctx"]
+    assert ctx.cache_dir == settings.cache_dir
+    assert ctx.provider == "deepseek"
+    assert ctx.model == "deepseek-chat"
+    assert ctx.lang_in == "en"
+    assert ctx.lang_out == "zh"
+    assert ctx.debug is False
+
+
+def test_register_routes_builds_settings_only_when_key_missing(monkeypatch):
+    """兼容 fallback 惰性执行：key 已注入时不调用 build_app_settings，缺失时才调用一次。"""
+    from pdf_reader import config
+    from pdf_reader.routes import register_routes
+
+    fallback = config.AppSettings(
+        debug=False,
+        cache_dir=Path("cache"),
+        dpi=200,
+        glossary_path=Path("docs/glossary.csv"),
+        model_provider="openai_compatible",
+        model="",
+        lang_in="en",
+        lang_out="zh",
+    )
+    calls: list[tuple[object, ...]] = []
+
+    def spy(
+        config_data: dict | None = None,
+        *,
+        cli_debug: bool | None = None,
+        run_cfg: config.ServerConfig | None = None,
+    ) -> config.AppSettings:
+        calls.append((config_data, cli_debug, run_cfg))
+        return fallback
+
+    monkeypatch.setattr(config, "build_app_settings", spy)
+
+    injected_app = Flask(__name__)
+    injected_app.config["app_settings"] = fallback
+    register_routes(injected_app)
+    assert calls == []
+
+    missing_app = Flask(__name__)
+    register_routes(missing_app)
+    assert missing_app.config["app_settings"] is fallback
+    assert len(calls) == 1

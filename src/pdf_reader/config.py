@@ -394,10 +394,18 @@ def build_app_settings(
     config_data: dict | None = None,
     *,
     cli_debug: bool | None = None,
+    run_cfg: ServerConfig | None = None,
 ) -> AppSettings:
-    """从配置快照构建冻结的 ``AppSettings``（供 ``main``/测试显式传给 ``create_app``）。"""
+    """从配置快照构建冻结的 ``AppSettings``（供 ``main``/测试显式传给 ``create_app``）。
+
+    默认按 ``resolve_server_config(config_data, cli_debug=cli_debug)`` 解析一次；
+    传入 ``run_cfg`` 时直接复用该已解析结果（不再调用 ``resolve_server_config``，
+    避免 ``main`` 内两次解析导致 debug/use_reloader 与 ``settings.debug`` 分叉，
+    此时 ``run_cfg`` 优先于 ``cli_debug``）。
+    """
     data = CONFIG if config_data is None else config_data
-    run_cfg = resolve_server_config(data, cli_debug=cli_debug)
+    if run_cfg is None:
+        run_cfg = resolve_server_config(data, cli_debug=cli_debug)
     pdf_reader = _section(data, "pdf_reader")
     translation = _section(data, "translation")
     model = _section(data, "model")

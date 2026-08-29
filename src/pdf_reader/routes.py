@@ -386,6 +386,14 @@ def internal_error(exc: Exception):
 
 
 def register_routes(app):
-    app.config.setdefault("app_settings", config.build_app_settings())
+    """注册 blueprint 并消费已注入的 ``app_settings``。
+
+    生产装配路径由 ``create_app(settings)`` 先写入 ``app.config["app_settings"]``，
+    本函数只读取该值，绝不因此重建配置。兼容 fallback 仅在 key 真正缺失
+    （例如测试直接构造 Flask 后调用本函数）时惰性执行 ``config.build_app_settings()``，
+    key 已存在时不会触碰配置模块全局。
+    """
+    if "app_settings" not in app.config:
+        app.config["app_settings"] = config.build_app_settings()
     app.config.setdefault("translation_coordinator", TranslationCoordinator())
     app.register_blueprint(bp)

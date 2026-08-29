@@ -116,6 +116,27 @@ class TestMainDebugPriority:
 
         mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=True, use_reloader=True)
 
+    def test_main_resolves_server_config_once(self, monkeypatch, main_entry):
+        """main 只解析一次 ServerConfig 并复用，避免 settings.debug 与 run 参数分叉。"""
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.setattr(config, "CONFIG", _valid_config({"debug": True}))
+        mock_app, run = main_entry
+        resolved: list[config.ServerConfig] = []
+        original = config.resolve_server_config
+
+        def spy(config_data: dict | None = None, cli_debug: bool | None = None) -> config.ServerConfig:
+            result = original(config_data, cli_debug=cli_debug)
+            resolved.append(result)
+            return result
+
+        monkeypatch.setattr(config, "resolve_server_config", spy)
+
+        assert run([]) == 0
+
+        assert len(resolved) == 1
+        assert mock_app.settings.debug is True
+        assert mock_app.settings.debug == resolved[0].debug
+
 
 class TestMainErrorPaths:
     def test_cli_debug_and_no_debug_are_mutually_exclusive(self, main_entry):
@@ -253,6 +274,7 @@ class TestMainErrorPaths:
 class TestImportHasNoCliSideEffects:
     def test_import_app_does_not_parse_cli_or_modify_config_debug(self):
         original_debug = config.DEBUG
+        original_app = pdf_reader.__dict__.get("app")
         with patch.object(sys, "argv", ["python", "-m", "pdf_reader", "--debug"]):
             with patch("pdf_reader.logging_config.setup_logging") as mock_setup:
                 with patch.dict(sys.modules):
@@ -263,6 +285,18 @@ class TestImportHasNoCliSideEffects:
                     assert config.DEBUG == original_debug
                     assert not hasattr(fresh_app, "_parser")
                     assert callable(fresh_app.main)
+                    mock_setup.assert_not_called()
+        pdf_reader.__dict__["app"] = original_app
+
+    def test_import_main_module_does_not_parse_cli_or_run_main(self):
+        with patch.object(sys, "argv", ["python", "-m", "pdf_reader", "--debug"]):
+            with patch("pdf_reader.logging_config.setup_logging") as mock_setup:
+                with patch.dict(sys.modules):
+                    sys.modules.pop("pdf_reader.__main__", None)
+                    with patch.object(app_module, "main", side_effect=AssertionError("main must not run on import")):
+                        import pdf_reader.__main__ as fresh_main_module  # noqa: F401
+
+                        assert callable(fresh_main_module.main)
                     mock_setup.assert_not_called()
 
 
@@ -321,6 +355,61 @@ class TestCreateAppLogging:
         mock_setup.assert_called_once_with(False)
         mock_run.assert_called_once_with(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
         assert config.DEBUG is False
+
+
+class TestCreateAppInjectedSettings:
+    def test_create_app_never_rebuilds_settings_from_module_globals(self, monkeypatch):
+        """create_app(settings) 整条装配路径不再调用 build_app_settings。"""
+        calls: list[tuple[object, ...]] = []
+        settings = _settings(debug=True)
+
+        def spy(
+            config_data: dict | None = None,
+            *,
+            cli_debug: bool | None = None,
+            run_cfg: config.ServerConfig | None = None,
+        ) -> config.AppSettings:
+            calls.append((config_data, cli_debug, run_cfg))
+            raise AssertionError("build_app_settings must not be called when settings are injected")
+
+        monkeypatch.setattr(config, "build_app_settings", spy)
+        with patch("pdf_reader.app.logging_config.setup_logging"):
+            app = app_module.create_app(settings)
+
+        assert calls == []
+        assert app.config["app_settings"] is settings
+        assert app.config["app_state"]._cache_dir == Path("cache")
+
+    def test_page_render_uses_injected_dpi_not_module_global(self, monkeypatch, tmp_path, sample_pdf):
+        """路由渲染消费注入的 dpi，config.DPI 全局与注入值冲突时以注入值为准。"""
+        import struct
+
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        settings = config.AppSettings(
+            debug=False,
+            cache_dir=cache_dir,
+            dpi=200,
+            glossary_path=Path("docs/glossary.csv"),
+            model_provider="deepseek",
+            model="deepseek-chat",
+            lang_in="en",
+            lang_out="zh",
+        )
+        monkeypatch.setattr(config, "DPI", 300)
+        with patch("pdf_reader.app.logging_config.setup_logging"):
+            app = app_module.create_app(settings)
+        app.config["TESTING"] = True
+        try:
+            with app.test_client() as client:
+                opened = client.post("/api/open", json={"path": str(sample_pdf)})
+                assert opened.status_code == 200
+                png = client.get("/api/page/left/0")
+                assert png.status_code == 200
+            width, height = struct.unpack(">II", png.data[16:24])
+            assert (width, height) == (1700, 2200)
+        finally:
+            app.config["app_state"].close()
 
 
 class TestRealEntry:

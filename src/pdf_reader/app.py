@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    settings = config.build_app_settings(cli_debug=args.debug)
+    settings = config.build_app_settings(cli_debug=args.debug, run_cfg=run_cfg)
     app = create_app(settings)
     coordinator = app.config["translation_coordinator"]
     recovered = cache_ops.recover_orphan_temp_workspaces(settings.cache_dir)

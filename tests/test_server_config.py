@@ -244,15 +244,46 @@ class TestEnvApiKeyOverride:
             config.validate_startup_requirements(self._base())
 
 
+class TestBuildAppSettingsSingleParse:
+    def test_build_app_settings_reuses_pre_resolved_run_config(self):
+        """传入 run_cfg 时不再调用 resolve_server_config，debug 以已解析结果为准。"""
+        run_cfg = config.ServerConfig(host="0.0.0.0", port=9000, debug=True)
+        snapshot = {
+            "pdf_reader": {"dpi": 150, "cache_dir": "cache"},
+            "translation": {"lang_in": "ja", "lang_out": "ko"},
+            "model": {"provider": "zhipu", "model": "zhipu-ai"},
+        }
+        with patch.object(config, "resolve_server_config", wraps=config.resolve_server_config) as spy:
+            settings = config.build_app_settings(snapshot, cli_debug=False, run_cfg=run_cfg)
+
+        spy.assert_not_called()
+        assert settings.debug is True
+        assert settings.dpi == 150
+        assert settings.model_provider == "zhipu"
+        assert settings.model == "zhipu-ai"
+        assert settings.lang_in == "ja"
+        assert settings.lang_out == "ko"
+
+    def test_build_app_settings_resolves_when_no_run_cfg(self, monkeypatch):
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        snapshot = {"server": {"debug": True}, "pdf_reader": {}, "translation": {}, "model": {}}
+
+        settings = config.build_app_settings(snapshot)
+
+        assert settings.debug is True
+
+
 class TestImportTypeSafety:
     def _reimport(self, toml_bytes: bytes, monkeypatch) -> types.ModuleType:
         monkeypatch.delenv("MODEL_API_KEY", raising=False)
         monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        original_config = pdf_reader.__dict__.get("config")
         with patch.dict(sys.modules):
             sys.modules.pop("pdf_reader.config", None)
             pdf_reader.__dict__.pop("config", None)
             with patch("builtins.open", return_value=io.BytesIO(toml_bytes)):
                 from pdf_reader import config as fresh_config
+        pdf_reader.__dict__["config"] = original_config
         return fresh_config
 
     def test_import_survives_non_table_and_bad_field_types(self, monkeypatch):

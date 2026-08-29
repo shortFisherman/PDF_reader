@@ -35,7 +35,7 @@
 
 | 路径 | 职责 |
 |---|---|
-| `src/pdf_reader/app.py` | 启动边界 `main(argv)`、`create_app()` 装配 Flask 与全局 `AppState`、启动服务；`src/pdf_reader/__main__.py` 提供 `python -m pdf_reader` 入口 |
+| `src/pdf_reader/app.py` | 启动边界 `main(argv)`、`create_app(settings)` 装配 Flask 与全局 `AppState`、启动服务；`src/pdf_reader/__main__.py` 提供 `python -m pdf_reader` 入口（导入无副作用，仅 `python -m` 时调用 `main`） |
 | `src/pdf_reader/cache_ops.py` | 任务临时工作区所有权（每任务 cache 根 workspace：input/output+标记创建与失败清理）、缓存分类、只读统计与孤儿工作区清理：固定前缀/标记校验、Windows 安全 PID 存活探测、dry-run 清理边界与启动恢复 |
 | `pyproject.toml` | P2-01/P2-04 可安装包与依赖契约：setuptools src 布局、`project.dependencies` 唯一直接依赖声明、`project.optional-dependencies.dev`（pytest/Ruff/coverage/mypy/pip-tools） |
 | `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python -m pdf_reader` |
@@ -83,11 +83,11 @@
 
 ## 启动与 Flask 应用装配
 
-1. `python -m pdf_reader` 进入 `app.main(argv=None)`：模块导入不解析 CLI、不修改 `config.DEBUG`；CLI 解析只发生在该启动边界内。`--debug` 与 `--no-debug` 互斥。
-2. `config.resolve_server_config(cli_debug=...)` 按优先级 CLI `--debug`/`--no-debug` > 环境变量 `PDF_READER_DEBUG` > `[server].debug` > 默认 `false` 解析，返回 frozen `ServerConfig(host, port, debug)`；`use_reloader` 派生为与 `debug` 相同的值（debug 开 → Flask debugger+reloader 开，关 → 两者显式关闭）。
-3. `main` 把同一个解析结果写入 `config.DEBUG`（供 `debug_trace` 等消费），再调用 `config.validate_startup_requirements()` 统一校验 `[model]`/`[pdf_reader]`/`[translation]` 的 table 与核心字段类型；缺少 `model.model`、API Key 或 API Key 为示例值时抛 `ConfigError`，main 打印 `ERROR:` 并以退出码 2 结束，不启动服务器。
-4. `create_app(run_cfg)` 使用 `run_cfg.debug` 调用 `logging_config.setup_logging(...)`，输出启动摘要（provider/model/lang/cache_dir/dpi/debug，不含 api_key）。
-5. 创建 `Flask(__name__)` 并显式传入 `template_folder=PROJECT_ROOT/templates`、`static_folder=PROJECT_ROOT/static`（由 `src/pdf_reader/paths.py` 解析），装配全局 `AppState(config.CACHE_DIR)` 与 `TranslationCoordinator()`，导入并注册 `pdf_reader.routes.register_routes`。
+1. `python -m pdf_reader` 进入 `app.main(argv=None)`：模块导入不解析 CLI、不修改 `config.DEBUG`；CLI 解析只发生在该启动边界内，`__main__.py` 的 `main()` 调用受 `if __name__ == "__main__"` 守卫保护，`import pdf_reader.__main__` 同样无副作用。`--debug` 与 `--no-debug` 互斥。
+2. `config.resolve_server_config(cli_debug=...)` 按优先级 CLI `--debug`/`--no-debug` > 环境变量 `PDF_READER_DEBUG` > `[server].debug` > 默认 `false` 解析一次，返回 frozen `ServerConfig(host, port, debug)`；`use_reloader` 派生为与 `debug` 相同的值（debug 开 → Flask debugger+reloader 开，关 → 两者显式关闭）。
+3. `main` 调用 `config.validate_startup_requirements()` 统一校验 `[model]`/`[pdf_reader]`/`[translation]` 的 table 与核心字段类型；缺少 `model.model`、API Key 或 API Key 为示例值时抛 `ConfigError`，main 打印 `ERROR:` 并以退出码 2 结束，不启动服务器。
+4. `main` 用步骤 2 的同一 `ServerConfig` 调用 `config.build_app_settings(cli_debug=..., run_cfg=run_cfg)`：复用已解析结果，不再二次调用 `resolve_server_config`，`settings.debug` 与 `run_cfg.debug` 恒一致。
+5. `create_app(settings)` 使用 `settings.debug` 调用 `logging_config.setup_logging(...)`，输出启动摘要（provider/model/lang/cache_dir/dpi/debug，不含 api_key）；创建 `Flask(__name__)` 并显式传入 `template_folder=PROJECT_ROOT/templates`、`static_folder=PROJECT_ROOT/static`（由 `src/pdf_reader/paths.py` 解析），装配全局 `AppState(settings.cache_dir)` 与 `TranslationCoordinator()`，导入并注册 `pdf_reader.routes.register_routes`。`register_routes` 只消费已注入的 `app.config["app_settings"]`；仅当该 key 缺失（绕过 `create_app` 直接注册 blueprint 的兼容边界）时才惰性调用 `config.build_app_settings()`。
 6. `main` 在 `create_app`（日志已就绪）之后调用 `cache_ops.recover_orphan_temp_workspaces(settings.cache_dir)`：清理上次崩溃/超时退出遗留的、可验证归属（固定前缀 + 有效标记 + 非链接 + PID 已不存活）的翻译任务根工作区（含 `input/` 与 `output/`）；未知/无标记/损坏标记/链接路径/PID 仍存活的目录一律保守保留。清理数量与保留分类写入 INFO/WARNING 日志。
 7. `app.run(host=..., port=..., debug=..., use_reloader=...)` 显式传入全部四个参数，默认 `debug=False, use_reloader=False`；`app.run()` 返回或异常退出时先调用 `coordinator.shutdown(timeout=10.0)` 做有界关闭：请求协作式取消并等待 worker 与 active job，按 `no_active_job`（INFO）/ `completed`（INFO）/ `timeout`（WARNING，任务与工作区保留供下次启动恢复）记录日志，worker 未确认退出时追加 WARNING；随后 `app_state.close()` 幂等关闭并释放左右 PyMuPDF 句柄、清空状态（即使 `shutdown` 抛异常也会执行）。
 8. 配置错误路径：TOML 语法错误在配置导入时被捕获（`config._CONFIG_LOAD_ERROR`），首次解析配置时抛 `ConfigError`；`[server]` 类型/范围错误与 `PDF_READER_DEBUG` 非法值同样由 `resolve_server_config` 抛 `ConfigError`；`--debug`/`--no-debug` 互斥由 argparse 报错。所有路径都在启动服务器前以非零状态退出。
