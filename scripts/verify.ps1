@@ -1,3 +1,7 @@
+param(
+    [string]$PythonExecutable
+)
+
 $ErrorActionPreference = 'Stop'
 
 function Invoke-Checked {
@@ -15,14 +19,20 @@ function Invoke-Checked {
     }
 }
 
-$python = Join-Path $PSScriptRoot '..\venv\Scripts\python.exe'
-if (-not (Test-Path -LiteralPath $python)) {
-    $python = 'python'
+$pythonCommand = $PythonExecutable
+if (-not $pythonCommand) {
+    $pythonCommand = Join-Path $PSScriptRoot '..\venv\Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $pythonCommand)) {
+        $pythonCommand = 'python'
+    }
+}
+if (-not (Get-Command $pythonCommand -ErrorAction SilentlyContinue)) {
+    throw "Python executable not found: $pythonCommand"
 }
 
-Invoke-Checked 'Ruff lint' { & $python -m ruff check . }
-Invoke-Checked 'Ruff format check' { & $python -m ruff format --check . }
-Invoke-Checked 'Python tests' { & $python -m pytest -q }
+Invoke-Checked 'Ruff lint' { & $pythonCommand -m ruff check . }
+Invoke-Checked 'Ruff format check' { & $pythonCommand -m ruff format --check . }
+Invoke-Checked 'Python tests' { & $pythonCommand -m pytest -q }
 Invoke-Checked 'Frontend tests' { npm test }
 
 Write-Host 'All verification checks passed.'

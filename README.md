@@ -28,7 +28,7 @@ PDF 版面翻译由 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-
 - [项目记忆](docs/project.md)：项目为什么存在、长期意图、常青原则和产品边界。
 - [当前架构](docs/architecture.md)：当前 HEAD 的模块、数据流、API、状态、依赖、测试和技术约束。
 - [路线图](docs/roadmap.md)：候选方向、开放问题、依赖和决策状态；不构成实施授权。
-- [工程与架构长期改进清单](docs/engineering-improvement-plan.md)：按优先级跟踪可靠性、任务生命周期、目录结构和工程卫生改进。
+- [工程与架构长期改进清单](docs/engineering-improvement-plan-829.md)：按优先级跟踪可靠性、任务生命周期、目录结构和工程卫生改进。
 - [pdf2zh-next 开发参考](docs/pdf2zh-next-development-guide.md)：涉及上游接口、事件和配置时按版本范围阅读。
 
 ## 环境要求
@@ -47,6 +47,22 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.lock
 Copy-Item config.example.toml config.toml
+```
+
+`requirements.txt` 只声明直接运行依赖，`requirements-dev.txt` 在其基础上声明测试和代码检查依赖；`requirements.lock` 是 README、CI 和本地验证共同使用的唯一锁文件。锁文件由 Python 3.12 和 `pip-tools` 生成：
+
+```powershell
+py -3.12 -m venv .tmp-lock-venv
+.\.tmp-lock-venv\Scripts\python.exe -m pip install pip-tools==7.6.1
+.\.tmp-lock-venv\Scripts\python.exe -m piptools compile --upgrade --resolver=backtracking --strip-extras --output-file requirements.lock requirements-dev.txt
+```
+
+生成后应删除临时环境，并在新的 Python 3.12 虚拟环境中执行安装、关键导入和完整验证。不要从日常工作环境运行 `pip freeze` 更新锁文件。
+
+例如，可将干净环境的解释器显式传给统一验证脚本，避免误用仓库中已有的 `venv`：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable .\.tmp-verify-venv\Scripts\python.exe
 ```
 
 ## 配置
@@ -86,6 +102,12 @@ npm ci
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
+```
+
+安装后的关键 Python 依赖可用以下命令快速检查：
+
+```powershell
+python -c "import flask, pymupdf, pdf2zh_next"
 ```
 
 单独运行前端回归测试：

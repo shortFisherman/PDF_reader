@@ -175,9 +175,11 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 ## 测试、CI 与验证入口
 
-统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（193 个 Python 测试）→ `npm test`（四个前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。
+`requirements.txt` 只声明直接运行依赖，`requirements-dev.txt` 在运行依赖之上声明 pytest 与 Ruff；`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从开发依赖入口生成。锁文件不包含 editable、本机路径或 `file:///` 来源。
 
-CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依赖（`requirements.lock`）与 Node 22 测试依赖（`npm ci`），再执行同一 `scripts/verify.ps1`。`tests/README.md` 说明正式测试与历史诊断脚本的区别。
+统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（193 个 Python 测试）→ `npm test`（四个前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
+
+CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依赖（`requirements.lock`），执行 `import flask, pymupdf, pdf2zh_next` 冒烟检查，安装 Node 22 测试依赖（`npm ci`），再执行同一 `scripts/verify.ps1`。`tests/README.md` 说明正式测试与历史诊断脚本的区别。
 
 ## 当前技术约束与已确认风险
 
@@ -189,9 +191,8 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
 4. **服务端无任务隔离。** 路由没有任务身份或互斥；浏览器页内的 `isTranslating` 不能阻止其他客户端或并发请求重叠。
 5. **术语合并无任务隔离。** 累积术语表是共享的按文档状态，翻译流程之间没有应用级互斥或事务契约。
 6. **替换失败无恢复事务。** `replace_page`/`replace_pages` 在原子替换前已关闭源/右文档；后续步骤失败时没有文档化的恢复事务。
-7. **依赖锁含机器路径。** `requirements.lock` 含 `-e d:\open-glm\project_glm\open-autoglm`，降低全新环境安装的可移植性。
-8. **PNG 无文本层。** 页面以图片显示，没有文本选择、搜索、复制、高亮、批注、目录、内部链接或 OCR 流程。
-9. **无队列/暂停/取消/重启续传。** 不存在持久任务队列、暂停、取消、重试队列、进度恢复或进程重启后的翻译续传。
+7. **PNG 无文本层。** 页面以图片显示，没有文本选择、搜索、复制、高亮、批注、目录、内部链接或 OCR 流程。
+8. **无队列/暂停/取消/重启续传。** 不存在持久任务队列、暂停、取消、重试队列、进度恢复或进程重启后的翻译续传。
 
 ## 上游与历史参考
 
