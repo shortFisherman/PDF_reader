@@ -229,7 +229,10 @@ console.log('--- Test 3.3: SSE error event -> onError ---');
 console.log('--- Test 3.4: HTTP not ok -> onError ---');
 {
     const record = [];
-    const mockFetchResp = createMockResponse({ ok: false, jsonData: { error: '服务暂不可用' } });
+    const mockFetchResp = createMockResponse({
+        ok: false,
+        jsonData: { error: '已有翻译任务正在进行，请稍后再试', code: 'translation_busy' },
+    });
 
     globalThis.fetch = async (url, init) => mockFetchResp;
 
@@ -244,7 +247,10 @@ console.log('--- Test 3.4: HTTP not ok -> onError ---');
 
     assert(record.length === 1, 'Test 3.4.1: exactly 1 callback');
     assert(record[0].type === 'error', 'Test 3.4.2: onError called');
-    assert(record[0].msg === '服务暂不可用', `Test 3.4.3: error message is "服务暂不可用", got "${record[0].msg}"`);
+    assert(
+        record[0].msg === '已有翻译任务正在进行，请稍后再试',
+        `Test 3.4.3: busy error message preserved, got "${record[0].msg}"`,
+    );
     assert(!record.includes('finish'), 'Test 3.4.4: onFinish not called');
 }
 

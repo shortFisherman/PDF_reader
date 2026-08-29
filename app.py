@@ -6,6 +6,7 @@ from flask import Flask
 import config
 import logging_config
 from state import AppState
+from translation_coordinator import TranslationCoordinator
 
 logger = logging.getLogger("pdf_reader.app")
 
@@ -32,6 +33,7 @@ def create_app() -> Flask:
 
     app = Flask(__name__)
     app.config["app_state"] = AppState(config.CACHE_DIR)
+    app.config["translation_coordinator"] = TranslationCoordinator()
     from routes import register_routes
 
     register_routes(app)

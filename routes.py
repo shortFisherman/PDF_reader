@@ -18,6 +18,7 @@ import glossary_service
 import sse_stream
 from file_hash import sha256
 from pdf_renderer import render_page
+from translation_coordinator import TranslationBusyError, TranslationCoordinator, TranslationJob
 from translation_settings import build_settings
 
 logger = logging.getLogger("pdf_reader.routes")
@@ -33,6 +34,20 @@ def _get_state():
     return current_app.config["app_state"]
 
 
+def _get_coordinator() -> TranslationCoordinator:
+    return current_app.config["translation_coordinator"]
+
+
+def translation_busy_response(active_job: TranslationJob | None = None) -> tuple:
+    payload = {
+        "error": "已有翻译任务正在进行，请稍后再试",
+        "code": "translation_busy",
+    }
+    if active_job is not None:
+        payload["active_job_id"] = active_job.job_id
+    return jsonify(payload), 409
+
+
 @bp.route("/api/open", methods=["POST"])
 def open_pdf():
     data = request.get_json(silent=True) or {}
@@ -41,6 +56,12 @@ def open_pdf():
     if not pdf_path or not os.path.isfile(pdf_path):
         logger.debug("[route] open_pdf invalid path")
         return error_response("file not found", 400)
+
+    coordinator = _get_coordinator()
+    active_job = coordinator.active_job
+    if active_job is not None:
+        logger.info("[job=%s] rejected document open while translation is active", active_job.job_id)
+        return translation_busy_response(active_job)
 
     state = _get_state()
     result = state.open_pdf(pdf_path, sha256)
@@ -122,8 +143,17 @@ def translate_page(page: int):
         user_prompt,
         glossary_paths=glossary_paths,
     )
+    coordinator = _get_coordinator()
+    try:
+        job = coordinator.start(snapshot.document_id, [page])
+    except TranslationBusyError as exc:
+        logger.info("[job=%s] rejected overlapping single-page request", exc.active_job.job_id)
+        return translation_busy_response(exc.active_job)
     ctx = sse_stream.GenerateContext(
         settings=settings,
+        job_id=job.job_id,
+        finish_job=coordinator.finish,
+        fail_job=coordinator.fail,
         replace_page=lambda path: state.replace_page(path, page, snapshot.document_id),
         merge_glossary=lambda extracted: state.merge_glossary(
             extracted,
@@ -141,11 +171,17 @@ def translate_page(page: int):
             snapshot.document_id,
         ),
     )
-    return Response(
-        stream_with_context(sse_stream.generate(ctx)),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    try:
+        response = Response(
+            stream_with_context(sse_stream.generate(ctx)),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+    except Exception:
+        coordinator.fail(job.job_id)
+        raise
+    response.call_on_close(lambda: coordinator.fail(job.job_id))
+    return response
 
 
 @bp.route("/api/translate-batch", methods=["POST"])
@@ -185,8 +221,17 @@ def translate_batch():
         glossary_paths=glossary_paths,
         pages=pages_str,
     )
+    coordinator = _get_coordinator()
+    try:
+        job = coordinator.start(snapshot.document_id, page_indices)
+    except TranslationBusyError as exc:
+        logger.info("[job=%s] rejected overlapping batch request", exc.active_job.job_id)
+        return translation_busy_response(exc.active_job)
     ctx = sse_stream.GenerateBatchContext(
         settings=settings,
+        job_id=job.job_id,
+        finish_job=coordinator.finish,
+        fail_job=coordinator.fail,
         from_page=from_page,
         to_page=to_page,
         page_indices=page_indices,
@@ -206,11 +251,17 @@ def translate_batch():
             snapshot.document_id,
         ),
     )
-    return Response(
-        stream_with_context(sse_stream.generate_batch(ctx)),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    try:
+        response = Response(
+            stream_with_context(sse_stream.generate_batch(ctx)),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+    except Exception:
+        coordinator.fail(job.job_id)
+        raise
+    response.call_on_close(lambda: coordinator.fail(job.job_id))
+    return response
 
 
 @bp.route("/api/translated-pages")
@@ -230,4 +281,5 @@ def not_found(e):
 
 
 def register_routes(app):
+    app.config.setdefault("translation_coordinator", TranslationCoordinator())
     app.register_blueprint(bp)

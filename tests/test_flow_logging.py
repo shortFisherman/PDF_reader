@@ -191,6 +191,7 @@ def test_translate_thread_lifecycle_logging_debug_off(caplog):
 
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
     messages = [r.message for r in records]
+    assert all("[job=test-job]" in msg for msg in messages if "submit translate" in msg or "translate done" in msg)
     assert any("[page=1] thread start" in msg for msg in messages), f"Got: {messages}"
     assert any("[page=1] thread end" in msg for msg in messages), f"Got: {messages}"
 
@@ -260,6 +261,9 @@ def test_generate_logging_info_messages(caplog, tmp_path):
     cache_dir.mkdir()
     ctx = GenerateContext(
         settings=MagicMock(),
+        job_id="test-job",
+        finish_job=MagicMock(return_value=True),
+        fail_job=MagicMock(return_value=True),
         replace_page=MagicMock(),
         merge_glossary=MagicMock(),
         glossary_cache_path=None,
@@ -274,6 +278,7 @@ def test_generate_logging_info_messages(caplog, tmp_path):
 
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
     messages = [r.message for r in records]
+    assert all("[job=test-job]" in msg for msg in messages if "submit translate" in msg or "translate done" in msg)
     assert any("[page=0] submit translate" in msg for msg in messages), f"Messages: {messages}"
     assert any("[page=0] thread start" in msg for msg in messages), f"Messages: {messages}"
     assert any("[page=0] thread end" in msg for msg in messages), f"Messages: {messages}"
@@ -305,6 +310,9 @@ def test_generate_batch_logging_info_messages(caplog, tmp_path):
     cache_dir.mkdir()
     ctx = GenerateBatchContext(
         settings=MagicMock(),
+        job_id="test-job",
+        finish_job=MagicMock(return_value=True),
+        fail_job=MagicMock(return_value=True),
         from_page=2,
         to_page=5,
         page_indices=[1, 2, 3, 4],
@@ -344,6 +352,9 @@ def test_generate_error_logging_context(caplog, tmp_path, mock_config):
     cache_dir.mkdir()
     ctx = GenerateContext(
         settings=MagicMock(),
+        job_id="test-job",
+        finish_job=MagicMock(return_value=True),
+        fail_job=MagicMock(return_value=True),
         replace_page=MagicMock(),
         merge_glossary=MagicMock(),
         glossary_cache_path=None,
@@ -358,6 +369,7 @@ def test_generate_error_logging_context(caplog, tmp_path, mock_config):
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
     assert len(records) == 1, f"expected 1 ERROR, got: {[r.message for r in caplog.records]}"
     msg = records[0].message
+    assert "[job=test-job]" in msg
     assert "[page=7]" in msg
     assert "translate failed" in msg
     assert "provider=deepseek" in msg
@@ -377,6 +389,9 @@ def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
     cache_dir.mkdir()
     ctx = GenerateBatchContext(
         settings=MagicMock(),
+        job_id="test-job",
+        finish_job=MagicMock(return_value=True),
+        fail_job=MagicMock(return_value=True),
         from_page=4,
         to_page=9,
         page_indices=[3, 4, 5, 6, 7, 8],
@@ -393,6 +408,7 @@ def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
     assert len(records) == 1, f"expected 1 ERROR, got: {[r.message for r in caplog.records]}"
     msg = records[0].message
+    assert "[job=test-job]" in msg
     assert "[batch=4-9]" in msg
     assert "translate failed" in msg
     assert "provider=deepseek" in msg
@@ -412,6 +428,9 @@ def test_generate_error_logging_produces_sse_error_event(caplog, tmp_path, mock_
     cache_dir.mkdir()
     ctx = GenerateContext(
         settings=MagicMock(),
+        job_id="test-job",
+        finish_job=MagicMock(return_value=True),
+        fail_job=MagicMock(return_value=True),
         replace_page=MagicMock(),
         merge_glossary=MagicMock(),
         glossary_cache_path=None,

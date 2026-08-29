@@ -78,6 +78,9 @@ EXPECTED_FINAL_FINISH_SSE = "data: " + json.dumps({"type": "finish", "progress":
 
 def _make_ctx(
     settings=None,
+    job_id="test-job",
+    finish_job=None,
+    fail_job=None,
     replace_page=None,
     merge_glossary=None,
     glossary_cache_path=None,
@@ -88,6 +91,10 @@ def _make_ctx(
 ) -> GenerateContext:
     if settings is None:
         settings = MagicMock()
+    if finish_job is None:
+        finish_job = MagicMock(return_value=True)
+    if fail_job is None:
+        fail_job = MagicMock(return_value=True)
     if replace_page is None:
         replace_page = MagicMock()
     if merge_glossary is None:
@@ -98,6 +105,9 @@ def _make_ctx(
         extract_page = MagicMock(return_value=Path("/fake/page.pdf"))
     return GenerateContext(
         settings=settings,
+        job_id=job_id,
+        finish_job=finish_job,
+        fail_job=fail_job,
         replace_page=replace_page,
         merge_glossary=merge_glossary,
         glossary_cache_path=glossary_cache_path,
@@ -425,7 +435,8 @@ def test_generate_cleans_up_on_generator_close(tmp_path):
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
-    ctx = _make_ctx(cache_dir=cache_dir)
+    fail_job = MagicMock(return_value=True)
+    ctx = _make_ctx(job_id="job-disconnect", fail_job=fail_job, cache_dir=cache_dir)
 
     tmpdir = tmp_path / "tmp"
     tmpdir.mkdir()
@@ -441,6 +452,7 @@ def test_generate_cleans_up_on_generator_close(tmp_path):
 
     assert not tmpdir.exists()
     assert not output_dir.exists()
+    fail_job.assert_called_once_with("job-disconnect")
 
 
 def test_generate_cleans_up_on_success(tmp_path):
@@ -497,6 +509,9 @@ def test_format_batch_info_event():
 
 def _make_batch_ctx(
     settings=None,
+    job_id="test-job",
+    finish_job=None,
+    fail_job=None,
     from_page=2,
     to_page=5,
     page_indices=None,
@@ -509,6 +524,10 @@ def _make_batch_ctx(
 ) -> GenerateBatchContext:
     if settings is None:
         settings = MagicMock()
+    if finish_job is None:
+        finish_job = MagicMock(return_value=True)
+    if fail_job is None:
+        fail_job = MagicMock(return_value=True)
     if replace_pages is None:
         replace_pages = MagicMock()
     if merge_glossary is None:
@@ -521,6 +540,9 @@ def _make_batch_ctx(
         page_indices = list(range(from_page - 1, to_page))
     return GenerateBatchContext(
         settings=settings,
+        job_id=job_id,
+        finish_job=finish_job,
+        fail_job=fail_job,
         from_page=from_page,
         to_page=to_page,
         page_indices=page_indices,
@@ -625,3 +647,68 @@ def test_generate_batch_error_event_stops_stream(tmp_path):
     assert any('"type": "error"' in r for r in result)
     # no finish tail when error
     assert not any('"type": "finish"' in r for r in result)
+
+
+def test_generate_success_finishes_active_job(tmp_path):
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+    finish_job = MagicMock(return_value=True)
+    fail_job = MagicMock(return_value=True)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(
+        job_id="job-success",
+        finish_job=finish_job,
+        fail_job=fail_job,
+        cache_dir=cache_dir,
+    )
+
+    with patch(
+        "sse_stream.run_translation",
+        return_value=iter([{"type": "finish", "translate_result": mock_result}]),
+    ):
+        list(generate(ctx))
+
+    finish_job.assert_called_once_with("job-success")
+    fail_job.assert_not_called()
+
+
+def test_generate_error_event_fails_active_job(tmp_path):
+    finish_job = MagicMock(return_value=True)
+    fail_job = MagicMock(return_value=True)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(
+        job_id="job-error",
+        finish_job=finish_job,
+        fail_job=fail_job,
+        cache_dir=cache_dir,
+    )
+
+    with patch("sse_stream.run_translation", return_value=iter([{"type": "error", "error": "boom"}])):
+        list(generate(ctx))
+
+    fail_job.assert_called_once_with("job-error")
+    finish_job.assert_not_called()
+
+
+def test_generate_setup_exception_fails_active_job(tmp_path):
+    finish_job = MagicMock(return_value=True)
+    fail_job = MagicMock(return_value=True)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(
+        job_id="job-setup-error",
+        finish_job=finish_job,
+        fail_job=fail_job,
+        cache_dir=cache_dir,
+    )
+
+    with patch("sse_stream.tempfile.mkdtemp", side_effect=OSError("no temp space")):
+        result = list(generate(ctx))
+
+    assert any('"type": "error"' in item for item in result)
+    fail_job.assert_called_once_with("job-setup-error")
+    finish_job.assert_not_called()

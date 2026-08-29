@@ -10,7 +10,7 @@ logger = logging.getLogger("pdf_reader.debug_trace")
 
 
 @contextmanager
-def debug_session(glossary_path: Path | None, page: int):
+def debug_session(glossary_path: Path | None, page: int, job_id: str | None = None):
     if not config.DEBUG or glossary_path is None:
         yield
         return
@@ -27,7 +27,10 @@ def debug_session(glossary_path: Path | None, page: int):
         file_handler = logging.FileHandler(str(log_path), encoding="utf-8")
         file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s:%(name)s:%(message)s"))
         trace_logger.addHandler(file_handler)
-        trace_logger.info("=== Debug session start: page %d ===", page)
+        if job_id is None:
+            trace_logger.info("=== Debug session start: page %d ===", page)
+        else:
+            trace_logger.info("=== Debug session start: job %s page %d ===", job_id, page)
         handler = file_handler
     except Exception:
         logging.getLogger("pdf_reader").warning("Failed to create debug_trace.log file handler", exc_info=True)
@@ -49,13 +52,16 @@ def log_step(step: str, *args: object) -> None:
     logger.info("[step] " + step, *args)
 
 
-def log_token_usage(token_usage: dict) -> None:
+def log_token_usage(token_usage: dict, job_id: str | None = None) -> None:
     if not token_usage:
         return
     total = token_usage.get("main", {}).get("total", 0)
     term_total = token_usage.get("term", {}).get("total", 0)
     if total or term_total:
-        logger.debug("Token usage: main=%d, term=%d", total, term_total)
+        if job_id is None:
+            logger.debug("Token usage: main=%d, term=%d", total, term_total)
+        else:
+            logger.debug("[job=%s] Token usage: main=%d, term=%d", job_id, total, term_total)
 
 
 def log_glossary_merge(action: str, **fields) -> None:
