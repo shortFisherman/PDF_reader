@@ -75,7 +75,7 @@
 | P0-01 | P0 | 翻译结果绑定不可变文档身份 | `已完成` | 无 |
 | P0-02 | P0 | 服务端单任务互斥与任务身份 | `已完成` | P0-01 可并行设计 |
 | P0-03 | P0 | 修复依赖锁与干净环境安装 | `已完成` | 无 |
-| P1-01 | P1 | 明确 SSE 断开和后台任务所有权 | `待处理` | P0-02 |
+| P1-01 | P1 | 明确 SSE 断开和后台任务所有权 | `已完成` | P0-02 |
 | P1-02 | P1 | PDF 替换失败恢复与事务边界 | `待处理` | P0-01 |
 | P1-03 | P1 | 术语表原子写入与任务隔离 | `待处理` | P0-02 |
 | P1-04 | P1 | 建立系统级并发和故障回归测试 | `待处理` | P0/P1 对应设计 |
@@ -231,11 +231,11 @@ TranslationCoordinator
 
 ### P1-01 明确 SSE 断开和后台任务所有权
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：SSE 生成器结束后会清理目录，但 daemon 翻译线程和上游子进程未必结束。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`10f1676`
+- 验证证据：`tests/test_translation_orchestrator.py` 覆盖协作式取消后线程真实退出、非协作 worker 在 join timeout 后 `is_alive` 仍为真、无事件时心跳；`tests/test_sse_stream.py` 覆盖断开时取消 worker 且迟到 `translate_result` 不达 `replace_page`、目录只在 worker 确认退出后删除、join timeout 时目录保留并释放为 cancelled、batch 同一所有权；`tests/test_translation_coordinator.py` 覆盖 `cancel()` 幂等释放。执行 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"`，229 个 Python 测试与全部前端测试通过。
+- 剩余问题：无。不响应协作式取消的上游环节（含 BabelDOC 子进程）仍会运行到自然结束，其结果被丢弃；join timeout 后保留的孤儿临时目录在下次启动时尚未被自动回收，属于 P3-05 的范围。
 
 #### 目标状态
 
@@ -246,10 +246,10 @@ TranslationCoordinator
 
 #### 验收标准
 
-- [ ] 真实后台 worker 尚未退出时关闭 SSE，任务目录不会被提前删除。
-- [ ] 客户端断开后，迟到结果仍受 P0-01 身份校验约束。
-- [ ] worker 的成功、失败、取消和 join timeout 都有确定的状态转换。
-- [ ] 不再依赖 daemon 线程被进程退出被动终止作为正常清理方式。
+- [x] 真实后台 worker 尚未退出时关闭 SSE，任务目录不会被提前删除。
+- [x] 客户端断开后，迟到结果仍受 P0-01 身份校验约束。
+- [x] worker 的成功、失败、取消和 join timeout 都有确定的状态转换。
+- [x] 不再依赖 daemon 线程被进程退出被动终止作为正常清理方式。
 
 ### P1-02 PDF 替换失败恢复与事务边界
 
@@ -741,6 +741,7 @@ PDF_reader/
 
 | 日期 | 编号 | 状态 | 提交 | 说明 |
 |---|---|---|---|---|
+| 2026-08-29 | P1-01 | 已完成 | `10f1676` | 引入 `TranslationStream` 明确 worker 生命周期：SSE 断开触发协作式取消并 join 确认退出后才清理临时目录，join timeout 保留目录；断开结果丢弃并释放为 cancelled；关闭时记录 active job。 |
 | 2026-08-29 | P0-03 | 已完成 | `59d8545` | 移除不可移植依赖锁内容，明确运行/开发依赖，并通过干净 Python 3.12 环境安装与验证。 |
 | 2026-08-29 | P0-01 | 已完成 | `97b94e9` | 以不可变 `document_id` 约束抽取、PDF 提交和术语合并，拒绝迟到任务写入新文档。 |
 | 2026-08-29 | P0-02 | 已完成 | `50f3844` | 增加线程安全的单任务协调器、稳定 409 协议、全路径释放和 `job_id` 日志关联。 |
