@@ -5,6 +5,8 @@ import threading
 from collections import defaultdict
 from pathlib import Path
 
+from task_logging import task_log
+
 logger = logging.getLogger("pdf_reader")
 
 _REQUIRED_COLUMNS = ("source", "target")
@@ -23,7 +25,9 @@ def _read_glossary_counts(path: Path, label: str) -> dict[str, dict[str, int]] |
         with open(path, newline="", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             if reader.fieldnames is not None and not all(column in reader.fieldnames for column in _REQUIRED_COLUMNS):
-                logger.warning("Invalid %s glossary header %r, merge aborted", label, reader.fieldnames)
+                task_log(
+                    logger, logging.WARNING, "Invalid %s glossary header %r, merge aborted", label, reader.fieldnames
+                )
                 return None
             counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
             for row in reader:
@@ -33,7 +37,7 @@ def _read_glossary_counts(path: Path, label: str) -> dict[str, dict[str, int]] |
                     counts[source][target] += 1
             return counts
     except Exception:
-        logger.warning("Failed to read %s glossary %s, merge aborted", label, path, exc_info=True)
+        task_log(logger, logging.WARNING, "Failed to read %s glossary %s, merge aborted", label, path, exc_info=True)
         return None
 
 
@@ -48,7 +52,7 @@ def merge_glossary_csvs(cumulative_path: Path, auto_extracted_path: Path) -> Non
     """
     with _merge_lock:
         if not auto_extracted_path.exists():
-            logger.warning("auto-extracted glossary file not found: %s", auto_extracted_path)
+            task_log(logger, logging.WARNING, "auto-extracted glossary file not found: %s", auto_extracted_path)
             return
 
         counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))

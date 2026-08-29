@@ -220,8 +220,13 @@ def _install_stream_spy(monkeypatch) -> list:
     streams: list = []
     real_factory = translation_orchestrator.run_translation
 
-    def spy(settings, pdf_path: str, flow_label: str = "") -> translation_orchestrator.TranslationStream:
-        stream = real_factory(settings, pdf_path, flow_label)
+    def spy(
+        settings,
+        pdf_path: str,
+        flow_label: str = "",
+        task_ctx=None,
+    ) -> translation_orchestrator.TranslationStream:
+        stream = real_factory(settings, pdf_path, flow_label, task_ctx)
         streams.append(stream)
         return stream
 

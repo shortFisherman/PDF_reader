@@ -4,6 +4,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from task_logging import (
+    STATUS_CREATED,
+    STATUS_STARTED,
+    task_context_from_indices,
+    task_log,
+)
+
 logger = logging.getLogger("pdf_reader.translate")
 
 
@@ -13,6 +20,7 @@ class TranslationJob:
     document_id: str
     page_indices: tuple[int, ...]
     created_at: datetime
+    pdf_hash: str | None = None
     status: str = "active"
 
 
@@ -39,7 +47,12 @@ class TranslationCoordinator:
         with self._lock:
             return self._active_job is not None
 
-    def start(self, document_id: str, page_indices: list[int] | tuple[int, ...]) -> TranslationJob:
+    def start(
+        self,
+        document_id: str,
+        page_indices: list[int] | tuple[int, ...],
+        pdf_hash: str | None = None,
+    ) -> TranslationJob:
         with self._lock:
             if self._active_job is not None:
                 raise TranslationBusyError(self._active_job)
@@ -48,13 +61,28 @@ class TranslationCoordinator:
                 document_id=document_id,
                 page_indices=tuple(page_indices),
                 created_at=datetime.now(UTC),
+                pdf_hash=pdf_hash,
             )
             self._active_job = job
-            logger.info(
-                "[job=%s] started document_id=%s pages=%s",
+            created_ctx = task_context_from_indices(
                 job.job_id,
                 job.document_id,
+                job.pdf_hash or "",
                 job.page_indices,
+                status=STATUS_CREATED,
+            )
+            task_log(logger, logging.INFO, "translation job created", task=created_ctx)
+            task_log(
+                logger,
+                logging.INFO,
+                "translation job started",
+                task=task_context_from_indices(
+                    job.job_id,
+                    job.document_id,
+                    job.pdf_hash or "",
+                    job.page_indices,
+                    status=STATUS_STARTED,
+                ),
             )
             return job
 
@@ -70,15 +98,16 @@ class TranslationCoordinator:
     def _release(self, job_id: str, outcome: str) -> bool:
         with self._lock:
             if self._active_job is None or self._active_job.job_id != job_id:
-                logger.debug("[job=%s] ignored duplicate or stale %s release", job_id, outcome)
+                # 重复/迟到释放没有完整已知上下文，静默，避免产出缺 doc/hash/pages 的半截任务日志。
                 return False
             job = self._active_job
             self._active_job = None
-            logger.info(
-                "[job=%s] %s document_id=%s pages=%s",
+            ctx = task_context_from_indices(
                 job.job_id,
-                outcome,
                 job.document_id,
+                job.pdf_hash or "",
                 job.page_indices,
+                status=outcome,
             )
+            task_log(logger, logging.INFO, f"translation job {outcome}", task=ctx)
             return True

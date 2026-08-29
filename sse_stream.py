@@ -12,6 +12,18 @@ from pdf2zh_next import SettingsModel
 import config
 import debug_trace
 import pdf_extraction
+from task_logging import (
+    STATUS_CANCELLING,
+    STATUS_CLEANED,
+    STATUS_CLEANUP_DEFERRED,
+    STATUS_CLIENT_DISCONNECTED,
+    STATUS_DISCARDED,
+    STATUS_FAILED,
+    TaskContext,
+    task_log,
+    task_log_context,
+    with_status,
+)
 from translation_lifecycle import finish_translation, merge_glossary_only
 from translation_orchestrator import WORKER_JOIN_TIMEOUT, TranslationError, TranslationStream, run_translation
 
@@ -26,11 +38,15 @@ STAGE_LABELS = {
 logger = logging.getLogger("pdf_reader.translate")
 
 
-def _safe_rmtree(path: Path) -> None:
+def _safe_rmtree(path: Path | None) -> bool:
+    """删除临时/输出目录并返回可验证结果；目标原本不存在也算成功。"""
+    if path is None or not path.exists():
+        return True
     try:
-        shutil.rmtree(path, ignore_errors=True)
+        shutil.rmtree(path)
     except Exception:
-        logger.debug("failed to clean up temp dir %s", path)
+        return False
+    return not path.exists()
 
 
 @dataclass
@@ -47,6 +63,7 @@ class GenerateContext:
     glossary_paths: list[str] | None
     cache_dir: Path
     extract_page: Callable[[int, Path, Callable], Path]
+    task_ctx: TaskContext | None = None
 
 
 @dataclass
@@ -65,6 +82,7 @@ class GenerateBatchContext:
     glossary_paths: list[str] | None
     cache_dir: Path
     extract_pages: Callable[[list[int], Path, Callable], Path]
+    task_ctx: TaskContext | None = None
 
 
 def format_batch_info(from_page: int, to_page: int, total: int) -> str:
@@ -146,10 +164,16 @@ def _release_job(ctx: GenerateContext | GenerateBatchContext, outcome: str) -> N
         else:
             ctx.fail_job(ctx.job_id)
     except Exception:
-        logger.error("[job=%s] failed to release translation coordinator", ctx.job_id, exc_info=True)
+        task_log(
+            logger,
+            logging.ERROR,
+            "failed to release translation coordinator",
+            task=ctx.task_ctx,
+            exc_info=True,
+        )
 
 
-def _shutdown_worker(stream: TranslationStream | None, job_id: str) -> bool:
+def _shutdown_worker(stream: TranslationStream | None, task_ctx: TaskContext | None) -> bool:
     """Request cooperative cancellation and wait for the real worker thread.
 
     Returns True only when the worker is confirmed finished, so the job's temp
@@ -159,243 +183,323 @@ def _shutdown_worker(stream: TranslationStream | None, job_id: str) -> bool:
     if not isinstance(stream, TranslationStream):
         return True
     if stream.is_alive:
-        logger.info("[job=%s] SSE stream closed before worker exit; requesting cancellation", job_id)
+        task_log(
+            logger,
+            logging.INFO,
+            "SSE stream closed before worker exit; requesting cancellation",
+            task=with_status(task_ctx, STATUS_CANCELLING),
+        )
         stream.cancel()
     stream.join(timeout=WORKER_JOIN_TIMEOUT)
     if stream.is_alive:
-        logger.warning(
-            "[job=%s] worker still running after %.0fs join timeout; temp dirs kept for recovery",
-            job_id,
+        task_log(
+            logger,
+            logging.WARNING,
+            "worker still running after %.0fs join timeout; temp dirs kept for recovery",
             WORKER_JOIN_TIMEOUT,
+            task=with_status(task_ctx, STATUS_CLEANUP_DEFERRED),
         )
         return False
     return True
 
 
 def generate(ctx: GenerateContext) -> Iterator[str]:
-    tmpdir: Path | None = None
-    output_dir: Path | None = None
-    stream = None
-    outcome = "failed"
-    try:
-        tmpdir = Path(tempfile.mkdtemp())
-        output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
-        ctx.settings.translation.output = str(output_dir)
-        with debug_trace.debug_session(ctx.glossary_cache_path, ctx.page, ctx.job_id):
-            logger.info("[job=%s][page=%d] submit translate", ctx.job_id, ctx.page)
+    with task_log_context(ctx.task_ctx):
+        tmpdir: Path | None = None
+        output_dir: Path | None = None
+        stream = None
+        outcome = "failed"
+        try:
+            tmpdir = Path(tempfile.mkdtemp())
+            output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
+            ctx.settings.translation.output = str(output_dir)
+            with debug_trace.debug_session(ctx.glossary_cache_path, ctx.page, ctx.job_id):
+                task_log(logger, logging.INFO, "submit translate", task=ctx.task_ctx)
 
-            translate_start = time.time()
-            translate_result = None
-            token_usage_finish = None
+                translate_start = time.time()
+                translate_result = None
+                token_usage_finish = None
 
-            single_page_pdf = ctx.extract_page(ctx.page, tmpdir, pdf_extraction.extract_single_page)
+                single_page_pdf = ctx.extract_page(ctx.page, tmpdir, pdf_extraction.extract_single_page)
 
-            stream = run_translation(
-                ctx.settings,
-                str(single_page_pdf),
-                flow_label=f"job={ctx.job_id}][page={ctx.page}",
-            )
-            for evt in stream:
-                if not isinstance(evt, dict):
-                    yield ""
-                    continue
-                if evt.get("type") == "finish":
-                    translate_result = evt.get("translate_result")
-                    token_usage_finish = evt.get("token_usage", {})
+                stream = run_translation(
+                    ctx.settings,
+                    str(single_page_pdf),
+                    flow_label=f"job={ctx.job_id}][page={ctx.page}",
+                    task_ctx=ctx.task_ctx,
+                )
+                for evt in stream:
+                    if not isinstance(evt, dict):
+                        yield ""
+                        continue
+                    if evt.get("type") == "finish":
+                        translate_result = evt.get("translate_result")
+                        token_usage_finish = evt.get("token_usage", {})
 
-                sse = format_sse_event(evt)
-                if sse is not None:
-                    yield sse
+                    sse = format_sse_event(evt)
+                    if sse is not None:
+                        yield sse
 
-                if evt.get("type") == "error":
-                    logger.warning(
-                        "[job=%s][page=%d] upstream translation error event: %s",
-                        ctx.job_id,
-                        ctx.page,
-                        evt.get("error"),
+                    if evt.get("type") == "error":
+                        task_log(
+                            logger,
+                            logging.WARNING,
+                            "upstream translation error event: %s",
+                            evt.get("error"),
+                            task=with_status(ctx.task_ctx, STATUS_FAILED),
+                        )
+                        return
+
+                if translate_result is None:
+                    task_log(
+                        logger,
+                        logging.WARNING,
+                        "no translation result",
+                        task=with_status(ctx.task_ctx, STATUS_FAILED),
                     )
+                    yield format_sse_error("translation_error", "未获取到翻译结果")
                     return
 
-            if translate_result is None:
-                logger.warning("[job=%s][page=%d] no translation result", ctx.job_id, ctx.page)
-                yield format_sse_error("translation_error", "未获取到翻译结果")
-                return
+                elapsed = time.time() - translate_start
+                task_log(logger, logging.INFO, "translate done (%.2fs)", elapsed, task=ctx.task_ctx)
+                if token_usage_finish:
+                    debug_trace.log_token_usage(token_usage_finish, ctx.job_id)
 
-            elapsed = time.time() - translate_start
-            logger.info("[job=%s][page=%d] translate done (%.2fs)", ctx.job_id, ctx.page, elapsed)
-            if token_usage_finish:
-                debug_trace.log_token_usage(token_usage_finish, ctx.job_id)
-
-            finish_translation(
-                translate_result,
-                ctx.replace_page,
-                ctx.merge_glossary,
-                ctx.page,
-                ctx.job_id,
-            )
-
-            outcome = "finished"
-            yield (
-                "data: "
-                + json.dumps(
-                    {
-                        "type": "progress",
-                        "progress": 100,
-                        "stage": "finish",
-                        "stage_current": 0,
-                        "stage_total": 0,
-                    }
+                finish_translation(
+                    translate_result,
+                    ctx.replace_page,
+                    ctx.merge_glossary,
+                    ctx.page,
+                    ctx.job_id,
                 )
-                + "\n\n"
-            )
-            yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
 
-    except GeneratorExit:
-        outcome = "cancelled"
-        raise
-    except TranslationError as e:
-        logger.warning("[job=%s][page=%d] translation error: %s", ctx.job_id, ctx.page, e)
-        yield format_sse_error("translation_error", "上游翻译失败")
-    except Exception:
-        logger.error(
-            "[job=%s][page=%d] translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s",
-            ctx.job_id,
-            ctx.page,
-            config.MODEL_PROVIDER,
-            config.MODEL,
-            config.TRANSLATION_LANG_IN,
-            config.TRANSLATION_LANG_OUT,
-            str(tmpdir),
-            exc_info=True,
-        )
-        yield format_sse_error("internal_error", "翻译失败，请查看服务端日志")
-    finally:
-        worker_finished = _shutdown_worker(stream, ctx.job_id)
-        if worker_finished:
-            if tmpdir is not None:
-                _safe_rmtree(tmpdir)
-            if output_dir is not None:
-                _safe_rmtree(output_dir)
-        _release_job(ctx, outcome)
+                outcome = "finished"
+                yield (
+                    "data: "
+                    + json.dumps(
+                        {
+                            "type": "progress",
+                            "progress": 100,
+                            "stage": "finish",
+                            "stage_current": 0,
+                            "stage_total": 0,
+                        }
+                    )
+                    + "\n\n"
+                )
+                yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
+
+        except GeneratorExit:
+            task_log(
+                logger,
+                logging.INFO,
+                "client disconnected",
+                task=with_status(ctx.task_ctx, STATUS_CLIENT_DISCONNECTED),
+            )
+            outcome = "cancelled"
+            raise
+        except TranslationError as e:
+            task_log(
+                logger,
+                logging.WARNING,
+                "translation error: %s",
+                e,
+                task=with_status(ctx.task_ctx, STATUS_FAILED),
+            )
+            yield format_sse_error("translation_error", "上游翻译失败")
+        except Exception:
+            task_log(
+                logger,
+                logging.ERROR,
+                "translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s",
+                config.MODEL_PROVIDER,
+                config.MODEL,
+                config.TRANSLATION_LANG_IN,
+                config.TRANSLATION_LANG_OUT,
+                str(tmpdir),
+                task=with_status(ctx.task_ctx, STATUS_FAILED),
+                exc_info=True,
+            )
+            yield format_sse_error("internal_error", "翻译失败，请查看服务端日志")
+        finally:
+            worker_finished = _shutdown_worker(stream, ctx.task_ctx)
+            cleanup_ok = worker_finished
+            if worker_finished:
+                if getattr(stream, "late_result_dropped", False):
+                    task_log(
+                        logger,
+                        logging.WARNING,
+                        "late worker result discarded",
+                        task=with_status(ctx.task_ctx, STATUS_DISCARDED),
+                    )
+                if tmpdir is not None:
+                    cleanup_ok = _safe_rmtree(tmpdir) and cleanup_ok
+                if output_dir is not None:
+                    cleanup_ok = _safe_rmtree(output_dir) and cleanup_ok
+            _release_job(ctx, outcome)
+            if cleanup_ok:
+                task_log(
+                    logger,
+                    logging.INFO,
+                    "temporary directories cleaned",
+                    task=with_status(ctx.task_ctx, STATUS_CLEANED),
+                )
+            else:
+                task_log(
+                    logger,
+                    logging.WARNING,
+                    "cleanup deferred; temp dirs kept for recovery",
+                    task=with_status(ctx.task_ctx, STATUS_CLEANUP_DEFERRED),
+                )
 
 
 def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
-    tmpdir: Path | None = None
-    output_dir: Path | None = None
-    stream = None
-    outcome = "failed"
-    try:
-        tmpdir = Path(tempfile.mkdtemp())
-        output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
-        ctx.settings.translation.output = str(output_dir)
-        with debug_trace.debug_session(ctx.glossary_cache_path, ctx.from_page, ctx.job_id):
-            logger.info("[job=%s][batch=%d-%d] submit translate", ctx.job_id, ctx.from_page, ctx.to_page)
+    with task_log_context(ctx.task_ctx):
+        tmpdir: Path | None = None
+        output_dir: Path | None = None
+        stream = None
+        outcome = "failed"
+        try:
+            tmpdir = Path(tempfile.mkdtemp())
+            output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
+            ctx.settings.translation.output = str(output_dir)
+            with debug_trace.debug_session(ctx.glossary_cache_path, ctx.from_page, ctx.job_id):
+                task_log(logger, logging.INFO, "submit translate", task=ctx.task_ctx)
 
-            translate_start = time.time()
-            translate_result = None
-            token_usage_finish = None
+                translate_start = time.time()
+                translate_result = None
+                token_usage_finish = None
 
-            multi_page_pdf = ctx.extract_pages(ctx.page_indices, tmpdir, pdf_extraction.extract_pages)
+                multi_page_pdf = ctx.extract_pages(ctx.page_indices, tmpdir, pdf_extraction.extract_pages)
 
-            yield format_batch_info(ctx.from_page, ctx.to_page, len(ctx.page_indices))
+                yield format_batch_info(ctx.from_page, ctx.to_page, len(ctx.page_indices))
 
-            stream = run_translation(
-                ctx.settings,
-                str(multi_page_pdf),
-                flow_label=f"job={ctx.job_id}][batch={ctx.from_page}-{ctx.to_page}",
-            )
-            for evt in stream:
-                if not isinstance(evt, dict):
-                    yield ""
-                    continue
-                if evt.get("type") == "finish":
-                    translate_result = evt.get("translate_result")
-                    token_usage_finish = evt.get("token_usage", {})
+                stream = run_translation(
+                    ctx.settings,
+                    str(multi_page_pdf),
+                    flow_label=f"job={ctx.job_id}][batch={ctx.from_page}-{ctx.to_page}",
+                    task_ctx=ctx.task_ctx,
+                )
+                for evt in stream:
+                    if not isinstance(evt, dict):
+                        yield ""
+                        continue
+                    if evt.get("type") == "finish":
+                        translate_result = evt.get("translate_result")
+                        token_usage_finish = evt.get("token_usage", {})
 
-                sse = format_sse_event(evt)
-                if sse is not None:
-                    yield sse
+                    sse = format_sse_event(evt)
+                    if sse is not None:
+                        yield sse
 
-                if evt.get("type") == "error":
-                    logger.warning(
-                        "[job=%s][batch=%d-%d] upstream translation error event: %s",
-                        ctx.job_id,
-                        ctx.from_page,
-                        ctx.to_page,
-                        evt.get("error"),
+                    if evt.get("type") == "error":
+                        task_log(
+                            logger,
+                            logging.WARNING,
+                            "upstream translation error event: %s",
+                            evt.get("error"),
+                            task=with_status(ctx.task_ctx, STATUS_FAILED),
+                        )
+                        return
+
+                if translate_result is None:
+                    task_log(
+                        logger,
+                        logging.WARNING,
+                        "no translation result",
+                        task=with_status(ctx.task_ctx, STATUS_FAILED),
                     )
+                    yield format_sse_error("translation_error", "未获取到翻译结果")
                     return
 
-            if translate_result is None:
-                logger.warning(
-                    "[job=%s][batch=%d-%d] no translation result",
-                    ctx.job_id,
-                    ctx.from_page,
-                    ctx.to_page,
+                elapsed = time.time() - translate_start
+                task_log(logger, logging.INFO, "translate done (%.2fs)", elapsed, task=ctx.task_ctx)
+                if token_usage_finish:
+                    debug_trace.log_token_usage(token_usage_finish, ctx.job_id)
+
+                translated_pdf = translate_result.mono_pdf_path
+                if translated_pdf is None and translate_result.dual_pdf_path is not None:
+                    translated_pdf = translate_result.dual_pdf_path
+                if translated_pdf is not None:
+                    ctx.replace_pages(str(translated_pdf))
+
+                merge_glossary_only(translate_result, ctx.merge_glossary, ctx.from_page, ctx.job_id)
+
+                outcome = "finished"
+                yield (
+                    "data: "
+                    + json.dumps(
+                        {
+                            "type": "progress",
+                            "progress": 100,
+                            "stage": "finish",
+                            "stage_current": 0,
+                            "stage_total": 0,
+                        }
+                    )
+                    + "\n\n"
                 )
-                yield format_sse_error("translation_error", "未获取到翻译结果")
-                return
+                yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
 
-            elapsed = time.time() - translate_start
-            logger.info(
-                "[job=%s][batch=%d-%d] translate done (%.2fs)",
-                ctx.job_id,
-                ctx.from_page,
-                ctx.to_page,
-                elapsed,
+        except GeneratorExit:
+            task_log(
+                logger,
+                logging.INFO,
+                "client disconnected",
+                task=with_status(ctx.task_ctx, STATUS_CLIENT_DISCONNECTED),
             )
-            if token_usage_finish:
-                debug_trace.log_token_usage(token_usage_finish, ctx.job_id)
-
-            translated_pdf = translate_result.mono_pdf_path
-            if translated_pdf is None and translate_result.dual_pdf_path is not None:
-                translated_pdf = translate_result.dual_pdf_path
-            if translated_pdf is not None:
-                ctx.replace_pages(str(translated_pdf))
-
-            merge_glossary_only(translate_result, ctx.merge_glossary, ctx.from_page, ctx.job_id)
-
-            outcome = "finished"
-            yield (
-                "data: "
-                + json.dumps(
-                    {"type": "progress", "progress": 100, "stage": "finish", "stage_current": 0, "stage_total": 0}
+            outcome = "cancelled"
+            raise
+        except TranslationError as e:
+            task_log(
+                logger,
+                logging.WARNING,
+                "translation error: %s",
+                e,
+                task=with_status(ctx.task_ctx, STATUS_FAILED),
+            )
+            yield format_sse_error("translation_error", "上游翻译失败")
+        except Exception:
+            task_log(
+                logger,
+                logging.ERROR,
+                "translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s",
+                config.MODEL_PROVIDER,
+                config.MODEL,
+                config.TRANSLATION_LANG_IN,
+                config.TRANSLATION_LANG_OUT,
+                str(tmpdir),
+                task=with_status(ctx.task_ctx, STATUS_FAILED),
+                exc_info=True,
+            )
+            yield format_sse_error("internal_error", "翻译失败，请查看服务端日志")
+        finally:
+            worker_finished = _shutdown_worker(stream, ctx.task_ctx)
+            cleanup_ok = worker_finished
+            if worker_finished:
+                if getattr(stream, "late_result_dropped", False):
+                    task_log(
+                        logger,
+                        logging.WARNING,
+                        "late worker result discarded",
+                        task=with_status(ctx.task_ctx, STATUS_DISCARDED),
+                    )
+                if tmpdir is not None:
+                    cleanup_ok = _safe_rmtree(tmpdir) and cleanup_ok
+                if output_dir is not None:
+                    cleanup_ok = _safe_rmtree(output_dir) and cleanup_ok
+            _release_job(ctx, outcome)
+            if cleanup_ok:
+                task_log(
+                    logger,
+                    logging.INFO,
+                    "temporary directories cleaned",
+                    task=with_status(ctx.task_ctx, STATUS_CLEANED),
                 )
-                + "\n\n"
-            )
-            yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
-
-    except GeneratorExit:
-        outcome = "cancelled"
-        raise
-    except TranslationError as e:
-        logger.warning(
-            "[job=%s][batch=%d-%d] translation error: %s",
-            ctx.job_id,
-            ctx.from_page,
-            ctx.to_page,
-            e,
-        )
-        yield format_sse_error("translation_error", "上游翻译失败")
-    except Exception:
-        logger.error(
-            "[job=%s][batch=%d-%d] translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s",
-            ctx.job_id,
-            ctx.from_page,
-            ctx.to_page,
-            config.MODEL_PROVIDER,
-            config.MODEL,
-            config.TRANSLATION_LANG_IN,
-            config.TRANSLATION_LANG_OUT,
-            str(tmpdir),
-            exc_info=True,
-        )
-        yield format_sse_error("internal_error", "翻译失败，请查看服务端日志")
-    finally:
-        worker_finished = _shutdown_worker(stream, ctx.job_id)
-        if worker_finished:
-            if tmpdir is not None:
-                _safe_rmtree(tmpdir)
-            if output_dir is not None:
-                _safe_rmtree(output_dir)
-        _release_job(ctx, outcome)
+            else:
+                task_log(
+                    logger,
+                    logging.WARNING,
+                    "cleanup deferred; temp dirs kept for recovery",
+                    task=with_status(ctx.task_ctx, STATUS_CLEANUP_DEFERRED),
+                )

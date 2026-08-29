@@ -110,7 +110,7 @@ def test_extract_single_page_debug_on_logs_debug(caplog):
     records = [r for r in caplog.records if r.name == "pdf_reader.extract" and r.levelno == logging.DEBUG]
     assert len(records) >= 1, f"expected DEBUG from extract_single_page, got: {[r.message for r in caplog.records]}"
     msg = records[0].message
-    assert "[page=1]" in msg
+    assert "extract page 2" in msg
     assert str(tmpdir / "page.pdf") in msg
 
 
@@ -141,5 +141,5 @@ def test_extract_pages_debug_on_logs_debug(caplog):
     records = [r for r in caplog.records if r.name == "pdf_reader.extract" and r.levelno == logging.DEBUG]
     assert len(records) >= 1, f"expected DEBUG from extract_pages, got: {[r.message for r in caplog.records]}"
     msg = records[0].message
-    assert "[batch=1-3]" in msg
+    assert "extract pages 1-3" in msg
     assert str(tmpdir / "pages.pdf") in msg

@@ -19,6 +19,7 @@ import glossary_service
 import sse_stream
 from file_hash import sha256
 from pdf_renderer import render_page
+from task_logging import STATUS_STARTED, task_context_from_indices, task_log
 from translation_coordinator import TranslationBusyError, TranslationCoordinator, TranslationJob
 from translation_settings import build_settings
 
@@ -61,7 +62,18 @@ def open_pdf():
     coordinator = _get_coordinator()
     active_job = coordinator.active_job
     if active_job is not None:
-        logger.info("[job=%s] rejected document open while translation is active", active_job.job_id)
+        task_log(
+            logger,
+            logging.INFO,
+            "rejected document open while translation is active",
+            task=task_context_from_indices(
+                active_job.job_id,
+                active_job.document_id,
+                active_job.pdf_hash or "",
+                active_job.page_indices,
+                status=STATUS_STARTED,
+            ),
+        )
         return translation_busy_response(active_job)
 
     state = _get_state()
@@ -149,9 +161,20 @@ def translate_page(page: int):
     )
     coordinator = _get_coordinator()
     try:
-        job = coordinator.start(snapshot.document_id, [page])
+        job = coordinator.start(snapshot.document_id, [page], pdf_hash=snapshot.pdf_hash)
     except TranslationBusyError as exc:
-        logger.info("[job=%s] rejected overlapping single-page request", exc.active_job.job_id)
+        task_log(
+            logger,
+            logging.INFO,
+            "rejected overlapping single-page request",
+            task=task_context_from_indices(
+                exc.active_job.job_id,
+                exc.active_job.document_id,
+                exc.active_job.pdf_hash or "",
+                exc.active_job.page_indices,
+                status=STATUS_STARTED,
+            ),
+        )
         return translation_busy_response(exc.active_job)
     ctx = sse_stream.GenerateContext(
         settings=settings,
@@ -169,6 +192,13 @@ def translate_page(page: int):
         page=page,
         glossary_paths=glossary_paths,
         cache_dir=config.CACHE_DIR,
+        task_ctx=task_context_from_indices(
+            job.job_id,
+            snapshot.document_id,
+            snapshot.pdf_hash,
+            [page],
+            status=STATUS_STARTED,
+        ),
         extract_page=lambda page, tmpdir, func: state.extract_page(
             page,
             tmpdir,
@@ -228,9 +258,20 @@ def translate_batch():
     )
     coordinator = _get_coordinator()
     try:
-        job = coordinator.start(snapshot.document_id, page_indices)
+        job = coordinator.start(snapshot.document_id, page_indices, pdf_hash=snapshot.pdf_hash)
     except TranslationBusyError as exc:
-        logger.info("[job=%s] rejected overlapping batch request", exc.active_job.job_id)
+        task_log(
+            logger,
+            logging.INFO,
+            "rejected overlapping batch request",
+            task=task_context_from_indices(
+                exc.active_job.job_id,
+                exc.active_job.document_id,
+                exc.active_job.pdf_hash or "",
+                exc.active_job.page_indices,
+                status=STATUS_STARTED,
+            ),
+        )
         return translation_busy_response(exc.active_job)
     ctx = sse_stream.GenerateBatchContext(
         settings=settings,
@@ -250,6 +291,13 @@ def translate_batch():
         glossary_cache_path=snapshot.glossary_cache_path,
         glossary_paths=glossary_paths,
         cache_dir=config.CACHE_DIR,
+        task_ctx=task_context_from_indices(
+            job.job_id,
+            snapshot.document_id,
+            snapshot.pdf_hash,
+            page_indices,
+            status=STATUS_STARTED,
+        ),
         extract_pages=lambda indices, tmpdir, func: state.extract_pages(
             indices,
             tmpdir,

@@ -5,6 +5,15 @@ import threading
 
 from pdf2zh_next import SettingsModel, do_translate_async_stream
 
+from task_logging import (
+    STATUS_CANCELLING,
+    STATUS_CLEANUP_DEFERRED,
+    TaskContext,
+    set_current_task,
+    task_log,
+    with_status,
+)
+
 logger = logging.getLogger("pdf_reader.translate")
 
 WORKER_JOIN_TIMEOUT = 30.0
@@ -31,22 +40,31 @@ class TranslationStream:
     has actually exited (``is_alive`` is False).
     """
 
-    def __init__(self, settings: SettingsModel, pdf_path: str, flow_label: str = "") -> None:
+    def __init__(
+        self,
+        settings: SettingsModel,
+        pdf_path: str,
+        flow_label: str = "",
+        task_ctx: TaskContext | None = None,
+    ) -> None:
         self._settings = settings
         self._pdf_path = pdf_path
         self._flow_label = flow_label
+        self._task_ctx = task_ctx
         self._queue: queue.Queue = queue.Queue()
         self._error_info: str | None = None
         self._cancel_event = threading.Event()
+        self._late_result_dropped = False
         self._thread = threading.Thread(
             target=self._thread_main,
             daemon=True,
             name=f"translate-{flow_label or 'worker'}",
         )
         self._thread.start()
-        logger.info("[%s] thread start", flow_label)
+        task_log(logger, logging.INFO, "thread start", task=self._task_ctx)
 
     def _thread_main(self) -> None:
+        set_current_task(self._task_ctx)
         loop: asyncio.AbstractEventLoop | None = None
         try:
             loop = asyncio.new_event_loop()
@@ -55,13 +73,25 @@ class TranslationStream:
             async def _run() -> None:
                 async for evt in do_translate_async_stream(self._settings, self._pdf_path):
                     if self._cancel_event.is_set():
-                        logger.info("[%s] thread cancelled", self._flow_label)
+                        self._late_result_dropped = True
+                        task_log(
+                            logger,
+                            logging.INFO,
+                            "thread cancelled; late worker event dropped",
+                            task=with_status(self._task_ctx, STATUS_CANCELLING),
+                        )
                         break
                     self._queue.put(evt)
 
             loop.run_until_complete(_run())
         except Exception as e:
-            logger.error("[%s] thread exception", self._flow_label, exc_info=True)
+            task_log(
+                logger,
+                logging.ERROR,
+                "thread exception",
+                task=self._task_ctx,
+                exc_info=True,
+            )
             self._error_info = str(e)
         finally:
             if loop is not None:
@@ -87,6 +117,11 @@ class TranslationStream:
     def is_alive(self) -> bool:
         return self._thread.is_alive()
 
+    @property
+    def late_result_dropped(self) -> bool:
+        """取消后是否丢弃过迟到 worker 事件（供清理阶段记录 discarded）。"""
+        return self._late_result_dropped
+
     def __iter__(self) -> "TranslationStream":
         return self
 
@@ -101,18 +136,28 @@ class TranslationStream:
             return evt
         self._thread.join(timeout=WORKER_JOIN_TIMEOUT)
         if self._thread.is_alive():
-            logger.warning("[%s] thread join timeout", self._flow_label)
+            task_log(
+                logger,
+                logging.WARNING,
+                "thread join timeout",
+                task=with_status(self._task_ctx, STATUS_CLEANUP_DEFERRED),
+            )
         else:
-            logger.info("[%s] thread end", self._flow_label)
+            task_log(logger, logging.INFO, "thread end", task=self._task_ctx)
         if self._error_info:
             raise TranslationError(self._error_info)
         raise StopIteration
 
 
-def run_translation(settings: SettingsModel, pdf_path: str, flow_label: str = "") -> TranslationStream:
+def run_translation(
+    settings: SettingsModel,
+    pdf_path: str,
+    flow_label: str = "",
+    task_ctx: TaskContext | None = None,
+) -> TranslationStream:
     """Start a background translation worker and return its event stream.
 
     The caller owns the worker: exhaust the stream to completion, or call
     ``cancel()`` / ``join()`` explicitly when abandoning it early.
     """
-    return TranslationStream(settings, pdf_path, flow_label)
+    return TranslationStream(settings, pdf_path, flow_label, task_ctx)

@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import MagicMock, patch
 
 from flask import Flask
@@ -85,3 +86,52 @@ def test_open_is_rejected_while_translation_is_active(app_state, sample_pdf):
     assert response.get_json()["code"] == "translation_busy"
     assert app_state.translation_snapshot() == snapshot_before
     coordinator.fail(active_job.job_id)
+
+
+def _assert_coordinator_start_logs(snapshot, caplog, page_label) -> None:
+    messages = [r.message for r in caplog.records if "translation job" in r.message]
+    created = [m for m in messages if "status=created" in m]
+    started = [m for m in messages if "translation job started" in m]
+    assert len(created) == 1, f"expected one created log, got: {created}"
+    assert len(started) == 1, f"expected one started log, got: {started}"
+    for msg in created + started:
+        assert "job=" in msg
+        assert f"doc={snapshot.document_id[:8]}" in msg
+        assert f"hash={snapshot.pdf_hash[:12]}" in msg
+        assert page_label in msg
+        assert snapshot.document_id not in msg
+        assert snapshot.pdf_hash not in msg
+    assert "status=created" in created[0]
+    assert "status=started" in started[0]
+
+
+def test_single_route_coordinator_start_logs_truncated_context(app_state, sample_pdf, caplog):
+    """真实单页路由经真实 coordinator.start 的 created/started 日志必须带 hash 等完整截断上下文。"""
+    app = _make_app(app_state, sample_pdf)
+    snapshot = app_state.translation_snapshot()
+
+    with patch("routes.build_settings", return_value=MagicMock()):
+        with patch("routes.sse_stream.generate", return_value=iter([""])):
+            with app.test_client() as client:
+                with caplog.at_level(logging.INFO, logger="pdf_reader.translate"):
+                    resp = client.post("/api/translate/0", json={}, buffered=False)
+                    resp.close()
+
+    assert resp.status_code == 200
+    _assert_coordinator_start_logs(snapshot, caplog, "page=1")
+
+
+def test_batch_route_coordinator_start_logs_truncated_context(app_state, sample_pdf, caplog):
+    """真实批量路由经真实 coordinator.start 的 created/started 日志必须带 hash 与 pages 范围。"""
+    app = _make_app(app_state, sample_pdf)
+    snapshot = app_state.translation_snapshot()
+
+    with patch("routes.build_settings", return_value=MagicMock()):
+        with patch("routes.sse_stream.generate_batch", return_value=iter([""])):
+            with app.test_client() as client:
+                with caplog.at_level(logging.INFO, logger="pdf_reader.translate"):
+                    resp = client.post("/api/translate-batch", json={"from": 1, "to": 2}, buffered=False)
+                    resp.close()
+
+    assert resp.status_code == 200
+    _assert_coordinator_start_logs(snapshot, caplog, "pages=1-2")

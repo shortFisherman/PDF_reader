@@ -15,6 +15,7 @@ from sse_stream import (
     generate_batch,
 )
 from state import AppState
+from task_logging import TaskContext
 from translation_orchestrator import TranslationError, run_translation
 
 
@@ -112,11 +113,10 @@ def test_replace_pages_logs_info_on_success(app_state, sample_pdf, caplog):
     app_state.replace_pages(str(translated_pdf), [0, 1], document_id)
 
     records = [r for r in caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.INFO]
-    batch_msgs = [r.message for r in records if "[batch]" in r.message]
+    batch_msgs = [r.message for r in records if "pages=1-2" in r.message and "replace into" in r.message]
     assert len(batch_msgs) >= 1, f"expected batch INFO, got: {batch_msgs}"
     msg = batch_msgs[0]
-    assert "[batch]" in msg
-    assert "0" in msg
+    assert "pages=1-2" in msg
     assert "right.pdf" in msg
 
 
@@ -164,7 +164,7 @@ def test_replace_pages_logs_error_and_reraises_on_failure(app_state, sample_pdf,
 
     records = [r for r in caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.ERROR]
     assert len(records) >= 1, f"expected ERROR log, got: {[r.message for r in caplog.records]}"
-    assert "[batch]" in records[0].message
+    assert "pages=" in records[0].message
     assert "replace pages failed" in records[0].message
     assert records[0].exc_info is not None
 
@@ -192,8 +192,8 @@ def test_translate_thread_lifecycle_logging_debug_off(caplog):
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
     messages = [r.message for r in records]
     assert all("[job=test-job]" in msg for msg in messages if "submit translate" in msg or "translate done" in msg)
-    assert any("[page=1] thread start" in msg for msg in messages), f"Got: {messages}"
-    assert any("[page=1] thread end" in msg for msg in messages), f"Got: {messages}"
+    assert any("thread start" in msg for msg in messages), f"Got: {messages}"
+    assert any("thread end" in msg for msg in messages), f"Got: {messages}"
 
 
 def test_translate_thread_exception_logging(caplog):
@@ -211,7 +211,7 @@ def test_translate_thread_exception_logging(caplog):
 
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
     assert len(records) >= 1, f"Got: {[r.message for r in caplog.records]}"
-    assert "[page=1] thread exception" in records[0].message
+    assert "thread exception" in records[0].message
     assert records[0].exc_info is not None
 
 
@@ -259,6 +259,13 @@ def test_generate_logging_info_messages(caplog, tmp_path):
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
+    task_ctx = TaskContext(
+        job_id="test-job",
+        document_id="doc12345678",
+        pdf_hash="hash12345678",
+        page=1,
+        status="started",
+    )
     ctx = GenerateContext(
         settings=MagicMock(),
         job_id="test-job",
@@ -272,6 +279,7 @@ def test_generate_logging_info_messages(caplog, tmp_path):
         glossary_paths=None,
         cache_dir=cache_dir,
         extract_page=MagicMock(return_value=Path(tmp_path / "fake_page.pdf")),
+        task_ctx=task_ctx,
     )
 
     with patch("translation_orchestrator.do_translate_async_stream", fake_stream):
@@ -279,10 +287,10 @@ def test_generate_logging_info_messages(caplog, tmp_path):
 
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
     messages = [r.message for r in records]
-    assert all("[job=test-job]" in msg for msg in messages if "submit translate" in msg or "translate done" in msg)
-    assert any("[page=0] submit translate" in msg for msg in messages), f"Messages: {messages}"
-    assert any("[page=0] thread start" in msg for msg in messages), f"Messages: {messages}"
-    assert any("[page=0] thread end" in msg for msg in messages), f"Messages: {messages}"
+    assert all("job=test-job" in msg for msg in messages if "submit translate" in msg or "translate done" in msg)
+    assert any("page=1" in msg and "submit translate" in msg for msg in messages), f"Messages: {messages}"
+    assert any("page=1" in msg and "thread start" in msg for msg in messages), f"Messages: {messages}"
+    assert any("page=1" in msg and "thread end" in msg for msg in messages), f"Messages: {messages}"
     assert any("translate done" in msg for msg in messages), f"Messages: {messages}"
 
     token_records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace" and "Token usage" in r.message]
@@ -309,6 +317,14 @@ def test_generate_batch_logging_info_messages(caplog, tmp_path):
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
+    task_ctx = TaskContext(
+        job_id="test-job",
+        document_id="doc12345678",
+        pdf_hash="hash12345678",
+        from_page=2,
+        to_page=5,
+        status="started",
+    )
     ctx = GenerateBatchContext(
         settings=MagicMock(),
         job_id="test-job",
@@ -324,6 +340,7 @@ def test_generate_batch_logging_info_messages(caplog, tmp_path):
         glossary_paths=None,
         cache_dir=cache_dir,
         extract_pages=MagicMock(return_value=Path(tmp_path / "fake_pages.pdf")),
+        task_ctx=task_ctx,
     )
 
     with patch("translation_orchestrator.do_translate_async_stream", fake_stream):
@@ -331,10 +348,10 @@ def test_generate_batch_logging_info_messages(caplog, tmp_path):
 
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
     messages = [r.message for r in records]
-    assert any("[batch=2-5] submit translate" in msg for msg in messages), f"Messages: {messages}"
-    assert any("[batch=2-5] thread start" in msg for msg in messages), f"Messages: {messages}"
-    assert any("[batch=2-5] thread end" in msg for msg in messages), f"Messages: {messages}"
-    assert any("[batch=2-5] translate done" in msg for msg in messages), f"Messages: {messages}"
+    assert any("pages=2-5" in msg and "submit translate" in msg for msg in messages), f"Messages: {messages}"
+    assert any("pages=2-5" in msg and "thread start" in msg for msg in messages), f"Messages: {messages}"
+    assert any("pages=2-5" in msg and "thread end" in msg for msg in messages), f"Messages: {messages}"
+    assert any("pages=2-5" in msg and "translate done" in msg for msg in messages), f"Messages: {messages}"
 
     token_records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace" and "Token usage" in r.message]
     assert len(token_records) == 0, (
@@ -352,6 +369,13 @@ def test_generate_error_logging_context(caplog, tmp_path, mock_config):
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
+    task_ctx = TaskContext(
+        job_id="test-job",
+        document_id="doc12345678",
+        pdf_hash="hash12345678",
+        page=8,
+        status="started",
+    )
     ctx = GenerateContext(
         settings=MagicMock(),
         job_id="test-job",
@@ -365,6 +389,7 @@ def test_generate_error_logging_context(caplog, tmp_path, mock_config):
         glossary_paths=None,
         cache_dir=cache_dir,
         extract_page=MagicMock(side_effect=RuntimeError("extract crashed")),
+        task_ctx=task_ctx,
     )
 
     list(generate(ctx))
@@ -372,8 +397,9 @@ def test_generate_error_logging_context(caplog, tmp_path, mock_config):
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
     assert len(records) == 1, f"expected 1 ERROR, got: {[r.message for r in caplog.records]}"
     msg = records[0].message
-    assert "[job=test-job]" in msg
-    assert "[page=7]" in msg
+    assert "job=test-job" in msg
+    assert "page=8" in msg
+    assert "status=failed" in msg
     assert "translate failed" in msg
     assert "provider=deepseek" in msg
     assert "model=deepseek-v4-flash" in msg
@@ -390,6 +416,14 @@ def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
+    task_ctx = TaskContext(
+        job_id="test-job",
+        document_id="doc12345678",
+        pdf_hash="hash12345678",
+        from_page=4,
+        to_page=9,
+        status="started",
+    )
     ctx = GenerateBatchContext(
         settings=MagicMock(),
         job_id="test-job",
@@ -405,6 +439,7 @@ def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
         glossary_paths=None,
         cache_dir=cache_dir,
         extract_pages=MagicMock(side_effect=RuntimeError("batch extract crashed")),
+        task_ctx=task_ctx,
     )
 
     list(generate_batch(ctx))
@@ -412,8 +447,9 @@ def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
     assert len(records) == 1, f"expected 1 ERROR, got: {[r.message for r in caplog.records]}"
     msg = records[0].message
-    assert "[job=test-job]" in msg
-    assert "[batch=4-9]" in msg
+    assert "job=test-job" in msg
+    assert "pages=4-9" in msg
+    assert "status=failed" in msg
     assert "translate failed" in msg
     assert "provider=deepseek" in msg
     assert "model=deepseek-v4-flash" in msg

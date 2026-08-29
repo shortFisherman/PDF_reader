@@ -100,6 +100,13 @@ $env:MODEL_API_KEY = 'your-api-key'
 - 前端错误文本一律经 DOM 节点 `textContent` 呈现，不拼接未转义 HTML。
 - 服务默认绑定 `127.0.0.1`。若配置为 `localhost`/`127.0.0.0/8`/`::1` 之外的地址，启动日志会输出醒目的安全 WARNING（服务无认证，可能暴露本地 PDF 与 API 配置），但不会阻止启动。
 
+## 任务日志上下文
+
+- 任务日志由 `task_logging.py` 集中输出，稳定前缀：`[job=<完整 job_id> doc=<8 字符> hash=<12 字符> page=N|pages=A-B status=<状态>]`；页码一律 1-based，`document_id` 截断 8 字符、pdf hash 截断 12 字符。
+- 生命周期状态：`created`、`started`、`client_disconnected`、`cancelling`、`finished`、`failed`、`discarded`、`cleaned`；join timeout 记录 `cleanup_deferred`，不会误报 `cleaned`。coordinator 释放语义保留 `cancelled`。
+- 上下文经 `contextvars` 贯穿协调器、路由、SSE 生成器、后台 worker 线程、翻译生命周期与 AppState 写回/恢复；worker 线程显式传播，不依赖请求线程字段。
+- 日志脱敏在格式化边界完成：控制台与 `logs/pdf_reader.log` 会替换 `sk-...`、`Authorization/Bearer`、`api_key` 字段及配置中的 API Key；traceback 结构保留，路径/HTML 仅作为服务端诊断内容保留；用户 prompt 不写入任何日志。
+
 ### debug 优先级与安全默认值
 
 | 来源 | 示例 | 优先级 |

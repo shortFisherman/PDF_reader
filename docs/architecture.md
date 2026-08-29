@@ -39,6 +39,7 @@
 | `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python app.py` |
 | `config.py` | 读取 `config.toml`、定义 `EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
 | `paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
+| `task_logging.py` | 集中任务日志上下文：不可变 `TaskContext`、`contextvars` 传播、统一前缀/截断/1-based 页码、生命周期状态、`SafeFormatter` 脱敏 |
 | `routes.py` | Blueprint：9 个 HTTP/SSE 端点；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器与 409 `translation_busy` |
 | `state.py` | `AppState`：不可变文档会话身份、锁内翻译快照、左右文档、缓存路径、哈希、页数/尺寸、翻译页集合、阅读进度、非重入锁 |
 | `file_hash.py` | `sha256()` 流式文件哈希 |
@@ -58,7 +59,7 @@
 | `static/app.js` | 前端入口与共享状态 |
 | `static/modules/` | dom、lazy-loader、scroll-sync、alignment-controller、zoom、sse-client、stages、translator |
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
-| `tests/` | 23 个 pytest 文件（含 P2-07 路径与 CWD 隔离用例）与前端 `.mjs` 测试运行器 |
+| `tests/` | 24 个 pytest 文件（含 P2-07 路径与 P2-06 任务日志用例）与前端 `.mjs` 测试运行器 |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
 | `docs/`、`docs/archive/`、`docs/reports/` | 常青文档、历史归档与上游研究资料 |
@@ -194,6 +195,8 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 错误传播：`TranslationError` 与普通异常都被 `generate`/`generate_batch` 捕获并输出 SSE `error` 事件，同时记录上下文日志；临时目录只有在 worker 线程确认退出后才会在 `finally` 中清理（join timeout 时保留并记 WARNING）。
 
+任务日志上下文（P2-06）：任务日志统一由 `task_logging.task_log` 输出，稳定前缀 `[job=<完整 job_id> doc=<8> hash=<12> page=N|pages=A-B status=<状态>]`，页码 1-based，`document_id` 8 字符、pdf hash 12 字符（`TaskContext.__post_init__` 强制截断，直接构造也不可绕过）。上下文为不可变 `TaskContext`，经 `contextvars` 在协调器 start/release、路由构造、SSE 单页/批量生成器、`TranslationStream` worker 线程（显式 `set_current_task`）、`translation_lifecycle`、`AppState` 抽取/写回/术语合并/迟到拒绝/事务恢复与临时目录清理中传播。生命周期状态：created、started、client_disconnected、cancelling、finished、failed、discarded、cleaned；迟到身份拒绝记 `discarded`；join timeout 记 `cleanup_deferred`（WARNING，目录保留），coordinator 释放保留 `cancelled`；重复/迟到 release 静默不产生缺上下文的半截任务日志。临时目录清理以 `_safe_rmtree` 的可验证结果为准：目标原本不存在或确认删除后不存在才算 `cleaned`，任一目录删除失败记 `cleanup_deferred` 且不再记 `cleaned`。日志脱敏在 `SafeFormatter` 格式化边界执行：控制台与 `logs/pdf_reader.log` 替换配置中的 API Key 与 `sk-...`、`Authorization/Bearer`（含带引号 JSON 字段）、`api_key` 字段与独立 Bearer token（凭据值替换为 `<redacted>`，字段标签/结构保留），保留 traceback 结构与路径/HTML 诊断内容；用户 prompt 不写入日志。
+
 错误契约（P2-05）：所有 API 4xx/5xx 返回顶层 `{"code": <stable_code>, "error": <safe_message>}`；`409` 保留 `translation_busy`、中文安全提示与 `active_job_id`（P0-02/P1-04 回归依赖），其余 400 分支使用稳定 code（`invalid_file_path`、`invalid_page`、`no_document_opened`、`page_out_of_range`、`invalid_side`、`invalid_page_numbers`、`invalid_page_range`），`404` 使用 `not_found`，其它 HTTP 错误使用 `http_<status>`，`500` 固定为 `internal_error`。`routes.http_error` 处理 `HTTPException`（不吞成 500），`routes.internal_error` 记录完整异常（含 traceback）后只返回安全摘要。SSE 统一经 `sse_stream.format_sse_error(code, message)` 输出 `{"type":"error","code","error"}`；上游原始 error、`TranslationError` 消息、普通异常消息与“无翻译结果”均只进服务端日志，不返回浏览器。前端 `static/modules/dom.js` 提供 `showError()`（DOM 节点 + `textContent`），`app.js` 不再使用 `insertAdjacentHTML` 插入错误文本；`static/modules/translator.js` 对非 JSON 响应、网络异常与缺失错误字段使用固定安全 fallback。非 loopback host（非 `localhost`、`127/8`、`::1`）在 `app.main` 中、`app.run` 前输出安全 WARNING（不记录 API Key，不阻止启动）。
 
 ## 测试、CI 与验证入口
@@ -203,6 +206,8 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（全部 Python 测试）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
 
 测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
+
+任务日志回归：`tests/test_task_logging.py` 覆盖前缀格式/截断/1-based 页码、跨线程传播、全部生命周期状态序列（成功/失败/断开迟到丢弃/join timeout）、stale-result 与写回失败的任务上下文关联、`SafeFormatter` 与真实 `RotatingFileHandler` 落盘脱敏（sentinel 含 API key、Windows/Unix 路径、HTML；key/token 不落盘，路径保留）。
 
 启动脚本安全回归：`tests/test_start_bat.py` 在 Windows 下把真实 `start.bat` 复制到 pytest 临时目录，用 fake `netstat.cmd`/`taskkill.cmd`/`python.cmd`/`activate.bat` 在 PATH 上执行真实脚本：断言源文件不含 `taskkill`/`tskill`/`Stop-Process`/`kill` 等终止命令；模拟 5000 被占用时脚本退出非零、不调用 python 也不调用 taskkill；无占用时激活 venv 并调用 `python app.py`；`venv` 缺失时给出提示并非零退出。测试不绑定真实端口、不启动服务器、不杀任何进程。
 

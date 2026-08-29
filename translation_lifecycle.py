@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Protocol
 
 import debug_trace
+from task_logging import task_log
 
 logger = logging.getLogger("pdf_reader.lifecycle")
 
@@ -32,7 +33,7 @@ def finish_translation(
     merge_start = time.time()
     merge_glossary(translate_result.auto_extracted_glossary_path)
     elapsed = time.time() - merge_start
-    logger.info("[job=%s][page=%d] translation finished: page processed", job_id, page)
+    task_log(logger, logging.INFO, "translation finished: page processed")
     debug_trace.log_glossary_merge("merge_done", job_id=job_id, page=page, elapsed=f"{elapsed:.2f}")
 
 
@@ -45,5 +46,5 @@ def merge_glossary_only(
     merge_start = time.time()
     merge_glossary(translate_result.auto_extracted_glossary_path)
     elapsed = time.time() - merge_start
-    logger.info("[job=%s][page=%d] glossary merge completed in %.2fs", job_id, page, elapsed)
+    task_log(logger, logging.INFO, "glossary merge completed in %.2fs", elapsed)
     debug_trace.log_glossary_merge("merge_done", job_id=job_id, page=page, elapsed=f"{elapsed:.2f}")

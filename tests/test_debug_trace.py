@@ -14,16 +14,16 @@ def test_trace_logger_exists():
 
 def test_log_step_logs_info_when_debug_false():
     """log_step produces INFO output even when config.DEBUG is False."""
-    with patch.object(debug_trace.logger, "info") as mock_info:
+    with patch.object(debug_trace.logger, "log") as mock_log:
         debug_trace.log_step("test step %d", 1)
-        mock_info.assert_called_once_with("[step] test step %d", 1)
+        mock_log.assert_called_once_with(logging.INFO, "[step] test step %d", 1)
 
 
 def test_log_step_logs_info():
     """log_step always produces INFO output."""
-    with patch.object(debug_trace.logger, "info") as mock_info:
+    with patch.object(debug_trace.logger, "log") as mock_log:
         debug_trace.log_step("test step %d", 1)
-        mock_info.assert_called_once_with("[step] test step %d", 1)
+        mock_log.assert_called_once_with(logging.INFO, "[step] test step %d", 1)
 
 
 def test_log_token_usage_no_op_when_empty():
@@ -35,9 +35,9 @@ def test_log_token_usage_no_op_when_empty():
 def test_log_token_usage_logs_when_has_data():
     """log_token_usage logs at DEBUG level when data is present."""
     token_usage = {"main": {"total": 100}, "term": {"total": 50}}
-    with patch.object(debug_trace.logger, "debug") as mock_debug:
+    with patch.object(debug_trace.logger, "log") as mock_log:
         debug_trace.log_token_usage(token_usage)
-        mock_debug.assert_called_once_with("Token usage: main=%d, term=%d", 100, 50)
+        mock_log.assert_called_once_with(logging.DEBUG, "Token usage: main=%d, term=%d", 100, 50)
 
 
 def test_full_debug_trace_bytes_identical(tmp_path):
@@ -78,12 +78,12 @@ def test_full_debug_trace_bytes_identical(tmp_path):
     assert "Token usage: main=100, term=50" in output
     assert "[step] merge glossary for page 1" in output
     assert "[step] merge glossary done (0.02s)" in output
-    assert "=== Debug session start: page 1 ===" in output
+    assert "=== Debug session start: page 2 ===" in output
 
     log_file = glossary_path / "debug_trace.log"
     assert log_file.exists()
     content = log_file.read_text(encoding="utf-8")
-    assert "=== Debug session start: page 1 ===" in content
+    assert "=== Debug session start: page 2 ===" in content
 
 
 def test_level_stratification_when_debug_false(tmp_path):
@@ -176,7 +176,7 @@ def test_debug_session_rotates_existing_log(tmp_path):
 
             with debug_trace.debug_session(glossary_path, page=1):
                 new_content = (glossary_path / "debug_trace.log").read_text(encoding="utf-8")
-                assert "=== Debug session start: page 1 ===" in new_content
+                assert "=== Debug session start: page 2 ===" in new_content
 
             rotated_files = list(glossary_path.glob("debug_trace.*.log"))
             assert len(rotated_files) == 1
@@ -207,15 +207,16 @@ def test_debug_session_exception_safe(tmp_path):
 
 def test_log_glossary_merge_logs_info_always():
     """log_glossary_merge always produces INFO output regardless of debug flag."""
-    with patch.object(debug_trace.logger, "info") as mock_info:
+    with patch.object(debug_trace.logger, "log") as mock_log:
         debug_trace.log_glossary_merge("merge_done", page=1, elapsed=0.02, entries=5)
-        mock_info.assert_called_once()
-        call_args = mock_info.call_args
+        mock_log.assert_called_once()
+        call_args = mock_log.call_args
+        assert call_args[0][0] == logging.INFO
         assert "merge_done" in str(call_args)
 
 
 def test_log_glossary_merge_logs_info_even_when_debug_false():
     """log_glossary_merge produces INFO output even with config.DEBUG=False."""
-    with patch.object(debug_trace.logger, "info") as mock_info:
+    with patch.object(debug_trace.logger, "log") as mock_log:
         debug_trace.log_glossary_merge("merge_done", page=1)
-        mock_info.assert_called_once()
+        mock_log.assert_called_once()

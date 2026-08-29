@@ -11,6 +11,14 @@ from uuid import uuid4
 
 import pymupdf
 
+from task_logging import (
+    STATUS_DISCARDED,
+    get_current_task,
+    task_log,
+    truncate_document_id,
+    with_status,
+)
+
 logger = logging.getLogger("pdf_reader.state")
 T = TypeVar("T")
 
@@ -104,10 +112,13 @@ class AppState:
             or self._right_pdf_path is None
             or self._pdf_hash is None
         ):
-            logger.warning(
+            task_log(
+                logger,
+                logging.WARNING,
                 "[stale-result] rejected expected_document_id=%s current_document_id=%s",
-                expected_document_id,
-                self._document_id,
+                truncate_document_id(expected_document_id),
+                truncate_document_id(self._document_id or ""),
+                task=with_status(get_current_task(), STATUS_DISCARDED),
             )
             raise StaleDocumentError("stale translation result rejected")
 
@@ -227,9 +238,9 @@ class AppState:
             self._require_document_locked(expected_document_id)
             try:
                 self._commit_replacement(translated_pdf_path, [page_num])
-                logger.info("[page=%d] replace into %s", page_num, self._right_pdf_path)
+                task_log(logger, logging.INFO, "page=%d replace into %s", page_num + 1, self._right_pdf_path)
             except Exception:
-                logger.error("[page=%d] replace failed", page_num, exc_info=True)
+                task_log(logger, logging.ERROR, "page=%d replace failed", page_num + 1, exc_info=True)
                 raise
 
     def extract_pages(
@@ -258,9 +269,11 @@ class AppState:
             self._require_document_locked(expected_document_id)
             try:
                 self._commit_replacement(translated_pdf_path, page_indices)
-                logger.info("[batch] replace pages %s into %s", page_indices, self._right_pdf_path)
+                pages = f"{min(page_indices) + 1}-{max(page_indices) + 1}"
+                task_log(logger, logging.INFO, "pages=%s replace into %s", pages, self._right_pdf_path)
             except Exception:
-                logger.error("[batch] replace pages failed", exc_info=True)
+                pages = f"{min(page_indices) + 1}-{max(page_indices) + 1}"
+                task_log(logger, logging.ERROR, "pages=%s replace pages failed", pages, exc_info=True)
                 raise
 
     def _commit_replacement(self, translated_pdf_path: str, page_indices: list[int]) -> None:
@@ -308,7 +321,13 @@ class AppState:
                     if committed:
                         self._translated_pages.update(page_indices)
                 except Exception:
-                    logger.error("[replace] reopen %s after failure failed", right_pdf_path, exc_info=True)
+                    task_log(
+                        logger,
+                        logging.ERROR,
+                        "[replace] reopen %s after failure failed",
+                        right_pdf_path,
+                        exc_info=True,
+                    )
             for doc in (src_doc, work_doc, old_doc):
                 if doc is not None and not doc.is_closed:
                     try:

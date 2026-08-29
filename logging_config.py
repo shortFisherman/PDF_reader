@@ -3,6 +3,7 @@ import sys
 from logging.handlers import RotatingFileHandler
 
 import paths
+from task_logging import SafeFormatter
 
 LOG_DIR = paths.get_log_dir()
 
@@ -16,7 +17,7 @@ def setup_logging(debug: bool = False) -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s [%(message)s]")
+    formatter = SafeFormatter("%(asctime)s %(levelname)s %(name)s [%(message)s]")
 
     level = logging.DEBUG if debug else logging.INFO
 

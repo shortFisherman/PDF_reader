@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 from glossary_merger import merge_glossary_csvs
+from task_logging import task_log
 
 logger = logging.getLogger("pdf_reader.glossary")
 
@@ -21,7 +22,9 @@ def resolve_glossary_paths(cache_path: Path | None) -> list[str] | None:
 
 def merge_after_translate(cumulative_path: Path | None, auto_extracted_path: Path | None) -> None:
     if not cumulative_path or not auto_extracted_path:
-        logger.warning(
+        task_log(
+            logger,
+            logging.WARNING,
             "glossary merge skipped: cumulative_path=%r auto_extracted_path=%r",
             cumulative_path,
             auto_extracted_path,
@@ -30,6 +33,11 @@ def merge_after_translate(cumulative_path: Path | None, auto_extracted_path: Pat
     try:
         merge_glossary_csvs(Path(cumulative_path), Path(auto_extracted_path))
     except Exception:
-        logger.warning(
-            "[glossary] merge failed: cumulative=%s auto=%s", cumulative_path, auto_extracted_path, exc_info=True
+        task_log(
+            logger,
+            logging.WARNING,
+            "[glossary] merge failed: cumulative=%s auto=%s",
+            cumulative_path,
+            auto_extracted_path,
+            exc_info=True,
         )
