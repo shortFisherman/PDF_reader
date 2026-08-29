@@ -83,7 +83,7 @@
 | P1-06 | P1 | 统一 debug、启动和配置语义 | `已完成` | 无 |
 | P2-01 | P2 | 迁移为 `src/pdf_reader` 包布局 | `待处理` | P0/P1 稳定后 |
 | P2-02 | P2 | 拆分前端页面协调与翻译 UI 状态 | `待处理` | P0-02 的任务语义稳定后 |
-| P2-03 | P2 | 改进测试覆盖率、类型检查和 JS 静态检查 | `待处理` | P2-01 可前可后 |
+| P2-03 | P2 | 改进测试覆盖率、类型检查和 JS 静态检查 | `已完成` | P2-01 可前可后 |
 | P2-04 | P2 | 整理依赖声明、开发依赖和验证环境 | `待处理` | P0-03 |
 | P2-05 | P2 | 统一错误响应、脱敏和前端安全渲染 | `待处理` | 无 |
 | P2-06 | P2 | 增加任务级日志上下文和可诊断性 | `待处理` | P0-02 |
@@ -486,11 +486,11 @@ PDF_reader/
 
 ### P2-03 改进测试覆盖率、类型检查和 JS 静态检查
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：已有大量测试，但无覆盖率基线、Python 类型检查和正式 JS lint；用例数量不能显示关键路径缺口。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`7c90a2c`
+- 验证证据：子代理实现验证：`pyproject.toml` 配置 `[tool.coverage.run] branch=true source=["pdf_reader"]`；新增 `scripts/check_coverage_policy.py`（全局 line ≥90%/branch ≥80%，关键模块 floor：state 80/75、translation_coordinator 95/95、translation_lifecycle 95/95、sse_stream 85/75、routes 85/70），实测全局 line 95.1%/branch 89.0% 且关键模块全部通过；本地 coverage 临时目录 finally 清理（行为测试覆盖成功/失败/artifact 路径与 COVERAGE_FILE 不泄漏），CI 经 `PDF_READER_COVERAGE_ARTIFACT_DIR` 输出并 `upload-artifact@v4`（`if-no-files-found: error`）。`[tool.mypy]` 启用六项规则仅检查 `src/pdf_reader`，无 blanket ignore_errors，修复 12 个真实类型问题（含审阅后 engine_resolver `cast(Any).model_fields` 快速失败回归、orchestrator `Queue[dict]` 去 fallback），mypy Success。ESLint 10 flat config 新增 `lint:js` 并纳入 verify，修复 43 个真实问题，历史 fixture/诊断 runner 精确 ignore。pytest 标记 unit/integration/system；系统红线标 `system`（16 用例默认收集）、真实路由/磁盘事务标 `integration`，verify 无 marker 过滤。契约测试：`tests/test_coverage_policy_contract.py` 与 `tests/test_verify_script.py` 扩展（sentinel 创建、临时清理、policy 失败短路、artifact 保留与环境不泄漏、缺模块必失败）。完整 `scripts/verify.ps1`：501 Python、coverage policy OK、mypy Success、ESLint 与全部前端通过，logs/cache 零增长；干净 venv + `npm ci` 验收通过；临时环境与 coverage 数据清理。父级最终验收通过：targeted 33 passed；全量 verify 退出 0、501 passed、global line 95.1%/branch 89.0%、关键模块门槛全部通过、mypy 21 source files success、ESLint 与全部前端通过、`git diff --check` 无错误、仓库无 `.coverage*`/`coverage-artifacts`/`egg-info`、logs/cache 基线未变化。
+- 剩余问题：无（历史前端测试夹具/诊断 runner 的统一归 P3-03，不阻塞本项）。
 
 #### 建议内容
 
@@ -503,10 +503,10 @@ PDF_reader/
 
 #### 验收标准
 
-- [ ] 覆盖率报告可以指出未测试分支。
-- [ ] 类型检查和 JS lint 纳入统一验证入口。
-- [ ] 不因追求数字为简单 getter 大量编写低价值测试。
-- [ ] 系统红线测试不能被标记为可选或默认跳过。
+- [x] 覆盖率报告可以指出未测试分支。
+- [x] 类型检查和 JS lint 纳入统一验证入口。
+- [x] 不因追求数字为简单 getter 大量编写低价值测试。
+- [x] 系统红线测试不能被标记为可选或默认跳过。
 
 ### P2-04 整理依赖声明、开发依赖和验证环境
 
@@ -771,3 +771,4 @@ PDF_reader/
 | 2026-08-29 | P2-01 | 已完成 | `55e4d8b` | 迁移为 `src/pdf_reader` 包布局：19 个生产模块经 `git mv` 迁入 `src/pdf_reader/`，新增 `pyproject.toml`/`__init__.py`/`__main__.py`，包内统一 `pdf_reader.*` 导入，`python -m pdf_reader` 入口与 argparse prog 对齐，测试 patch 全部 `pdf_reader.*`，无根模块 shim/sys.path hack；start.bat/README/CI/Ruff/architecture/当前 OpenSpec 同步；新增 tests/test_package_layout.py 与冒烟句柄释放回归。完整验证 471 Python + 全部前端，logs/cache 零增长，父级独立 clean-venv/outside-CWD/import/help/open-render-release smoke 通过。 |
 | 2026-08-29 | P2-04 | 已完成 | `a65c2e6` | 整理依赖声明、开发依赖与验证环境：`pyproject.toml` 成为唯一直接依赖声明源（dev extra：pytest/Ruff/coverage/mypy/pip-tools），删除 `requirements.txt`/`requirements-dev.txt`；`requirements.lock` 由 pip-tools 7.6.1 从 pyproject（含 dev extra）重生成且 header 记录真实命令；安装契约 `requirements.lock` + `pip install -e . --no-deps` 在 CI/README/start.bat 一致；verify.ps1 输出 Python 绝对路径/版本、显式优先、venv 优先、回退 WARNING、无效快速失败；新增 dependency_contract 与 verify_script 测试。两次 485 Python + 全部前端验证通过，canonical 重编译 SHA 与仓库锁一致，logs/cache 零增长，父级独立验收通过。 |
 | 2026-08-29 | P2-02 | 已完成 | `23e3e40` | 拆分前端页面协调与翻译 UI 状态：新增 `translation-ui-controller.js`（共享状态机、busy/progress/stage/error/reset、AbortController、operation generation 迟到隔离、终态单次封闭、sync throw/reject/resolve 无终态安全）与 `reader-session.js`（文档资源幂等 dispose）；动态前缀仅 operation-scoped `onPrefix`；app.js 只保留装配/协调，translator 透传 AbortSignal 且 AbortError 静默；pagehide 主动 abort；成功换文档释放旧资源恰好一次、失败打开保留、dispose 幂等。新增 run-translation-ui-tests.mjs（115 项）纳入 npm test。完整验证 485 Python + 全部前端，logs/cache 零增长，父级独立验收通过。 |
+| 2026-08-29 | P2-03 | 已完成 | `7c90a2c` | 改进测试覆盖率、类型检查和 JS 静态检查：coverage branch + source=pdf_reader、全局 90/80 与关键模块 floor 策略（实测 line 95.1%/branch 89.0%）；mypy 仅检查生产包（六项规则，无 blanket ignore）；ESLint flat config 纳入 verify；pytest unit/integration/system 标记且系统红线默认收集；契约与 verify 行为测试覆盖临时清理/artifact 保留/失败短路；CI artifact if-no-files-found=error。完整验证 501 Python + 全部前端，logs/cache 零增长，父级最终验收通过。 |
