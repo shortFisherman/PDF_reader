@@ -76,6 +76,7 @@ def test_render_page_concurrent_replace_no_crash(app_state, sample_pdf, tmp_path
     from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
+    document_id = app_state.translation_snapshot().document_id
 
     translated_pdf = tmp_path / "translated.pdf"
     doc = pymupdf.open()
@@ -104,7 +105,7 @@ def test_render_page_concurrent_replace_no_crash(app_state, sample_pdf, tmp_path
 
     def replace_thread():  # noqa: ANN202
         render_started.wait(timeout=5)
-        app_state.replace_page(str(translated_pdf), 0)
+        app_state.replace_page(str(translated_pdf), 0, document_id)
 
     t1 = threading.Thread(target=render_thread)
     t2 = threading.Thread(target=replace_thread)
@@ -183,6 +184,7 @@ def test_concurrent_replace_different_pages(app_state, sample_pdf, tmp_path):
     from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
+    document_id = app_state.translation_snapshot().document_id
     page_count = app_state.page_count
     assert page_count == 2
 
@@ -202,7 +204,7 @@ def test_concurrent_replace_different_pages(app_state, sample_pdf, tmp_path):
     def replace_page(idx):  # noqa: ANN202, ANN001
         try:
             barrier.wait(timeout=5)
-            app_state.replace_page(str(translated_pdfs[idx]), idx)
+            app_state.replace_page(str(translated_pdfs[idx]), idx, document_id)
         except Exception as e:
             errors[idx] = e
 
@@ -325,6 +327,7 @@ def test_replace_pages_batch_backfill_and_tracking(app_state, sample_pdf, tmp_pa
     from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
+    document_id = app_state.translation_snapshot().document_id
     page_count = app_state.page_count
     assert page_count == 2
 
@@ -337,7 +340,7 @@ def test_replace_pages_batch_backfill_and_tracking(app_state, sample_pdf, tmp_pa
     doc.save(str(translated_pdf))
     doc.close()
 
-    app_state.replace_pages(str(translated_pdf), list(range(page_count)))
+    app_state.replace_pages(str(translated_pdf), list(range(page_count)), document_id)
 
     out = pymupdf.open(app_state._right_pdf_path)
     assert out.page_count == page_count
@@ -352,6 +355,7 @@ def test_replace_pages_ascending_preserves_other_indices(app_state, sample_pdf, 
     from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
+    document_id = app_state.translation_snapshot().document_id
 
     # 只替换第 1 页（0-based idx=1）
     translated_pdf = tmp_path / "t1.pdf"
@@ -361,7 +365,7 @@ def test_replace_pages_ascending_preserves_other_indices(app_state, sample_pdf, 
     doc.save(str(translated_pdf))
     doc.close()
 
-    app_state.replace_pages(str(translated_pdf), [1])
+    app_state.replace_pages(str(translated_pdf), [1], document_id)
     out = pymupdf.open(app_state._right_pdf_path)
     assert out.page_count == 2
     assert "ONLY_PAGE1" in out[1].get_text()
@@ -374,6 +378,7 @@ def test_replace_pages_holds_lock(app_state, sample_pdf, tmp_path):
     from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
+    document_id = app_state.translation_snapshot().document_id
     translated_pdf = tmp_path / "t.pdf"
     doc = pymupdf.open()
     doc.new_page(width=612, height=792)
@@ -394,7 +399,7 @@ def test_replace_pages_holds_lock(app_state, sample_pdf, tmp_path):
     app_state._right_doc.delete_page = slow_delete  # type: ignore[method-assign]  # noqa: ANN001
 
     def replacer():  # noqa: ANN202
-        app_state.replace_pages(str(translated_pdf), [0])
+        app_state.replace_pages(str(translated_pdf), [0], document_id)
 
     t = threading.Thread(target=replacer)
     t.start()

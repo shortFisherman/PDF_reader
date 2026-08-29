@@ -48,6 +48,7 @@ def test_replace_page_logs_info_on_success(app_state, sample_pdf, caplog):
     from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
+    document_id = app_state.translation_snapshot().document_id
 
     # 构建单页译文 PDF
     import pymupdf
@@ -58,7 +59,7 @@ def test_replace_page_logs_info_on_success(app_state, sample_pdf, caplog):
     doc.save(str(translated_pdf))
     doc.close()
 
-    app_state.replace_page(str(translated_pdf), 0)
+    app_state.replace_page(str(translated_pdf), 0, document_id)
 
     records = [r for r in caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.INFO]
     replace_msgs = [r.message for r in records if "replace" in r.message]
@@ -77,9 +78,10 @@ def test_replace_page_logs_error_and_reraises_on_failure(app_state, sample_pdf, 
     from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
+    document_id = app_state.translation_snapshot().document_id
 
     with pytest.raises(Exception):
-        app_state.replace_page("/nonexistent/path/translated.pdf", 0)
+        app_state.replace_page("/nonexistent/path/translated.pdf", 0, document_id)
 
     records = [r for r in caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.ERROR]
     assert len(records) >= 1, f"expected ERROR log, got: {[r.message for r in caplog.records]}"
@@ -96,6 +98,7 @@ def test_replace_pages_logs_info_on_success(app_state, sample_pdf, caplog):
     from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
+    document_id = app_state.translation_snapshot().document_id
 
     import pymupdf
 
@@ -106,7 +109,7 @@ def test_replace_pages_logs_info_on_success(app_state, sample_pdf, caplog):
     doc.save(str(translated_pdf))
     doc.close()
 
-    app_state.replace_pages(str(translated_pdf), [0, 1])
+    app_state.replace_pages(str(translated_pdf), [0, 1], document_id)
 
     records = [r for r in caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.INFO]
     batch_msgs = [r.message for r in records if "[batch]" in r.message]
@@ -154,9 +157,10 @@ def test_replace_pages_logs_error_and_reraises_on_failure(app_state, sample_pdf,
     from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
+    document_id = app_state.translation_snapshot().document_id
 
     with pytest.raises(Exception):
-        app_state.replace_pages("/nonexistent/path/translated.pdf", [0])
+        app_state.replace_pages("/nonexistent/path/translated.pdf", [0], document_id)
 
     records = [r for r in caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.ERROR]
     assert len(records) >= 1, f"expected ERROR log, got: {[r.message for r in caplog.records]}"
@@ -257,6 +261,7 @@ def test_generate_logging_info_messages(caplog, tmp_path):
     ctx = GenerateContext(
         settings=MagicMock(),
         replace_page=MagicMock(),
+        merge_glossary=MagicMock(),
         glossary_cache_path=None,
         page=0,
         glossary_paths=None,
@@ -304,6 +309,7 @@ def test_generate_batch_logging_info_messages(caplog, tmp_path):
         to_page=5,
         page_indices=[1, 2, 3, 4],
         replace_pages=MagicMock(),
+        merge_glossary=MagicMock(),
         glossary_cache_path=None,
         glossary_paths=None,
         cache_dir=cache_dir,
@@ -339,6 +345,7 @@ def test_generate_error_logging_context(caplog, tmp_path, mock_config):
     ctx = GenerateContext(
         settings=MagicMock(),
         replace_page=MagicMock(),
+        merge_glossary=MagicMock(),
         glossary_cache_path=None,
         page=7,
         glossary_paths=None,
@@ -374,6 +381,7 @@ def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
         to_page=9,
         page_indices=[3, 4, 5, 6, 7, 8],
         replace_pages=MagicMock(),
+        merge_glossary=MagicMock(),
         glossary_cache_path=None,
         glossary_paths=None,
         cache_dir=cache_dir,
@@ -405,6 +413,7 @@ def test_generate_error_logging_produces_sse_error_event(caplog, tmp_path, mock_
     ctx = GenerateContext(
         settings=MagicMock(),
         replace_page=MagicMock(),
+        merge_glossary=MagicMock(),
         glossary_cache_path=None,
         page=1,
         glossary_paths=None,

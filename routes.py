@@ -104,17 +104,19 @@ def index():
 def translate_page(page: int):
     logger.debug("[route] translate_page page=%d", page)
     state = _get_state()
-    if state.left_doc is None:
+    try:
+        snapshot = state.translation_snapshot()
+    except ValueError:
         logger.debug("[route] translate_page no doc")
         return error_response("no document opened", 400)
-    if page < 0 or page >= state.page_count:
+    if page < 0 or page >= snapshot.page_count:
         logger.debug("[route] translate_page page out of range")
         return error_response("page out of range", 400)
 
     data = request.get_json(silent=True) or {}
     user_prompt = (data.get("prompt") or "").strip() or None
 
-    glossary_paths = glossary_service.resolve_glossary_paths(state.glossary_cache_path)
+    glossary_paths = glossary_service.resolve_glossary_paths(snapshot.glossary_cache_path)
     settings = build_settings(
         "",
         user_prompt,
@@ -122,12 +124,22 @@ def translate_page(page: int):
     )
     ctx = sse_stream.GenerateContext(
         settings=settings,
-        replace_page=lambda path: state.replace_page(path, page),
-        glossary_cache_path=state.glossary_cache_path,
+        replace_page=lambda path: state.replace_page(path, page, snapshot.document_id),
+        merge_glossary=lambda extracted: state.merge_glossary(
+            extracted,
+            snapshot.document_id,
+            glossary_service.merge_after_translate,
+        ),
+        glossary_cache_path=snapshot.glossary_cache_path,
         page=page,
         glossary_paths=glossary_paths,
         cache_dir=config.CACHE_DIR,
-        extract_page=lambda page, tmpdir, func: state.extract_page(page, tmpdir, func),
+        extract_page=lambda page, tmpdir, func: state.extract_page(
+            page,
+            tmpdir,
+            func,
+            snapshot.document_id,
+        ),
     )
     return Response(
         stream_with_context(sse_stream.generate(ctx)),
@@ -139,7 +151,9 @@ def translate_page(page: int):
 @bp.route("/api/translate-batch", methods=["POST"])
 def translate_batch():
     state = _get_state()
-    if state.left_doc is None:
+    try:
+        snapshot = state.translation_snapshot()
+    except ValueError:
         logger.debug("[route] translate_batch no doc")
         return error_response("no document opened", 400)
 
@@ -147,7 +161,7 @@ def translate_batch():
     from_page = data.get("from")
     to_page = data.get("to")
     logger.debug("[route] translate_batch from=%s to=%s", from_page, to_page)
-    page_count = state.page_count
+    page_count = snapshot.page_count
 
     if not isinstance(from_page, int) or not isinstance(to_page, int):
         logger.debug("[route] translate_batch invalid page numbers")
@@ -164,7 +178,7 @@ def translate_batch():
     k = len(page_indices)
     pages_str = f"1-{k}" if k > 1 else "1"
 
-    glossary_paths = glossary_service.resolve_glossary_paths(state.glossary_cache_path)
+    glossary_paths = glossary_service.resolve_glossary_paths(snapshot.glossary_cache_path)
     settings = build_settings(
         "",
         user_prompt,
@@ -176,11 +190,21 @@ def translate_batch():
         from_page=from_page,
         to_page=to_page,
         page_indices=page_indices,
-        replace_pages=lambda path: state.replace_pages(path, page_indices),
-        glossary_cache_path=state.glossary_cache_path,
+        replace_pages=lambda path: state.replace_pages(path, page_indices, snapshot.document_id),
+        merge_glossary=lambda extracted: state.merge_glossary(
+            extracted,
+            snapshot.document_id,
+            glossary_service.merge_after_translate,
+        ),
+        glossary_cache_path=snapshot.glossary_cache_path,
         glossary_paths=glossary_paths,
         cache_dir=config.CACHE_DIR,
-        extract_pages=lambda indices, tmpdir, func: state.extract_pages(indices, tmpdir, func),
+        extract_pages=lambda indices, tmpdir, func: state.extract_pages(
+            indices,
+            tmpdir,
+            func,
+            snapshot.document_id,
+        ),
     )
     return Response(
         stream_with_context(sse_stream.generate_batch(ctx)),

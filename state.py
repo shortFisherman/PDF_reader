@@ -3,11 +3,28 @@ import logging
 import os
 import shutil
 import threading
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
+from uuid import uuid4
 
 import pymupdf
 
 logger = logging.getLogger("pdf_reader.state")
+T = TypeVar("T")
+
+
+class StaleDocumentError(RuntimeError):
+    """Raised when work tries to mutate a document session that is no longer current."""
+
+
+@dataclass(frozen=True)
+class DocumentSnapshot:
+    document_id: str
+    pdf_hash: str
+    page_count: int
+    glossary_cache_path: Path
 
 
 class AppState:
@@ -19,6 +36,7 @@ class AppState:
         self._right_pdf_path: str | None = None
         self._pdf_path: str | None = None
         self._pdf_hash: str | None = None
+        self._document_id: str | None = None
         self._page_count: int = 0
         self._page_height: float = 0.0
         self._page_width: float = 0.0
@@ -66,6 +84,32 @@ class AppState:
         if self._pdf_hash is None:
             return None
         return self._cache_dir / self._pdf_hash / "reading_progress.json"
+
+    def translation_snapshot(self) -> DocumentSnapshot:
+        with self._lock:
+            if self._left_doc is None or self._document_id is None or self._pdf_hash is None:
+                raise ValueError("no document opened")
+            return DocumentSnapshot(
+                document_id=self._document_id,
+                pdf_hash=self._pdf_hash,
+                page_count=self._page_count,
+                glossary_cache_path=self._cache_dir / self._pdf_hash,
+            )
+
+    def _require_document_locked(self, expected_document_id: str) -> None:
+        if (
+            self._document_id != expected_document_id
+            or self._left_doc is None
+            or self._right_doc is None
+            or self._right_pdf_path is None
+            or self._pdf_hash is None
+        ):
+            logger.warning(
+                "[stale-result] rejected expected_document_id=%s current_document_id=%s",
+                expected_document_id,
+                self._document_id,
+            )
+            raise StaleDocumentError("stale translation result rejected")
 
     def save_reading_progress(self, page: int) -> None:
         with self._lock:
@@ -127,6 +171,7 @@ class AppState:
             self._pdf_path = pdf_path
             self._pdf_hash = pdf_hash
             self._right_pdf_path = str(right_pdf_path)
+            self._document_id = uuid4().hex
             self._page_count = self._left_doc.page_count
             sample_page = self._left_doc[0]
             self._page_height = sample_page.rect.height
@@ -145,6 +190,7 @@ class AppState:
                 "page_height": self._page_height,
                 "page_width": self._page_width,
                 "hash": pdf_hash,
+                "document_id": self._document_id,
                 "saved_page": saved_page,
             }
 
@@ -160,16 +206,25 @@ class AppState:
                 raise ValueError("no document opened")
             return render_func(doc, page_num, dpi)
 
-    def extract_page(self, page: int, tmpdir: Path, extract_func) -> Path:
+    def extract_page(
+        self,
+        page: int,
+        tmpdir: Path,
+        extract_func,
+        expected_document_id: str | None = None,
+    ) -> Path:
         """Extract a single page under the state lock.
         extract_func must not reenter AppState (non-reentrant lock)."""
         with self._lock:
+            if expected_document_id is not None:
+                self._require_document_locked(expected_document_id)
             if self._left_doc is None:
                 raise ValueError("no document opened")
             return extract_func(self._left_doc, page, tmpdir)
 
-    def replace_page(self, translated_pdf_path: str, page_num: int) -> None:
+    def replace_page(self, translated_pdf_path: str, page_num: int, expected_document_id: str) -> None:
         with self._lock:
+            self._require_document_locked(expected_document_id)
             try:
                 src_doc = pymupdf.open(translated_pdf_path)
                 self._right_doc.delete_page(page_num)
@@ -186,16 +241,30 @@ class AppState:
                 logger.error("[page=%d] replace failed", page_num, exc_info=True)
                 raise
 
-    def extract_pages(self, page_indices: list[int], tmpdir: Path, extract_func) -> Path:
+    def extract_pages(
+        self,
+        page_indices: list[int],
+        tmpdir: Path,
+        extract_func,
+        expected_document_id: str | None = None,
+    ) -> Path:
         """Extract multiple pages under the state lock.
         extract_func must not reenter AppState (non-reentrant lock)."""
         with self._lock:
+            if expected_document_id is not None:
+                self._require_document_locked(expected_document_id)
             if self._left_doc is None:
                 raise ValueError("no document opened")
             return extract_func(self._left_doc, page_indices, tmpdir)
 
-    def replace_pages(self, translated_pdf_path: str, page_indices: list[int]) -> None:
+    def replace_pages(
+        self,
+        translated_pdf_path: str,
+        page_indices: list[int],
+        expected_document_id: str,
+    ) -> None:
         with self._lock:
+            self._require_document_locked(expected_document_id)
             try:
                 src_doc = pymupdf.open(translated_pdf_path)
                 for j, idx in enumerate(page_indices):
@@ -213,10 +282,23 @@ class AppState:
                 logger.error("[batch] replace pages failed", exc_info=True)
                 raise
 
+    def merge_glossary(
+        self,
+        extracted_glossary_path: str | Path | None,
+        expected_document_id: str,
+        merge_func: Callable[[Path | None, str | Path | None], T],
+    ) -> T:
+        """Merge glossary output while identity and the document lock remain stable."""
+        with self._lock:
+            self._require_document_locked(expected_document_id)
+            cumulative_path = self._cache_dir / self._pdf_hash / "cumulative_glossary.csv"
+            return merge_func(cumulative_path, extracted_glossary_path)
+
     def is_doc_open(self) -> bool:
         return self._left_doc is not None
 
     def _close_docs(self) -> None:
+        self._document_id = None
         if self._left_doc:
             self._left_doc.close()
             self._left_doc = None

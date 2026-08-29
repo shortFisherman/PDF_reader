@@ -5,21 +5,20 @@ from pathlib import Path
 from typing import Protocol
 
 import debug_trace
-from glossary_service import merge_after_translate
 
 logger = logging.getLogger("pdf_reader.lifecycle")
 
 
 class TranslateResult(Protocol):
-    mono_pdf_path: Path | None
-    dual_pdf_path: Path | None
-    auto_extracted_glossary_path: Path | None
+    mono_pdf_path: str | Path | None
+    dual_pdf_path: str | Path | None
+    auto_extracted_glossary_path: str | Path | None
 
 
 def finish_translation(
     translate_result: TranslateResult,
     replace_page: Callable[[str], None],
-    glossary_cache_path: Path | None,
+    merge_glossary: Callable[[str | Path | None], None],
     page: int = -1,
 ) -> None:
     translated_pdf = translate_result.mono_pdf_path
@@ -29,14 +28,8 @@ def finish_translation(
     if translated_pdf is not None:
         replace_page(str(translated_pdf))
 
-    cumulative_glossary_file: Path | None = None
-    if glossary_cache_path is not None:
-        cumulative_glossary_file = glossary_cache_path / "cumulative_glossary.csv"
     merge_start = time.time()
-    merge_after_translate(
-        cumulative_glossary_file,
-        translate_result.auto_extracted_glossary_path,
-    )
+    merge_glossary(translate_result.auto_extracted_glossary_path)
     elapsed = time.time() - merge_start
     logger.info("[page=%d] translation finished: page processed", page)
     debug_trace.log_glossary_merge("merge_done", page=page, elapsed=f"{elapsed:.2f}")
@@ -44,17 +37,11 @@ def finish_translation(
 
 def merge_glossary_only(
     translate_result: TranslateResult,
-    glossary_cache_path: Path | None,
+    merge_glossary: Callable[[str | Path | None], None],
     page: int = -1,
 ) -> None:
-    cumulative_glossary_file: Path | None = None
-    if glossary_cache_path is not None:
-        cumulative_glossary_file = glossary_cache_path / "cumulative_glossary.csv"
     merge_start = time.time()
-    merge_after_translate(
-        cumulative_glossary_file,
-        translate_result.auto_extracted_glossary_path,
-    )
+    merge_glossary(translate_result.auto_extracted_glossary_path)
     elapsed = time.time() - merge_start
     logger.info("[page=%d] glossary merge completed in %.2fs", page, elapsed)
     debug_trace.log_glossary_merge("merge_done", page=page, elapsed=f"{elapsed:.2f}")

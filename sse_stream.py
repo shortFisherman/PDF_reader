@@ -37,6 +37,7 @@ def _safe_rmtree(path: Path) -> None:
 class GenerateContext:
     settings: SettingsModel
     replace_page: Callable[[str], None]
+    merge_glossary: Callable[[str | Path | None], None]
     glossary_cache_path: Path | None
     page: int
     glossary_paths: list[str] | None
@@ -51,6 +52,7 @@ class GenerateBatchContext:
     to_page: int
     page_indices: list[int]
     replace_pages: Callable[[str], None]
+    merge_glossary: Callable[[str | Path | None], None]
     glossary_cache_path: Path | None
     glossary_paths: list[str] | None
     cache_dir: Path
@@ -164,7 +166,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
             finish_translation(
                 translate_result,
                 ctx.replace_page,
-                ctx.glossary_cache_path,
+                ctx.merge_glossary,
                 ctx.page,
             )
 
@@ -250,7 +252,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
             if translated_pdf is not None:
                 ctx.replace_pages(str(translated_pdf))
 
-            merge_glossary_only(translate_result, ctx.glossary_cache_path, ctx.from_page)
+            merge_glossary_only(translate_result, ctx.merge_glossary, ctx.from_page)
 
             yield (
                 "data: "

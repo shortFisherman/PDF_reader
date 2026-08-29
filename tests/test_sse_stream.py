@@ -79,6 +79,7 @@ EXPECTED_FINAL_FINISH_SSE = "data: " + json.dumps({"type": "finish", "progress":
 def _make_ctx(
     settings=None,
     replace_page=None,
+    merge_glossary=None,
     glossary_cache_path=None,
     page=0,
     glossary_paths=None,
@@ -89,6 +90,8 @@ def _make_ctx(
         settings = MagicMock()
     if replace_page is None:
         replace_page = MagicMock()
+    if merge_glossary is None:
+        merge_glossary = MagicMock()
     if cache_dir is None:
         cache_dir = Path(tempfile.mkdtemp())
     if extract_page is None:
@@ -96,6 +99,7 @@ def _make_ctx(
     return GenerateContext(
         settings=settings,
         replace_page=replace_page,
+        merge_glossary=merge_glossary,
         glossary_cache_path=glossary_cache_path,
         page=page,
         glossary_paths=glossary_paths,
@@ -314,6 +318,10 @@ def test_generate_merges_glossary_with_str_auto_path(tmp_path):
     ctx = _make_ctx(
         settings=MagicMock(),
         replace_page=replace_page,
+        merge_glossary=lambda auto_path: __import__("glossary_service").merge_after_translate(
+            cumulative_file,
+            auto_path,
+        ),
         glossary_cache_path=glossary_cache,
         cache_dir=work_dir,
     )
@@ -493,6 +501,7 @@ def _make_batch_ctx(
     to_page=5,
     page_indices=None,
     replace_pages=None,
+    merge_glossary=None,
     glossary_cache_path=None,
     glossary_paths=None,
     cache_dir=None,
@@ -502,6 +511,8 @@ def _make_batch_ctx(
         settings = MagicMock()
     if replace_pages is None:
         replace_pages = MagicMock()
+    if merge_glossary is None:
+        merge_glossary = MagicMock()
     if cache_dir is None:
         cache_dir = Path(tempfile.mkdtemp())
     if extract_pages is None:
@@ -514,6 +525,7 @@ def _make_batch_ctx(
         to_page=to_page,
         page_indices=page_indices,
         replace_pages=replace_pages,
+        merge_glossary=merge_glossary,
         glossary_cache_path=glossary_cache_path,
         glossary_paths=glossary_paths,
         cache_dir=cache_dir,
