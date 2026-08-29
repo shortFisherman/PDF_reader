@@ -75,6 +75,41 @@ $env:MODEL_API_KEY = 'your-api-key'
 
 完整配置字段和模型示例见 `config.example.toml`。API Key 不应提交到 Git。
 
+### debug 优先级与安全默认值
+
+| 来源 | 示例 | 优先级 |
+|---|---|---|
+| CLI 参数 | `python app.py --debug` / `--no-debug` | 1（最高） |
+| 环境变量 | `$env:PDF_READER_DEBUG = "true"` | 2 |
+| config.toml | `[server] debug = true` | 3 |
+| 默认值 | — | 4（`false`） |
+
+- `--debug` 与 `--no-debug` 互斥，同时传入会立即报错并以非零状态退出。
+- `PDF_READER_DEBUG` 只接受 `true` / `false` / `1` / `0` / `on` / `off` / `yes` / `no`（不区分大小写、忽略首尾空白）；空值或其它值在启动时报错并退出。
+- 解析出的同一个 debug 布尔值同时用于应用日志与 Flask 服务：`debug = true` 时启用 Flask debugger 与 reloader；`debug = false`（默认）时两者都显式关闭，不依赖 Flask 隐式默认。
+- `MODEL_API_KEY` 环境变量仍优先于 `config.toml` 的 `model.api_key`。
+
+### 启动配置校验
+
+启动服务器前会严格校验 `config.toml`：
+
+- `[server]` 必须是 table；`host` 必须是非空字符串；`port` 必须是 1–65535 的整数（布尔值不算整数）；`debug` 必须是布尔值 `true` / `false`。
+- `config.toml` 缺失时按空配置安全加载，但缺少 `model.model` 或 `model.api_key`（且未设置 `MODEL_API_KEY`）会在启动服务器前报错退出。
+- TOML 语法错误、字段类型错误、非法端口、非法 debug 值都会在启动时输出 `ERROR: ...` 并以非零状态退出；错误信息不包含 API Key。
+
+错误示例：
+
+```powershell
+$env:PDF_READER_DEBUG = "banana"
+python app.py
+# ERROR: 环境变量 PDF_READER_DEBUG 非法值 'banana'：只接受 true/false/1/0/on/off/yes/no（不区分大小写，忽略首尾空白）
+# 退出码 2，服务器不会启动
+
+python app.py --debug --no-debug
+# app.py: error: argument --no-debug: not allowed with argument --debug
+# 退出码 2
+```
+
 ## 启动
 
 推荐直接运行根目录的 `start.bat`（在 PowerShell 或 cmd 中执行）：
@@ -113,10 +148,11 @@ tasklist /FI "PID eq <pid>"
 
 然后访问 `http://127.0.0.1:5001`。
 
-调试模式：
+调试模式（优先级高于环境变量与 `config.toml`）：
 
 ```powershell
 python app.py --debug
+python app.py --no-debug
 ```
 
 ## 验证

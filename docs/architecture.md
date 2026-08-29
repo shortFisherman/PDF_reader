@@ -35,7 +35,7 @@
 
 | 路径 | 职责 |
 |---|---|
-| `app.py` | 命令行参数、`create_app()` 装配 Flask 与全局 `AppState`、启动服务 |
+| `app.py` | 启动边界 `main(argv)`、`create_app()` 装配 Flask 与全局 `AppState`、启动服务 |
 | `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python app.py` |
 | `config.py` | 读取 `config.toml`、定义 `EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
 | `routes.py` | Blueprint：9 个 HTTP/SSE 端点与 JSON 404 处理器 |
@@ -57,7 +57,7 @@
 | `static/app.js` | 前端入口与共享状态 |
 | `static/modules/` | dom、lazy-loader、scroll-sync、alignment-controller、zoom、sse-client、stages、translator |
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
-| `tests/` | 20 个 pytest 文件（273 用例）与前端 `.mjs` 测试运行器 |
+| `tests/` | 21 个 pytest 文件（356 用例）与前端 `.mjs` 测试运行器 |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
 | `docs/`、`docs/archive/`、`docs/reports/` | 常青文档、历史归档与上游研究资料 |
@@ -74,18 +74,22 @@
 
 ## 启动与 Flask 应用装配
 
-1. `python app.py`：`argparse` 解析 `--debug`（显式提供时覆盖 `config.DEBUG`）。
-2. `create_app()` 调用 `logging_config.setup_logging(config.DEBUG)`，输出启动摘要（provider/model/lang/cache_dir/dpi/debug，不含 api_key）。
-3. 创建 `Flask(__name__)`，装配全局 `AppState(config.CACHE_DIR)` 与 `TranslationCoordinator()`，导入并注册 `routes.register_routes`。
-4. `__main__` 从 `config.toml` 的 `[server]` 读取 host/port/debug（默认 `127.0.0.1:5000`、debug 开启），调用 `app.run()`；`app.run()` 返回或异常退出时检查协调器，仍有 active job 则记录 WARNING（worker 可能成为孤儿）。
+1. `python app.py` 进入 `app.main(argv=None)`：模块导入不解析 CLI、不修改 `config.DEBUG`；CLI 解析只发生在该启动边界内。`--debug` 与 `--no-debug` 互斥。
+2. `config.resolve_server_config(cli_debug=...)` 按优先级 CLI `--debug`/`--no-debug` > 环境变量 `PDF_READER_DEBUG` > `[server].debug` > 默认 `false` 解析，返回 frozen `ServerConfig(host, port, debug)`；`use_reloader` 派生为与 `debug` 相同的值（debug 开 → Flask debugger+reloader 开，关 → 两者显式关闭）。
+3. `main` 把同一个解析结果写入 `config.DEBUG`（供 `debug_trace` 等消费），再调用 `config.validate_startup_requirements()`；缺少 `model.model`、API Key 或 API Key 为示例值时抛 `ConfigError`，main 打印 `ERROR:` 并以退出码 2 结束，不启动服务器。
+4. `create_app(run_cfg)` 使用 `run_cfg.debug` 调用 `logging_config.setup_logging(...)`，输出启动摘要（provider/model/lang/cache_dir/dpi/debug，不含 api_key）。
+5. 创建 `Flask(__name__)`，装配全局 `AppState(config.CACHE_DIR)` 与 `TranslationCoordinator()`，导入并注册 `routes.register_routes`。
+6. `app.run(host=..., port=..., debug=..., use_reloader=...)` 显式传入全部四个参数，默认 `debug=False, use_reloader=False`；`app.run()` 返回或异常退出时检查协调器，仍有 active job 则记录 WARNING（worker 可能成为孤儿）。
+7. 配置错误路径：TOML 语法错误在配置导入时被捕获（`config._CONFIG_LOAD_ERROR`），首次解析配置时抛 `ConfigError`；`[server]` 类型/范围错误与 `PDF_READER_DEBUG` 非法值同样由 `resolve_server_config` 抛 `ConfigError`；`--debug`/`--no-debug` 互斥由 argparse 报错。所有路径都在启动服务器前以非零状态退出。
 - `start.bat` 是 Windows 便捷启动入口：切换到仓库根目录后先检查 `.\venv\Scripts\python.exe`（缺失时打印创建/安装命令并不为零退出），再用 `netstat -ano -p tcp | findstr "LISTENING" | findstr ":5000 "` 检测端口占用；若 5000 已被监听，打印占用 PID 与 `netstat`/`tasklist` 排查命令并以非零状态退出，绝不执行 `taskkill`/`Stop-Process` 等终止命令；无冲突时 `call .\venv\Scripts\activate.bat` 激活既有虚拟环境并运行 `python app.py`。
 
 ## 配置加载与 Provider 映射
 
 - `config.py` 读取仓库根目录 `config.toml`；文件不存在时配置回退为空字典，不在导入期抛错。
-- 环境变量覆盖：只有 `MODEL_API_KEY`（优先级高于 `model.api_key`）；其余模型字段全部来自 `config.toml`。
+- 环境变量覆盖：`MODEL_API_KEY`（优先级高于 `model.api_key`）；`PDF_READER_DEBUG` 是 debug 优先级中间层，只接受 `true/false/1/0/on/off/yes/no`（不区分大小写、忽略首尾空白），非法值启动时报错（即使 CLI 显式覆盖也会 fail-fast）。
+- `[server]` 严格校验：必须是 table；`host` 非空字符串；`port` 是 1–65535 的 int（布尔值不算）；`debug` 必须为真布尔值。旧的 `[debug].enabled` 键已停止使用。
 - 默认值：provider=`openai_compatible`、dpi=200、cache_dir=`cache`（`Path.resolve()`）、lang_in=`en`、lang_out=`zh`。
-- 必填校验延迟到 `engine_resolver.resolve_engine()` 入口：缺少 `model.model`、缺少 API Key 或 API Key 为示例值时抛错。
+- 必填校验有两道：`app.main` 启动前调用 `config.validate_startup_requirements()`（缺少 `model.model`、缺少 API Key 或 API Key 为示例值时以 `ConfigError` 拒绝启动）；`engine_resolver.resolve_engine()` 入口仍保留同样的延迟校验。
 - `GLOSSARY_PATH` 硬编码为仓库根 `docs/glossary.csv`，必须保持该路径。
 - `ENGINE_REGISTRY` 用声明式 `EngineSpec` 注册 10 个 Provider，顺序为：`deepseek`、`zhipu`、`siliconflow`、`aliyun`、`gemini`、`groq`、`grok`、`modelscope`、`openai`、`openai_compatible`。
 - 未知 Provider 在通过必填校验后回退到 `openai_compatible`。
@@ -181,13 +185,15 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 翻译流日志以 `[job=<uuid>]` 关联任务，并继续保留 `[page=N]` 或 `[batch=from-to]` 前缀；协调器 start/finish/fail、SSE、后台线程、生命周期、Token 与术语调试记录都携带同一 `job_id`。日志中不输出 api_key 原值。`logging_config.setup_logging()` 幂等，创建控制台 + `RotatingFileHandler`（5MB × 5），debug 关闭时 `werkzeug`/`pdf2zh_next`/`babeldoc` 抬到 WARNING，debug 开启时降到 DEBUG。
 
+日志级别与 Flask 服务共享同一个由 `main` 解析出的 debug 布尔：`create_app` 的 `setup_logging(debug)` 与 `app.run(debug=..., use_reloader=...)` 来自同一 `ServerConfig`，不会出现日志 debug 与 server debug 分叉。
+
 错误传播：`TranslationError` 与普通异常都被 `generate`/`generate_batch` 捕获并输出 SSE `error` 事件，同时记录上下文日志；临时目录只有在 worker 线程确认退出后才会在 `finally` 中清理（join timeout 时保留并记 WARNING）。
 
 ## 测试、CI 与验证入口
 
 `requirements.txt` 只声明直接运行依赖，`requirements-dev.txt` 在运行依赖之上声明 pytest 与 Ruff；`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从开发依赖入口生成。锁文件不包含 editable、本机路径或 `file:///` 来源。
 
-统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（273 个 Python 测试）→ `npm test`（四个前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
+统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（356 个 Python 测试）→ `npm test`（四个前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
 
 启动脚本安全回归：`tests/test_start_bat.py` 在 Windows 下把真实 `start.bat` 复制到 pytest 临时目录，用 fake `netstat.cmd`/`taskkill.cmd`/`python.cmd`/`activate.bat` 在 PATH 上执行真实脚本：断言源文件不含 `taskkill`/`tskill`/`Stop-Process`/`kill` 等终止命令；模拟 5000 被占用时脚本退出非零、不调用 python 也不调用 taskkill；无占用时激活 venv 并调用 `python app.py`；`venv` 缺失时给出提示并非零退出。测试不绑定真实端口、不启动服务器、不杀任何进程。
 

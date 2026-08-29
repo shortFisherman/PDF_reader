@@ -1,3 +1,4 @@
+import os
 import sys
 from unittest.mock import patch
 
@@ -22,3 +23,13 @@ def test_validate_passes_when_api_key_from_env(monkeypatch):
     monkeypatch.setattr(config, "MODEL", "some-model")
 
     config._validate_required_config()
+
+
+def test_env_model_api_key_overrides_file_value():
+    with patch.dict(sys.modules):
+        if "config" in sys.modules:
+            del sys.modules["config"]
+        with patch.dict(os.environ, {"MODEL_API_KEY": "sk-env-key"}):
+            import config
+
+            assert config.MODEL_API_KEY == "sk-env-key"

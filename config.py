@@ -17,11 +17,66 @@ from pdf2zh_next.config.translate_engine_model import (
 )
 
 CONFIG_PATH = Path(__file__).parent / "config.toml"
+
+
+class ConfigError(ValueError):
+    """配置或启动参数错误。消息只包含可安全展示的内容，绝不包含 API Key。"""
+
+
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 5000
+
+
+@dataclass(frozen=True)
+class ServerConfig:
+    """启动服务器所需的运行时配置（host/port/debug 的唯一最终来源）。"""
+
+    host: str = DEFAULT_HOST
+    port: int = DEFAULT_PORT
+    debug: bool = False
+
+    @property
+    def use_reloader(self) -> bool:
+        """reloader 语义：debug 开启时启用，关闭时显式关闭（不依赖 Flask 隐式默认）。"""
+        return self.debug
+
+
+_DEBUG_TRUE_VALUES = frozenset({"true", "1", "on", "yes"})
+_DEBUG_FALSE_VALUES = frozenset({"false", "0", "off", "no"})
+
+
+def parse_debug_env(value: str | None) -> bool | None:
+    """解析 PDF_READER_DEBUG；未设置返回 None，非法值抛 ConfigError。"""
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in _DEBUG_TRUE_VALUES:
+        return True
+    if normalized in _DEBUG_FALSE_VALUES:
+        return False
+    raise ConfigError(
+        f"环境变量 PDF_READER_DEBUG 非法值 {normalized!r}："
+        "只接受 true/false/1/0/on/off/yes/no（不区分大小写，忽略首尾空白）"
+    )
+
+
+def _load_config(config_path: Path) -> dict:
+    """读取 TOML 配置；文件缺失返回空映射，语法错误抛 ConfigError。"""
+    try:
+        with open(config_path, "rb") as f:
+            return tomllib.load(f)
+    except FileNotFoundError:
+        return {}
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"TOML 语法错误（{config_path}）：{exc}") from exc
+
+
 try:
-    with open(CONFIG_PATH, "rb") as f:
-        CONFIG = tomllib.load(f)
-except FileNotFoundError:
+    CONFIG = _load_config(CONFIG_PATH)
+    _CONFIG_LOAD_ERROR = None
+except ConfigError as exc:
     CONFIG = {}
+    _CONFIG_LOAD_ERROR = str(exc)
 
 model_cfg = CONFIG.get("model", {})
 MODEL_PROVIDER = model_cfg.get("provider", "openai_compatible")
@@ -175,17 +230,56 @@ TRANSLATION_LANG_OUT = CONFIG.get("translation", {}).get("lang_out", "zh")
 
 def _validate_required_config() -> None:
     if not MODEL:
-        raise ValueError("请设置 model.model")
+        raise ConfigError("请设置 model.model")
     if not MODEL_API_KEY or MODEL_API_KEY.startswith("sk-your-api-key"):
-        raise ValueError("请设置 model.api_key 或环境变量 MODEL_API_KEY")
+        raise ConfigError("请设置 model.api_key 或环境变量 MODEL_API_KEY")
 
 
-def _resolve_debug() -> bool:
-    debug_section = CONFIG.get("debug")
-    if isinstance(debug_section, dict) and "enabled" in debug_section:
-        return bool(debug_section["enabled"])
-    server_section = CONFIG.get("server", {})
-    return bool(server_section.get("debug", False))
+def validate_startup_requirements() -> None:
+    """启动服务器前的必填配置校验（缺失 config.toml 时在此给出清晰错误）。"""
+    _validate_required_config()
 
 
-DEBUG: bool = _resolve_debug()
+def _resolve_file_debug(config_data: dict) -> bool:
+    """仅从 [server].debug 读取文件级默认值；CLI/env 覆盖由 resolve_server_config 处理。"""
+    server = config_data.get("server")
+    if isinstance(server, dict):
+        value = server.get("debug", False)
+        if isinstance(value, bool):
+            return value
+    return False
+
+
+def resolve_server_config(config_data: dict | None = None, cli_debug: bool | None = None) -> ServerConfig:
+    """按 CLI > PDF_READER_DEBUG > [server].debug > false 解析最终运行配置并严格校验。"""
+    if config_data is None and _CONFIG_LOAD_ERROR is not None:
+        raise ConfigError(_CONFIG_LOAD_ERROR)
+    data = CONFIG if config_data is None else config_data
+
+    server = data.get("server", {})
+    if not isinstance(server, dict):
+        raise ConfigError("[server] 必须是 TOML table（配置项应写在 [server] 段内）")
+
+    host = server.get("host", DEFAULT_HOST)
+    if not isinstance(host, str) or not host.strip():
+        raise ConfigError('[server].host 必须是非空字符串，例如 "127.0.0.1"')
+
+    port = server.get("port", DEFAULT_PORT)
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ConfigError("[server].port 必须是 1 到 65535 之间的整数，布尔值或字符串均不接受")
+
+    file_debug = server.get("debug", False)
+    if not isinstance(file_debug, bool):
+        raise ConfigError("[server].debug 必须是布尔值 true 或 false，不接受字符串或数字")
+
+    env_debug = parse_debug_env(os.environ.get("PDF_READER_DEBUG"))
+    debug = file_debug
+    if env_debug is not None:
+        debug = env_debug
+    if cli_debug is not None:
+        debug = cli_debug
+
+    return ServerConfig(host=host.strip(), port=port, debug=debug)
+
+
+DEBUG: bool = _resolve_file_debug(CONFIG)

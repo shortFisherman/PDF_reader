@@ -1,5 +1,6 @@
 import argparse
 import logging
+import sys
 
 from flask import Flask
 
@@ -10,15 +11,29 @@ from translation_coordinator import TranslationCoordinator
 
 logger = logging.getLogger("pdf_reader.app")
 
-_parser = argparse.ArgumentParser()
-_parser.add_argument("--debug", action="store_true", default=None, help="Enable debug tracing")
-_cli_args, _ = _parser.parse_known_args()
-if _cli_args.debug is not None:
-    config.DEBUG = _cli_args.debug
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="app.py", description="PDF Reader 本地双语 PDF 阅读服务")
+    debug_group = parser.add_mutually_exclusive_group()
+    debug_group.add_argument(
+        "--debug",
+        dest="debug",
+        action="store_true",
+        default=None,
+        help="开启调试模式（日志 DEBUG + Flask debugger/reloader），覆盖环境变量与 config.toml",
+    )
+    debug_group.add_argument(
+        "--no-debug",
+        dest="debug",
+        action="store_false",
+        help="关闭调试模式，覆盖环境变量与 config.toml",
+    )
+    return parser
 
 
-def create_app() -> Flask:
-    logging_config.setup_logging(config.DEBUG)
+def create_app(run_cfg: config.ServerConfig | None = None) -> Flask:
+    debug = config.DEBUG if run_cfg is None else run_cfg.debug
+    logging_config.setup_logging(debug)
 
     logger.info(
         "Starting PDF Reader provider=%s model=%s lang=%s->%s cache_dir=%s dpi=%d debug=%s",
@@ -28,7 +43,7 @@ def create_app() -> Flask:
         config.TRANSLATION_LANG_OUT,
         config.CACHE_DIR,
         config.DPI,
-        config.DEBUG,
+        debug,
     )
 
     app = Flask(__name__)
@@ -40,15 +55,33 @@ def create_app() -> Flask:
     return app
 
 
-if __name__ == "__main__":
-    app = create_app()
-    coordinator = app.config["translation_coordinator"]
-    server_debug = config.CONFIG.get("server", {}).get("debug", True)
-    host = config.CONFIG.get("server", {}).get("host", "127.0.0.1")
-    port = config.CONFIG.get("server", {}).get("port", 5000)
-    logger.info(f"Starting PDF Reader on http://{host}:{port}")
+def main(argv: list[str] | None = None) -> int:
+    """真实启动入口：解析 CLI、合并 debug 优先级、校验配置，然后启动 Flask。"""
+    args = _build_parser().parse_args(argv)
     try:
-        app.run(host=host, port=port, debug=server_debug)
+        run_cfg = config.resolve_server_config(cli_debug=args.debug)
+        config.DEBUG = run_cfg.debug
+        config.validate_startup_requirements()
+    except config.ConfigError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    app = create_app(run_cfg)
+    coordinator = app.config["translation_coordinator"]
+    logger.info(
+        "Starting PDF Reader on http://%s:%d (debug=%s, reloader=%s)",
+        run_cfg.host,
+        run_cfg.port,
+        run_cfg.debug,
+        run_cfg.use_reloader,
+    )
+    try:
+        app.run(
+            host=run_cfg.host,
+            port=run_cfg.port,
+            debug=run_cfg.debug,
+            use_reloader=run_cfg.use_reloader,
+        )
     finally:
         active_job = coordinator.active_job
         if active_job is not None:
@@ -56,3 +89,8 @@ if __name__ == "__main__":
                 "[job=%s] server shutting down with active translation job; worker may be orphaned",
                 active_job.job_id,
             )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

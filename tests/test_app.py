@@ -1,53 +1,278 @@
-import argparse
+import subprocess
 import sys
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+import app as app_module
+import config
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_cli_debug_flag_overrides_config():
-    """--debug flag sets config.DEBUG = True regardless of config file."""
-    with patch.object(sys, "argv", ["app.py", "--debug"]):
-        with patch("config.DEBUG", False):
-            parser = argparse.ArgumentParser()
-            parser.add_argument("--debug", action="store_true", default=None)
-            args, _ = parser.parse_known_args()
-
-            import config
-
-            if args.debug is not None:
-                config.DEBUG = args.debug
-
-            assert config.DEBUG is True
+@pytest.fixture
+def valid_model_config(monkeypatch):
+    """让 main() 通过必填模型校验；CI 无 config.toml 时也稳定。"""
+    monkeypatch.setattr(config, "MODEL", "deepseek-chat")
+    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
 
 
-def test_cli_no_debug_flag_does_not_override():
-    """When --debug is not passed, config.DEBUG keeps its config.toml value."""
-    with patch.object(sys, "argv", ["app.py"]):
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--debug", action="store_true", default=None)
-        args, _ = parser.parse_known_args()
-
-        import config
-
-        original = config.DEBUG
-        if args.debug is not None:
-            config.DEBUG = args.debug
-
-        assert config.DEBUG == original
+@pytest.fixture
+def main_entry(monkeypatch, valid_model_config):
+    """用 mock create_app/app.run 调用真实 main(argv) 入口，不启动服务器。"""
+    mock_app = MagicMock()
+    monkeypatch.setattr(app_module, "create_app", lambda run_cfg=None: mock_app)
+    monkeypatch.setattr(config, "DEBUG", False)
+    return mock_app, lambda argv=None: app_module.main(argv)
 
 
-def test_import_app_does_not_trigger_side_effects():
-    """Importing app module does NOT set config.DEBUG=True or apply patches."""
-    with patch("config.DEBUG", False):
-        with patch("app.logging_config.setup_logging", create=True) as mock_setup:
-            import app  # noqa: F401
+class TestMainDebugPriority:
+    def test_default_debug_false_and_reloader_false(self, monkeypatch, main_entry):
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.setattr(config, "CONFIG", {})
+        mock_app, run = main_entry
 
-            mock_setup.assert_not_called()
+        assert run([]) == 0
+
+        mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+        assert config.DEBUG is False
+
+    def test_cli_debug_overrides_env_and_config(self, monkeypatch, main_entry):
+        monkeypatch.setenv("PDF_READER_DEBUG", "false")
+        monkeypatch.setattr(config, "CONFIG", {"server": {"debug": False}})
+        mock_app, run = main_entry
+
+        assert run(["--debug"]) == 0
+
+        mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=True, use_reloader=True)
+        assert config.DEBUG is True
+
+    def test_cli_no_debug_overrides_env_and_config(self, monkeypatch, main_entry):
+        monkeypatch.setenv("PDF_READER_DEBUG", "true")
+        monkeypatch.setattr(config, "CONFIG", {"server": {"host": "0.0.0.0", "port": 8000, "debug": True}})
+        mock_app, run = main_entry
+
+        assert run(["--no-debug"]) == 0
+
+        mock_app.run.assert_called_once_with(host="0.0.0.0", port=8000, debug=False, use_reloader=False)
+        assert config.DEBUG is False
+
+    def test_env_true_overrides_config_false(self, monkeypatch, main_entry):
+        monkeypatch.setenv("PDF_READER_DEBUG", "true")
+        monkeypatch.setattr(config, "CONFIG", {"server": {"debug": False}})
+        mock_app, run = main_entry
+
+        assert run([]) == 0
+
+        mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=True, use_reloader=True)
+
+    def test_env_false_overrides_config_true(self, monkeypatch, main_entry):
+        monkeypatch.setenv("PDF_READER_DEBUG", "0")
+        monkeypatch.setattr(config, "CONFIG", {"server": {"debug": True}})
+        mock_app, run = main_entry
+
+        assert run([]) == 0
+
+        mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+
+    def test_config_true_when_no_env_or_cli(self, monkeypatch, main_entry):
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.setattr(config, "CONFIG", {"server": {"debug": True}})
+        mock_app, run = main_entry
+
+        assert run([]) == 0
+
+        mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=True, use_reloader=True)
 
 
-def test_create_app_calls_setup_logging():
-    """create_app() explicitly calls setup_logging(config.DEBUG)."""
-    with patch("app.logging_config.setup_logging") as mock_setup:
-        from app import create_app
+class TestMainErrorPaths:
+    def test_cli_debug_and_no_debug_are_mutually_exclusive(self, main_entry):
+        mock_app, run = main_entry
 
-        create_app()
-        mock_setup.assert_called_once()
+        with pytest.raises(SystemExit) as excinfo:
+            run(["--debug", "--no-debug"])
+
+        assert excinfo.value.code == 2
+        mock_app.run.assert_not_called()
+
+    def test_invalid_env_value_returns_2(self, monkeypatch, main_entry, capsys):
+        monkeypatch.setenv("PDF_READER_DEBUG", "banana")
+        monkeypatch.setattr(config, "CONFIG", {})
+        mock_app, run = main_entry
+
+        assert run([]) == 2
+
+        stderr = capsys.readouterr().err
+        assert "ERROR:" in stderr
+        assert "PDF_READER_DEBUG 非法值" in stderr
+        assert "true/false/1/0/on/off/yes/no" in stderr
+        mock_app.run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("server", "message"),
+        [
+            ("not-a-table", "[server] 必须是 TOML table"),
+            ({"host": ""}, "host 必须是非空字符串"),
+            ({"host": 123}, "host 必须是非空字符串"),
+            ({"port": "5000"}, "port 必须是 1 到 65535"),
+            ({"port": True}, "port 必须是 1 到 65535"),
+            ({"port": 0}, "port 必须是 1 到 65535"),
+            ({"port": 65536}, "port 必须是 1 到 65535"),
+            ({"debug": "false"}, "debug 必须是布尔值"),
+            ({"debug": 0}, "debug 必须是布尔值"),
+        ],
+    )
+    def test_invalid_server_config_returns_2(self, monkeypatch, main_entry, capsys, server, message):
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.setattr(config, "CONFIG", {"server": server})
+        mock_app, run = main_entry
+
+        assert run([]) == 2
+
+        stderr = capsys.readouterr().err
+        assert "ERROR:" in stderr
+        assert message in stderr
+        mock_app.run.assert_not_called()
+
+    def test_missing_model_name_blocks_startup(self, monkeypatch, main_entry, capsys):
+        monkeypatch.setattr(config, "MODEL", "")
+        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.setattr(config, "CONFIG", {})
+        mock_app, run = main_entry
+
+        assert run([]) == 2
+
+        assert "model.model" in capsys.readouterr().err
+        mock_app.run.assert_not_called()
+
+    def test_missing_api_key_blocks_startup(self, monkeypatch, main_entry, capsys):
+        monkeypatch.setattr(config, "MODEL", "deepseek-chat")
+        monkeypatch.setattr(config, "MODEL_API_KEY", "")
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.setattr(config, "CONFIG", {})
+        mock_app, run = main_entry
+
+        assert run([]) == 2
+
+        assert "model.api_key 或环境变量 MODEL_API_KEY" in capsys.readouterr().err
+        mock_app.run.assert_not_called()
+
+    def test_toml_syntax_error_surfaces_as_startup_error(self, monkeypatch, main_entry, capsys):
+        monkeypatch.setattr(
+            config,
+            "_CONFIG_LOAD_ERROR",
+            "TOML 语法错误（C:/bad/config.toml）：Invalid statement",
+        )
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        mock_app, run = main_entry
+
+        assert run([]) == 2
+
+        assert "TOML 语法错误" in capsys.readouterr().err
+        mock_app.run.assert_not_called()
+
+    def test_errors_never_include_api_key(self, monkeypatch, main_entry, capsys):
+        monkeypatch.setattr(config, "MODEL", "")
+        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-super-secret-value")
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.setattr(config, "CONFIG", {})
+        mock_app, run = main_entry
+
+        assert run([]) == 2
+
+        assert "sk-super-secret-value" not in capsys.readouterr().err
+
+
+class TestImportHasNoCliSideEffects:
+    def test_import_app_does_not_parse_cli_or_modify_config_debug(self):
+        original_debug = config.DEBUG
+        with patch.object(sys, "argv", ["app.py", "--debug"]):
+            with patch("logging_config.setup_logging") as mock_setup:
+                with patch.dict(sys.modules):
+                    sys.modules.pop("app", None)
+                    import app as fresh_app  # noqa: F401
+
+                    assert config.DEBUG == original_debug
+                    assert not hasattr(fresh_app, "_parser")
+                    assert callable(fresh_app.main)
+                    mock_setup.assert_not_called()
+
+
+class TestCreateAppLogging:
+    def test_create_app_uses_resolved_debug(self, monkeypatch):
+        monkeypatch.setattr(config, "DEBUG", False)
+        with patch("app.logging_config.setup_logging") as mock_setup:
+            app_module.create_app(config.ServerConfig(host="127.0.0.1", port=5000, debug=True))
+            mock_setup.assert_called_once_with(True)
+
+    def test_create_app_default_uses_config_debug(self, monkeypatch):
+        monkeypatch.setattr(config, "DEBUG", True)
+        with patch("app.logging_config.setup_logging") as mock_setup:
+            app_module.create_app()
+            mock_setup.assert_called_once_with(True)
+
+    def test_main_logging_and_run_share_one_debug(self, monkeypatch):
+        """真实 create_app：setup_logging 与 app.run 收到同一个解析后的 debug。"""
+        from flask import Flask
+
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.setattr(config, "CONFIG", {})
+        monkeypatch.setattr(config, "MODEL", "deepseek-chat")
+        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
+        monkeypatch.setattr(config, "DEBUG", False)
+        with patch("app.logging_config.setup_logging") as mock_setup:
+            with patch.object(Flask, "run") as mock_run:
+                assert app_module.main(["--debug"]) == 0
+
+        mock_setup.assert_called_once_with(True)
+        mock_run.assert_called_once_with(host="127.0.0.1", port=5000, debug=True, use_reloader=True)
+        assert config.DEBUG is True
+
+    def test_main_default_logging_and_run_share_false(self, monkeypatch):
+        from flask import Flask
+
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.setattr(config, "CONFIG", {})
+        monkeypatch.setattr(config, "MODEL", "deepseek-chat")
+        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
+        monkeypatch.setattr(config, "DEBUG", False)
+        with patch("app.logging_config.setup_logging") as mock_setup:
+            with patch.object(Flask, "run") as mock_run:
+                assert app_module.main([]) == 0
+
+        mock_setup.assert_called_once_with(False)
+        mock_run.assert_called_once_with(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+        assert config.DEBUG is False
+
+
+class TestRealEntry:
+    def test_mutually_exclusive_flags_exit_nonzero(self):
+        result = subprocess.run(
+            [sys.executable, "app.py", "--debug", "--no-debug"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
+        assert result.returncode != 0
+        assert "not allowed with argument --debug" in result.stderr
+
+    def test_invalid_env_exits_nonzero_with_clear_error(self):
+        import os
+
+        env = os.environ.copy()
+        env["PDF_READER_DEBUG"] = "banana"
+        result = subprocess.run(
+            [sys.executable, "app.py"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=15,
+        )
+
+        assert result.returncode != 0
+        assert "PDF_READER_DEBUG 非法值" in result.stderr
