@@ -79,7 +79,7 @@
 | P1-02 | P1 | PDF 替换失败恢复与事务边界 | `已完成` | P0-01 |
 | P1-03 | P1 | 术语表原子写入与任务隔离 | `已完成` | P0-02 |
 | P1-04 | P1 | 建立系统级并发和故障回归测试 | `已完成` | P0/P1 对应设计 |
-| P1-05 | P1 | 修复启动脚本误杀进程风险 | `待处理` | 无 |
+| P1-05 | P1 | 修复启动脚本误杀进程风险 | `已完成` | 无 |
 | P1-06 | P1 | 统一 debug、启动和配置语义 | `待处理` | 无 |
 | P2-01 | P2 | 迁移为 `src/pdf_reader` 包布局 | `待处理` | P0/P1 稳定后 |
 | P2-02 | P2 | 拆分前端页面协调与翻译 UI 状态 | `待处理` | P0-02 的任务语义稳定后 |
@@ -324,18 +324,19 @@ TranslationCoordinator
 
 ### P1-05 修复启动脚本误杀进程风险
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：`start.bat` 会强制终止占用 5000 端口的任意 PID，可能杀掉与本项目无关的程序。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`c92d053`
+- 验证证据：`tests/test_start_bat.py` 在 Windows 下把真实 `start.bat` 复制到 pytest 临时目录，用 fake `netstat.cmd`/`taskkill.cmd`/`python.cmd`/`activate.bat` 执行真实脚本：断言源文件不含 `taskkill`/`tskill`/`Stop-Process`/`kill` 等终止命令；模拟 5000 被占用时脚本退出非零、不调用 python 也不调用 taskkill；无冲突时激活 venv 并调用 `python app.py`；`venv` 缺失时给出提示并非零退出。先用旧脚本运行得到 3 个 RED 失败，修复后 4 个用例全部通过；执行 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"`，273 个 Python 测试与全部前端测试通过。
+- 剩余问题：无。端口 5000 被占用时脚本只检测 `LISTENING` 并报告，不提供自动释放功能；占用进程由用户按 README 指引自行确认并处理，或改用 `config.toml` 的 `[server].port` 指定其他端口。
 
 #### 目标与验收
 
-- [ ] 默认只报告端口占用并退出或提示用户处理。
-- [ ] 不在未经确认时执行 `taskkill /F`。
-- [ ] 如果保留终止功能，必须验证进程属于本项目并要求显式确认。
-- [ ] README 说明端口冲突处理方法。
+- [x] 默认只报告端口占用并退出或提示用户处理。
+- [x] 不在未经确认时执行 `taskkill /F`。
+- [x] 如果保留终止功能，必须验证进程属于本项目并要求显式确认。（本项未保留任何终止功能：`start.bat` 不包含 `taskkill`/`Stop-Process` 等进程终止命令，自动化测试固定该约束。）
+- [x] README 说明端口冲突处理方法。
+- [x] 自动化验收覆盖「5000 被占用」与「无冲突」两条真实脚本执行路径、脚本源不含终止命令以及 `venv` 缺失提示；测试适配 Windows CI，不绑定真实端口、不启动服务器、不杀任何进程。
 
 ### P1-06 统一 debug、启动和配置语义
 
@@ -745,6 +746,7 @@ PDF_reader/
 
 | 日期 | 编号 | 状态 | 提交 | 说明 |
 |---|---|---|---|---|
+| 2026-08-29 | P1-05 | 已完成 | `c92d053` | `start.bat` 改为最小安全策略：检测到 5000 被占用时只报告 PID 与排查命令并以非零退出，彻底移除 `taskkill /F`；正常路径仍激活仓库 `venv` 并运行 `python app.py`，`venv` 缺失时给出创建/安装提示并非零退出。新增 `tests/test_start_bat.py`（4 个用例）以 fake netstat/taskkill/python 验证占用拒绝、无冲突启动、venv 缺失与源码无终止命令；完整验证 273 个 Python 测试与全部前端测试通过。 |
 | 2026-08-29 | P1-04 | 已完成 | `b2df768` | 新增 16 个系统级并发与故障回归用例，穿过真实 Flask route、SSE generator、单任务协调器、真实 worker 线程、AppState 与磁盘边界，仅外部翻译引擎使用受控 fake；固定「先 PDF、后术语表」的部分提交语义；单页/批量提交失败、SSE 断开、join timeout、临时/输出目录与 PDF 保存失败均有最终文件、身份、任务与资源清理断言；完整验证 269 个 Python 测试与全部前端测试通过。 |
 | 2026-08-29 | P1-03 | 已完成 | `577da48` | 术语合并改为模块级互斥锁 + 同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交；打开临时文件、`os.fsync` 中途写入与 `os.replace` 提交失败均保留旧 CSV 并清理临时文件；损坏或错误表头累计文件中止合并保留旧文件；新增 13 个术语表回归测试（含真实合并路径的迟到身份拒绝与并发不丢更新）。 |
 | 2026-08-29 | P1-02 | 已完成 | `1b8c36f` | `replace_page`/`replace_pages` 改为共享 `_commit_replacement()` 事务：页修改在工作副本上完成，临时文件关闭后再 `os.replace`，磁盘提交成功后才替换内存句柄与 `_translated_pages`；失败路径清理 `.tmp`、关闭全部泄漏句柄并恢复可渲染句柄。新增 11 个故障注入回归测试。 |
