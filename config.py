@@ -16,7 +16,9 @@ from pdf2zh_next.config.translate_engine_model import (
     ZhipuSettings,
 )
 
-CONFIG_PATH = Path(__file__).parent / "config.toml"
+import paths
+
+CONFIG_PATH = paths.get_config_path()
 
 
 class ConfigError(ValueError):
@@ -235,8 +237,8 @@ PROVIDER_INDEX: dict[str, EngineSpec] = {spec.provider: spec for spec in ENGINE_
 
 pdf_reader_cfg = _section(CONFIG, "pdf_reader")
 DPI = pdf_reader_cfg.get("dpi", 200)
-CACHE_DIR = Path(_string(pdf_reader_cfg.get("cache_dir"), "cache")).resolve()
-GLOSSARY_PATH = Path(__file__).parent / "docs" / "glossary.csv"
+CACHE_DIR = paths.resolve_cache_dir(_string(pdf_reader_cfg.get("cache_dir"), "cache"))
+GLOSSARY_PATH = paths.get_glossary_path()
 translation_cfg = _section(CONFIG, "translation")
 TRANSLATION_LANG_IN = _string(translation_cfg.get("lang_in"), "en")
 TRANSLATION_LANG_OUT = _string(translation_cfg.get("lang_out"), "zh")

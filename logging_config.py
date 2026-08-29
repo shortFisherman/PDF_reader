@@ -1,9 +1,10 @@
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
-LOG_DIR = Path("logs")
+import paths
+
+LOG_DIR = paths.get_log_dir()
 
 
 def setup_logging(debug: bool = False) -> None:
@@ -40,3 +41,14 @@ def setup_logging(debug: bool = False) -> None:
     third_party_level = logging.DEBUG if debug else logging.WARNING
     for name in ("werkzeug", "pdf2zh_next", "babeldoc"):
         logging.getLogger(name).setLevel(third_party_level)
+
+
+def reset_logging() -> None:
+    """关闭并移除 pdf_reader 根 logger 的全部 handler（测试隔离用）。"""
+    root_pdf = logging.getLogger("pdf_reader")
+    for handler in list(root_pdf.handlers):
+        root_pdf.removeHandler(handler)
+        try:
+            handler.close()
+        except Exception:
+            pass

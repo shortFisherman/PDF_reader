@@ -75,6 +75,23 @@ $env:MODEL_API_KEY = 'your-api-key'
 
 完整配置字段和模型示例见 `config.example.toml`。API Key 不应提交到 Git。
 
+## 路径约定
+
+项目资源位置与运行数据位置由根目录 `paths.py` 统一解析，与启动时的当前工作目录（CWD）无关：
+
+| 路径 | 基准 | 说明 |
+|---|---|---|
+| `config.toml` | `PROJECT_ROOT` | 用户配置；缺失时安全回退为空配置 |
+| `docs/glossary.csv` | `PROJECT_ROOT` | 仓库级手动术语表 |
+| `templates/`、`static/` | `PROJECT_ROOT` | Flask 显式使用统一资源根 |
+| `logs/` | `DATA_ROOT` | 轮转应用日志 |
+| 相对 `cache_dir` | `DATA_ROOT` | 相对配置值按 `DATA_ROOT` 解析 |
+| 绝对 `cache_dir` | 原样 | 不被重写 |
+
+- `PROJECT_ROOT`（项目资源根）＝仓库根。`paths.py` 从自身位置向上查找 `config.example.toml` 标记；P2-01 把模块迁入 `src/pdf_reader/` 后，同一规则会自动回到仓库根，无需改数据位置。环境变量 `PDF_READER_ROOT` 可显式覆盖。
+- `DATA_ROOT`（运行数据根）默认等于 `PROJECT_ROOT`：日志仍在仓库 `logs/`，相对缓存仍在仓库根下。环境变量 `PDF_READER_DATA_ROOT` 可覆盖（测试隔离等场景）。
+- 从任意 CWD 通过仓库入口的绝对/已解析路径启动（例如 `C:\...\python.exe C:\...\app.py`，或先 `cd` 到仓库根再运行），配置、手动术语表、模板、静态文件、日志和缓存位置一致；`start.bat` 自身仍会切换到仓库根。
+
 ### debug 优先级与安全默认值
 
 | 来源 | 示例 | 优先级 |

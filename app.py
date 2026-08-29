@@ -6,6 +6,7 @@ from flask import Flask
 
 import config
 import logging_config
+import paths
 from state import AppState
 from translation_coordinator import TranslationCoordinator
 
@@ -46,7 +47,11 @@ def create_app(run_cfg: config.ServerConfig | None = None) -> Flask:
         debug,
     )
 
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        template_folder=str(paths.get_resource_root() / "templates"),
+        static_folder=str(paths.get_resource_root() / "static"),
+    )
     app.config["app_state"] = AppState(config.CACHE_DIR)
     app.config["translation_coordinator"] = TranslationCoordinator()
     from routes import register_routes

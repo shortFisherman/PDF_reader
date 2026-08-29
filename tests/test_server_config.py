@@ -1,12 +1,13 @@
 import io
+import json
 import sys
 import types
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 import config
+import paths
 
 
 @pytest.fixture(autouse=True)
@@ -253,12 +254,29 @@ class TestImportTypeSafety:
         assert fresh.MODEL_PROVIDER == "openai_compatible"
         assert fresh.MODEL_API_KEY == ""
         assert fresh.MODEL_BASE_URL is None
-        assert fresh.CACHE_DIR == Path("cache").resolve()
+        assert fresh.CACHE_DIR == paths.resolve_cache_dir("cache")
         assert fresh.TRANSLATION_LANG_IN == "en"
         assert fresh.TRANSLATION_LANG_OUT == "zh"
 
         with pytest.raises(fresh.ConfigError, match=r"\[model\] 必须是 TOML table"):
             fresh.validate_startup_requirements()
+
+    def test_import_keeps_absolute_cache_dir(self, monkeypatch, tmp_path):
+        abs_cache = tmp_path / "abs-cache"
+        toml = (
+            b"[model]\n"
+            b"provider = 'deepseek'\n"
+            b"model = 'deepseek-chat'\n"
+            b"api_key = 'sk-test'\n"
+            b"[pdf_reader]\n"
+            b"dpi = 200\n"
+            b"cache_dir = " + json.dumps(str(abs_cache)).encode() + b"\n"
+            b"[translation]\n"
+            b"lang_in = 'en'\n"
+            b"lang_out = 'zh'\n"
+        )
+        fresh = self._reimport(toml, monkeypatch)
+        assert fresh.CACHE_DIR == abs_cache.resolve()
 
     def test_import_survives_invalid_model_field_types(self, monkeypatch):
         fresh = self._reimport(

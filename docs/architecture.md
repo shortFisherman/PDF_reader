@@ -38,6 +38,7 @@
 | `app.py` | 启动边界 `main(argv)`、`create_app()` 装配 Flask 与全局 `AppState`、启动服务 |
 | `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python app.py` |
 | `config.py` | 读取 `config.toml`、定义 `EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
+| `paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
 | `routes.py` | Blueprint：9 个 HTTP/SSE 端点与 JSON 404 处理器 |
 | `state.py` | `AppState`：不可变文档会话身份、锁内翻译快照、左右文档、缓存路径、哈希、页数/尺寸、翻译页集合、阅读进度、非重入锁 |
 | `file_hash.py` | `sha256()` 流式文件哈希 |
@@ -57,7 +58,7 @@
 | `static/app.js` | 前端入口与共享状态 |
 | `static/modules/` | dom、lazy-loader、scroll-sync、alignment-controller、zoom、sse-client、stages、translator |
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
-| `tests/` | 21 个 pytest 文件（394 用例）与前端 `.mjs` 测试运行器 |
+| `tests/` | 23 个 pytest 文件（含 P2-07 路径与 CWD 隔离用例）与前端 `.mjs` 测试运行器 |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
 | `docs/`、`docs/archive/`、`docs/reports/` | 常青文档、历史归档与上游研究资料 |
@@ -78,21 +79,21 @@
 2. `config.resolve_server_config(cli_debug=...)` 按优先级 CLI `--debug`/`--no-debug` > 环境变量 `PDF_READER_DEBUG` > `[server].debug` > 默认 `false` 解析，返回 frozen `ServerConfig(host, port, debug)`；`use_reloader` 派生为与 `debug` 相同的值（debug 开 → Flask debugger+reloader 开，关 → 两者显式关闭）。
 3. `main` 把同一个解析结果写入 `config.DEBUG`（供 `debug_trace` 等消费），再调用 `config.validate_startup_requirements()` 统一校验 `[model]`/`[pdf_reader]`/`[translation]` 的 table 与核心字段类型；缺少 `model.model`、API Key 或 API Key 为示例值时抛 `ConfigError`，main 打印 `ERROR:` 并以退出码 2 结束，不启动服务器。
 4. `create_app(run_cfg)` 使用 `run_cfg.debug` 调用 `logging_config.setup_logging(...)`，输出启动摘要（provider/model/lang/cache_dir/dpi/debug，不含 api_key）。
-5. 创建 `Flask(__name__)`，装配全局 `AppState(config.CACHE_DIR)` 与 `TranslationCoordinator()`，导入并注册 `routes.register_routes`。
+5. 创建 `Flask(__name__)` 并显式传入 `template_folder=PROJECT_ROOT/templates`、`static_folder=PROJECT_ROOT/static`（由 `paths.py` 解析），装配全局 `AppState(config.CACHE_DIR)` 与 `TranslationCoordinator()`，导入并注册 `routes.register_routes`。
 6. `app.run(host=..., port=..., debug=..., use_reloader=...)` 显式传入全部四个参数，默认 `debug=False, use_reloader=False`；`app.run()` 返回或异常退出时检查协调器，仍有 active job 则记录 WARNING（worker 可能成为孤儿）。
 7. 配置错误路径：TOML 语法错误在配置导入时被捕获（`config._CONFIG_LOAD_ERROR`），首次解析配置时抛 `ConfigError`；`[server]` 类型/范围错误与 `PDF_READER_DEBUG` 非法值同样由 `resolve_server_config` 抛 `ConfigError`；`--debug`/`--no-debug` 互斥由 argparse 报错。所有路径都在启动服务器前以非零状态退出。
 - `start.bat` 是 Windows 便捷启动入口：切换到仓库根目录后先检查 `.\venv\Scripts\python.exe`（缺失时打印创建/安装命令并不为零退出），再用 `netstat -ano -p tcp | findstr "LISTENING" | findstr ":5000 "` 检测端口占用；若 5000 已被监听，打印占用 PID 与 `netstat`/`tasklist` 排查命令并以非零状态退出，绝不执行 `taskkill`/`Stop-Process` 等终止命令；无冲突时 `call .\venv\Scripts\activate.bat` 激活既有虚拟环境并运行 `python app.py`。
 
 ## 配置加载与 Provider 映射
 
-- `config.py` 读取仓库根目录 `config.toml`；文件不存在时配置回退为空字典，不在导入期抛错。
+- `config.py` 经 `paths.py` 读取 `PROJECT_ROOT/config.toml`（`CONFIG_PATH`）。`PROJECT_ROOT` 默认由 `paths.py` 从模块位置向上查找 `config.example.toml` 标记得到（P2-01 迁入 `src/pdf_reader/` 后自动回到仓库根），也可用环境变量 `PDF_READER_ROOT` 显式覆盖；文件不存在时配置回退为空字典，不在导入期抛错。
 - 导入安全：`_section`/`_string` 安全提取，非 table section 与非字符串字段在导入期使用安全默认值（不会因 `AttributeError`/`TypeError` 崩溃）；原始 `CONFIG` 保留供启动校验。
 - 环境变量覆盖：`MODEL_API_KEY`（优先级高于 `model.api_key`）；`PDF_READER_DEBUG` 是 debug 优先级中间层，只接受 `true/false/1/0/on/off/yes/no`（不区分大小写、忽略首尾空白），非法值启动时报错（即使 CLI 显式覆盖也会 fail-fast）。
 - `[server]` 严格校验：必须是 table；`host` 非空字符串；`port` 是 1–65535 的 int（布尔值不算）；`debug` 必须为真布尔值。旧的 `[debug].enabled` 键已停止使用。
-- 默认值：provider=`openai_compatible`、dpi=200、cache_dir=`cache`（`Path.resolve()`）、lang_in=`en`、lang_out=`zh`。
+- 默认值：provider=`openai_compatible`、dpi=200、cache_dir=`cache`、lang_in=`en`、lang_out=`zh`。相对 `cache_dir` 以 `DATA_ROOT`（默认等于 `PROJECT_ROOT`）为基准解析并 `resolve()`；绝对 `cache_dir` 保持绝对，不被重写。`DATA_ROOT` 可用环境变量 `PDF_READER_DATA_ROOT` 覆盖。
 - 统一校验 `validate_startup_requirements()`（`app.main` 启动前调用）：`[model]`、`[pdf_reader]`、`[translation]` 存在则必须为 table；`model.provider`/`model.model`/`model.api_key`/`model.base_url`（若有）必须是非空字符串（int/bool/list 拒绝，不泄漏密钥）；`pdf_reader.dpi` 必须为正整数（bool 不算）、`cache_dir` 必须为非空字符串；`translation.lang_in/lang_out` 必须为非空字符串。
 - `MODEL_API_KEY` 环境值合法（非空且非示例占位值）时覆盖文件中无效的 `api_key`，但 `[model]` 段本身仍必须是 table；`engine_resolver.resolve_engine()` 入口仍保留同样的延迟必填校验。
-- `GLOSSARY_PATH` 硬编码为仓库根 `docs/glossary.csv`，必须保持该路径。
+- `GLOSSARY_PATH = PROJECT_ROOT/docs/glossary.csv`（由 `paths.py` 派生），必须保持该路径；模块迁入 `src/pdf_reader/` 后不因 `__file__` 变化而改变。
 - `ENGINE_REGISTRY` 用声明式 `EngineSpec` 注册 10 个 Provider，顺序为：`deepseek`、`zhipu`、`siliconflow`、`aliyun`、`gemini`、`groq`、`grok`、`modelscope`、`openai`、`openai_compatible`。
 - 未知 Provider 在通过必填校验后回退到 `openai_compatible`。
 - `translation_settings.build_settings()`：设置 `lang_in`/`lang_out`，`ignore_cache=True`，`save_auto_extracted_glossary=True`；有自定义提示词时写入 `custom_system_prompt`；把非空的 `docs/glossary.csv` 与累积术语路径拼为 `glossaries`；`output` 由生成器设置；PDF 参数为 `pages`、`no_dual=True`、`only_include_translated_page=True`、`watermark_output_mode="no_watermark"`。
@@ -128,12 +129,14 @@
 
 | 路径/数据 | 说明 |
 |---|---|
-| `cache/<hash>/right.pdf` | 每文档持久化的译文工作副本，首次打开复制源文件，翻译后原子替换 |
-| `cache/<hash>/cumulative_glossary.csv` | 每文档累积术语表，读—合并—写受模块级互斥锁保护；同目录 `.tmp` 写入并 flush/fsync/close 后 `os.replace` 原子提交；读取失败或表头缺少 source/target 时中止合并保留旧文件，写入/replace 失败保留旧文件并清理临时文件 |
-| `cache/<hash>/reading_progress.json` | 零基阅读页码，`.tmp` + `os.replace` 原子写；损坏/越界时安全降级 |
-| `logs/pdf_reader.log` | `logging_config` 配置的轮转应用日志（5MB × 5，utf-8） |
-| `cache/<hash>/debug_trace.log` | 仅 debug 模式且存在缓存路径时，由 `debug_session` 创建并在会话开始前轮转 |
-| `docs/glossary.csv` | 仓库级手动术语表，`config.py` 硬编码读取，非空时参与每次翻译 |
+| `DATA_ROOT/cache/<hash>/right.pdf` | 每文档持久化的译文工作副本，首次打开复制源文件，翻译后原子替换 |
+| `DATA_ROOT/cache/<hash>/cumulative_glossary.csv` | 每文档累积术语表，读—合并—写受模块级互斥锁保护；同目录 `.tmp` 写入并 flush/fsync/close 后 `os.replace` 原子提交；读取失败或表头缺少 source/target 时中止合并保留旧文件，写入/replace 失败保留旧文件并清理临时文件 |
+| `DATA_ROOT/cache/<hash>/reading_progress.json` | 零基阅读页码，`.tmp` + `os.replace` 原子写；损坏/越界时安全降级 |
+| `DATA_ROOT/logs/pdf_reader.log` | `logging_config` 配置的轮转应用日志（5MB × 5，utf-8） |
+| `DATA_ROOT/cache/<hash>/debug_trace.log` | 仅 debug 模式且存在缓存路径时，由 `debug_session` 创建并在会话开始前轮转 |
+| `PROJECT_ROOT/docs/glossary.csv` | 仓库级手动术语表，由 `paths.py` 解析，非空时参与每次翻译 |
+
+`DATA_ROOT` 默认等于 `PROJECT_ROOT`（仓库根），因此正常本地运行的数据位置与既有约定一致：`cache/`、`logs/` 仍在仓库根下；`PDF_READER_DATA_ROOT` 只用于测试隔离或未来显式分离运行数据。
 
 `AppState` 另维护当前 `_document_id`、`_translated_pages`（`translated_pages` 冻结集合）与左右 PyMuPDF 文档对象；`open_pdf` 会使旧身份失效并清空旧文档与翻译页集合。SSE 断开后任务先被协作式取消；迟到任务若仍自然结束，其结果被丢弃（不进入写回），抽取、PDF 提交与术语提交的写回边界仍受身份校验约束。
 
@@ -185,7 +188,7 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 | INFO | 流程里程碑（打开、翻译起止、替换、合并完成、启动摘要） |
 | DEBUG | 高频/细节（渲染、抽取、token 用量、端点入口） |
 
-翻译流日志以 `[job=<uuid>]` 关联任务，并继续保留 `[page=N]` 或 `[batch=from-to]` 前缀；协调器 start/finish/fail、SSE、后台线程、生命周期、Token 与术语调试记录都携带同一 `job_id`。日志中不输出 api_key 原值。`logging_config.setup_logging()` 幂等，创建控制台 + `RotatingFileHandler`（5MB × 5），debug 关闭时 `werkzeug`/`pdf2zh_next`/`babeldoc` 抬到 WARNING，debug 开启时降到 DEBUG。
+翻译流日志以 `[job=<uuid>]` 关联任务，并继续保留 `[page=N]` 或 `[batch=from-to]` 前缀；协调器 start/finish/fail、SSE、后台线程、生命周期、Token 与术语调试记录都携带同一 `job_id`。日志中不输出 api_key 原值。`logging_config.setup_logging()` 幂等，`LOG_DIR = paths.get_log_dir()`（默认 `DATA_ROOT/logs`），创建控制台 + `RotatingFileHandler`（5MB × 5），debug 关闭时 `werkzeug`/`pdf2zh_next`/`babeldoc` 抬到 WARNING，debug 开启时降到 DEBUG。`logging_config.reset_logging()` 关闭并移除 `pdf_reader` 根 logger 的 handler，供测试隔离可靠释放文件句柄。
 
 日志级别与 Flask 服务共享同一个由 `main` 解析出的 debug 布尔：`create_app` 的 `setup_logging(debug)` 与 `app.run(debug=..., use_reloader=...)` 来自同一 `ServerConfig`，不会出现日志 debug 与 server debug 分叉。
 
@@ -195,7 +198,9 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 `requirements.txt` 只声明直接运行依赖，`requirements-dev.txt` 在运行依赖之上声明 pytest 与 Ruff；`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从开发依赖入口生成。锁文件不包含 editable、本机路径或 `file:///` 来源。
 
-统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（394 个 Python 测试）→ `npm test`（四个前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
+统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（全部 Python 测试）→ `npm test`（前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
+
+测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
 
 启动脚本安全回归：`tests/test_start_bat.py` 在 Windows 下把真实 `start.bat` 复制到 pytest 临时目录，用 fake `netstat.cmd`/`taskkill.cmd`/`python.cmd`/`activate.bat` 在 PATH 上执行真实脚本：断言源文件不含 `taskkill`/`tskill`/`Stop-Process`/`kill` 等终止命令；模拟 5000 被占用时脚本退出非零、不调用 python 也不调用 taskkill；无占用时激活 venv 并调用 `python app.py`；`venv` 缺失时给出提示并非零退出。测试不绑定真实端口、不启动服务器、不杀任何进程。
 
