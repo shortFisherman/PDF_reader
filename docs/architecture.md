@@ -44,9 +44,9 @@
 | `pdf_extraction.py` | `extract_single_page()` / `extract_pages()` 在锁内抽取临时输入 PDF |
 | `engine_resolver.py` | `resolve_engine()`（未知 Provider 回退 openai_compatible）与 `build_engine_kwargs()` |
 | `translation_settings.py` | `build_settings()` 组装 pdf2zh-next `SettingsModel` |
-| `translation_orchestrator.py` | `run_translation()`：daemon 线程 + asyncio 循环 + 事件队列 |
-| `translation_coordinator.py` | 单槽 `TranslationCoordinator`：线程安全的 active job、任务身份、409 互斥与幂等释放 |
-| `sse_stream.py` | SSE 格式化、`generate()` / `generate_batch()`、`STAGE_LABELS`、临时目录清理 |
+| `translation_orchestrator.py` | `TranslationStream`：daemon worker 线程 + asyncio 循环 + 事件队列 + 协作式取消；`run_translation()` 工厂 |
+| `translation_coordinator.py` | 单槽 `TranslationCoordinator`：线程安全的 active job、任务身份、409 互斥与 finish/fail/cancel 幂等释放 |
+| `sse_stream.py` | SSE 格式化、`generate()` / `generate_batch()`、`STAGE_LABELS`、worker 退出确认后的临时目录清理 |
 | `translation_lifecycle.py` | `finish_translation()` / `merge_glossary_only()`：译文持久化与术语合并 |
 | `glossary_service.py` | 累积术语路径解析与合并入口 |
 | `glossary_merger.py` | 术语多数投票合并（BOM 安全读写） |
@@ -56,7 +56,7 @@
 | `static/app.js` | 前端入口与共享状态 |
 | `static/modules/` | dom、lazy-loader、scroll-sync、alignment-controller、zoom、sse-client、stages、translator |
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
-| `tests/` | 18 个 pytest 文件（222 用例）与前端 `.mjs` 测试运行器 |
+| `tests/` | 18 个 pytest 文件（229 用例）与前端 `.mjs` 测试运行器 |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
 | `docs/`、`docs/archive/`、`docs/reports/` | 常青文档、历史归档与上游研究资料 |
@@ -66,16 +66,16 @@
 - 一个 Flask 进程持有唯一全局 `AppState`（`app.config["app_state"]`），同一时刻服务一个打开的文档。每次成功打开（包括再次打开同一路径）都会生成新的随机 `document_id`；关闭或切换文档立即使旧身份失效。
 - `AppState` 内部是 `threading.Lock`（非重入），打开/渲染/抽取/替换/术语合并/阅读进度写入全部在锁内执行；传给 state 的回调（渲染、抽取、术语合并）不得再次进入 `AppState`。`translation_snapshot()` 在锁内一次性返回冻结的 `document_id`、PDF 哈希、页数和术语缓存路径。
 - 全局 `TranslationCoordinator` 使用独立的 `threading.Lock` 保护单个 `active_job`。`start(document_id, page_indices)` 原子创建含 UUID `job_id`、文档身份、页码 tuple、UTC 创建时间和 active 状态的冻结任务；已有任务时抛 `TranslationBusyError`。`finish(job_id)` / `fail(job_id)` 只释放匹配任务，重复或迟到释放不会影响后续任务。
-- 每个翻译请求由 `run_translation()` 启动一个 daemon 线程；该线程创建独立 asyncio 事件循环，`async for` 消费 `do_translate_async_stream(settings, pdf_path)`，把事件放入 `queue.Queue`。
-- 同步 SSE 生成器从队列取事件并逐条 yield；队列空闲 1 秒时 yield 空串作为心跳，收到 `_done` 后结束并 `thread.join(timeout=5.0)`。
-- 上游 pdf2zh-next 内部可能以子进程方式运行 BabelDOC 的版面/PDF 生成环节；本项目自身不直接管理该子进程的生命周期，也没有持久任务队列、任务注册表、暂停/取消接口或重启续传状态。
+- 每个翻译请求由 `TranslationStream`（`run_translation()` 工厂返回）启动一个 daemon worker 线程；该线程创建独立 asyncio 事件循环，`async for` 消费 `do_translate_async_stream(settings, pdf_path)`，把事件放入 `queue.Queue`。线程总是以入队内部 `_done` 标记结束，`cancel()` 在事件边界之间做协作式取消检查，`join(timeout)` 与 `is_alive` 暴露真实 worker 状态。
+- 同步 SSE 生成器从队列取事件并逐条 yield；队列空闲 1 秒时 yield 空串作为心跳，收到 `_done` 后 `__next__` 先 `join(timeout=30.0)` 确认线程退出（join timeout 记 WARNING），再结束迭代或抛 `TranslationError`。
+- 上游 pdf2zh-next 内部可能以子进程方式运行 BabelDOC 的版面/PDF 生成环节；本项目自身不直接管理该子进程的生命周期，也没有持久任务队列、任务注册表、暂停/取消接口或重启续传状态。协作式取消只作用于事件边界；不响应取消的上游环节允许自然结束，其结果被丢弃。
 
 ## 启动与 Flask 应用装配
 
 1. `python app.py`：`argparse` 解析 `--debug`（显式提供时覆盖 `config.DEBUG`）。
 2. `create_app()` 调用 `logging_config.setup_logging(config.DEBUG)`，输出启动摘要（provider/model/lang/cache_dir/dpi/debug，不含 api_key）。
 3. 创建 `Flask(__name__)`，装配全局 `AppState(config.CACHE_DIR)` 与 `TranslationCoordinator()`，导入并注册 `routes.register_routes`。
-4. `__main__` 从 `config.toml` 的 `[server]` 读取 host/port/debug（默认 `127.0.0.1:5000`、debug 开启），调用 `app.run()`。
+4. `__main__` 从 `config.toml` 的 `[server]` 读取 host/port/debug（默认 `127.0.0.1:5000`、debug 开启），调用 `app.run()`；`app.run()` 返回或异常退出时检查协调器，仍有 active job 则记录 WARNING（worker 可能成为孤儿）。
 
 ## 配置加载与 Provider 映射
 
@@ -101,10 +101,10 @@
 1. `POST /api/translate/<page>`（零基页码）校验文档已打开、页码在范围内，解析累积术语路径，`build_settings()` 组装参数。
 2. 路由先取得冻结的文档快照，再调用协调器 `start(document_id, [page])` 原子占用任务槽；已有任务时返回 HTTP 409，且不构造 SSE 生成器、不创建临时目录或后台线程。接受后构造带 `job_id` 和 finish/fail 回调的 `GenerateContext`；抽取、`replace_page` 与术语合并闭包都捕获快照中的 `document_id`。
 3. `generate()` 创建临时抽取目录与 cache 内输出目录，在 `debug_trace.debug_session` 内先 `extract_single_page()` 抽取单页 PDF。
-4. `run_translation()` 启动 daemon 线程运行上游异步翻译；`format_sse_event()` 把 `progress_start`/`progress_update`/`finish`/`error` 映射为 SSE；非 dict 心跳直接 yield 空串。
+4. `run_translation()` 启动 daemon worker 线程运行上游异步翻译；`format_sse_event()` 把 `progress_start`/`progress_update`/`finish`/`error` 映射为 SSE；非 dict 心跳直接 yield 空串。
 5. 收到上游 `finish` 事件后保留 `translate_result` 与 token 用量，随后调用 `finish_translation()`：优先 `mono_pdf_path`，缺失时回退 `dual_pdf_path`，再调 `AppState.replace_page(..., expected_document_id)` 写入译文，并通过 `AppState.merge_glossary(..., expected_document_id)` 把自动术语并入累计文件。
 6. `replace_page()` 在锁内先比较预期身份，再执行：打开译文 PDF → 删除右文档对应页 → `insert_pdf` → 保存 `.tmp` → 关闭源/右文档 → `os.replace` 原子替换 → 重开右文档 → 标记已翻译页。`merge_glossary()` 同样在锁内完成身份比较与合并回调；失配时两条边界都抛出 `StaleDocumentError`、记录 `[stale-result]` 警告且不修改当前文档。
-7. 生成器最后发 `progress:100/finish` SSE；成功路径调用 `finish(job_id)`，上游错误、普通异常、初始化失败或 GeneratorExit 调用 `fail(job_id)`。所有退出路径都经 `finally` 清理已创建的临时目录并幂等释放任务；Response close 另有未开始迭代时的兜底释放。
+7. 生成器最后发 `progress:100/finish` SSE；成功路径调用 `finish(job_id)`，上游错误、普通异常调用 `fail(job_id)`，消费者断开（GeneratorExit）调用 `cancel(job_id)`。所有退出路径都经 `finally`：先向 worker 请求协作式取消并 `join(timeout=30.0)`，只在 worker 确认退出后清理临时目录（join timeout 时保留目录并记 WARNING），再幂等释放任务；Response close 另有未开始迭代时的兜底释放。
 
 ## 范围与全文翻译链
 
@@ -125,7 +125,7 @@
 | `cache/<hash>/debug_trace.log` | 仅 debug 模式且存在缓存路径时，由 `debug_session` 创建并在会话开始前轮转 |
 | `docs/glossary.csv` | 仓库级手动术语表，`config.py` 硬编码读取，非空时参与每次翻译 |
 
-`AppState` 另维护当前 `_document_id`、`_translated_pages`（`translated_pages` 冻结集合）与左右 PyMuPDF 文档对象；`open_pdf` 会使旧身份失效并清空旧文档与翻译页集合。迟到任务仍可自然结束和清理临时目录，但抽取、PDF 提交与术语提交都会因身份失配被拒绝。
+`AppState` 另维护当前 `_document_id`、`_translated_pages`（`translated_pages` 冻结集合）与左右 PyMuPDF 文档对象；`open_pdf` 会使旧身份失效并清空旧文档与翻译页集合。SSE 断开后任务先被协作式取消；迟到任务若仍自然结束，其结果被丢弃（不进入写回），抽取、PDF 提交与术语提交的写回边界仍受身份校验约束。
 
 ## 前端模块与浏览器状态
 
@@ -175,13 +175,13 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 翻译流日志以 `[job=<uuid>]` 关联任务，并继续保留 `[page=N]` 或 `[batch=from-to]` 前缀；协调器 start/finish/fail、SSE、后台线程、生命周期、Token 与术语调试记录都携带同一 `job_id`。日志中不输出 api_key 原值。`logging_config.setup_logging()` 幂等，创建控制台 + `RotatingFileHandler`（5MB × 5），debug 关闭时 `werkzeug`/`pdf2zh_next`/`babeldoc` 抬到 WARNING，debug 开启时降到 DEBUG。
 
-错误传播：`TranslationError` 与普通异常都被 `generate`/`generate_batch` 捕获并输出 SSE `error` 事件，同时记录上下文日志；临时目录在 `finally` 中清理。
+错误传播：`TranslationError` 与普通异常都被 `generate`/`generate_batch` 捕获并输出 SSE `error` 事件，同时记录上下文日志；临时目录只有在 worker 线程确认退出后才会在 `finally` 中清理（join timeout 时保留并记 WARNING）。
 
 ## 测试、CI 与验证入口
 
 `requirements.txt` 只声明直接运行依赖，`requirements-dev.txt` 在运行依赖之上声明 pytest 与 Ruff；`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从开发依赖入口生成。锁文件不包含 editable、本机路径或 `file:///` 来源。
 
-统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（222 个 Python 测试）→ `npm test`（四个前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
+统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（229 个 Python 测试）→ `npm test`（四个前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
 
 CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依赖（`requirements.lock`），执行 `import flask, pymupdf, pdf2zh_next` 冒烟检查，安装 Node 22 测试依赖（`npm ci`），再执行同一 `scripts/verify.ps1`。`tests/README.md` 说明正式测试与历史诊断脚本的区别。
 
@@ -190,7 +190,7 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
 以下只记录当前事实，不构成修复方案或目标设计。
 
 1. **单进程/全局状态。** 服务端只有一个全局 `AppState`，同一时刻只面向一个本地用户、一份打开的文档；没有多用户或并行文档隔离。
-2. **SSE 断开无取消契约。** 消费者断开只触发生成器清理临时目录，已启动的上游翻译线程/进程没有服务端取消接口。
+2. **SSE 断开有协作式取消但无强制终止。** 消费者断开后，`generate`/`generate_batch` 请求协作式取消并等待 worker 退出（join timeout 30s），临时目录只在 worker 确认退出后删除；join timeout 时目录保留并记 WARNING。不响应取消的上游环节（含 BabelDOC 子进程）仍会运行到自然结束，其结果被丢弃，没有强制 kill 接口。
 3. **术语表写入尚非原子提交。** 单任务协调器已消除同进程并发合并，`document_id` 已阻止跨文档迟到合并，但累计 CSV 仍直接覆盖，写入失败时可能损坏最后有效版本。
 4. **替换失败无恢复事务。** `replace_page`/`replace_pages` 在原子替换前已关闭源/右文档；后续步骤失败时没有文档化的恢复事务。
 5. **PNG 无文本层。** 页面以图片显示，没有文本选择、搜索、复制、高亮、批注、目录、内部链接或 OCR 流程。

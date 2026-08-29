@@ -79,6 +79,19 @@ def test_fail_releases_only_matching_job_and_is_idempotent(coordinator: Translat
     assert coordinator.fail(job.job_id) is False
 
 
+def test_cancel_releases_only_matching_job_and_is_idempotent(coordinator: TranslationCoordinator) -> None:
+    job = coordinator.start("doc-1", (1,))
+
+    assert coordinator.cancel("other-job") is False
+    assert coordinator.active_job is job
+
+    assert coordinator.cancel(job.job_id) is True
+    assert coordinator.active_job is None
+    assert coordinator.is_busy is False
+
+    assert coordinator.cancel(job.job_id) is False
+
+
 def test_release_allows_new_start_and_stale_release_is_ignored(coordinator: TranslationCoordinator) -> None:
     first = coordinator.start("doc-1", (1,))
     coordinator.finish(first.job_id)

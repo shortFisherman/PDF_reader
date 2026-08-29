@@ -154,6 +154,7 @@ def translate_page(page: int):
         job_id=job.job_id,
         finish_job=coordinator.finish,
         fail_job=coordinator.fail,
+        cancel_job=coordinator.cancel,
         replace_page=lambda path: state.replace_page(path, page, snapshot.document_id),
         merge_glossary=lambda extracted: state.merge_glossary(
             extracted,
@@ -232,6 +233,7 @@ def translate_batch():
         job_id=job.job_id,
         finish_job=coordinator.finish,
         fail_job=coordinator.fail,
+        cancel_job=coordinator.cancel,
         from_page=from_page,
         to_page=to_page,
         page_indices=page_indices,

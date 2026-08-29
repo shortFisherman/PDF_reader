@@ -13,7 +13,7 @@ import config
 import debug_trace
 import pdf_extraction
 from translation_lifecycle import finish_translation, merge_glossary_only
-from translation_orchestrator import TranslationError, run_translation
+from translation_orchestrator import WORKER_JOIN_TIMEOUT, TranslationError, TranslationStream, run_translation
 
 STAGE_LABELS = {
     "layout_analysis": "\u6b63\u5728\u5206\u6790\u7248\u9762\u2026",
@@ -39,6 +39,7 @@ class GenerateContext:
     job_id: str
     finish_job: Callable[[str], bool]
     fail_job: Callable[[str], bool]
+    cancel_job: Callable[[str], bool]
     replace_page: Callable[[str], None]
     merge_glossary: Callable[[str | Path | None], None]
     glossary_cache_path: Path | None
@@ -54,6 +55,7 @@ class GenerateBatchContext:
     job_id: str
     finish_job: Callable[[str], bool]
     fail_job: Callable[[str], bool]
+    cancel_job: Callable[[str], bool]
     from_page: int
     to_page: int
     page_indices: list[int]
@@ -131,20 +133,46 @@ def format_sse_event(evt: dict) -> str | None:
         return None
 
 
-def _release_job(ctx: GenerateContext | GenerateBatchContext, succeeded: bool) -> None:
+def _release_job(ctx: GenerateContext | GenerateBatchContext, outcome: str) -> None:
     try:
-        if succeeded:
+        if outcome == "finished":
             ctx.finish_job(ctx.job_id)
+        elif outcome == "cancelled":
+            ctx.cancel_job(ctx.job_id)
         else:
             ctx.fail_job(ctx.job_id)
     except Exception:
         logger.error("[job=%s] failed to release translation coordinator", ctx.job_id, exc_info=True)
 
 
+def _shutdown_worker(stream: TranslationStream | None, job_id: str) -> bool:
+    """Request cooperative cancellation and wait for the real worker thread.
+
+    Returns True only when the worker is confirmed finished, so the job's temp
+    directories are safe to remove.  A worker that ignores cancellation (or is
+    still running after the join timeout) keeps its directories for recovery.
+    """
+    if not isinstance(stream, TranslationStream):
+        return True
+    if stream.is_alive:
+        logger.info("[job=%s] SSE stream closed before worker exit; requesting cancellation", job_id)
+        stream.cancel()
+    stream.join(timeout=WORKER_JOIN_TIMEOUT)
+    if stream.is_alive:
+        logger.warning(
+            "[job=%s] worker still running after %.0fs join timeout; temp dirs kept for recovery",
+            job_id,
+            WORKER_JOIN_TIMEOUT,
+        )
+        return False
+    return True
+
+
 def generate(ctx: GenerateContext) -> Iterator[str]:
     tmpdir: Path | None = None
     output_dir: Path | None = None
-    succeeded = False
+    stream = None
+    outcome = "failed"
     try:
         tmpdir = Path(tempfile.mkdtemp())
         output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
@@ -158,11 +186,12 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
 
             single_page_pdf = ctx.extract_page(ctx.page, tmpdir, pdf_extraction.extract_single_page)
 
-            for evt in run_translation(
+            stream = run_translation(
                 ctx.settings,
                 str(single_page_pdf),
                 flow_label=f"job={ctx.job_id}][page={ctx.page}",
-            ):
+            )
+            for evt in stream:
                 if not isinstance(evt, dict):
                     yield ""
                     continue
@@ -194,7 +223,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                 ctx.job_id,
             )
 
-            succeeded = True
+            outcome = "finished"
             yield (
                 "data: "
                 + json.dumps(
@@ -210,6 +239,9 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
             )
             yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
 
+    except GeneratorExit:
+        outcome = "cancelled"
+        raise
     except TranslationError as e:
         logger.warning("[job=%s][page=%d] translation error: %s", ctx.job_id, ctx.page, e)
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
@@ -227,17 +259,20 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
         )
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     finally:
-        if tmpdir is not None:
-            _safe_rmtree(tmpdir)
-        if output_dir is not None:
-            _safe_rmtree(output_dir)
-        _release_job(ctx, succeeded)
+        worker_finished = _shutdown_worker(stream, ctx.job_id)
+        if worker_finished:
+            if tmpdir is not None:
+                _safe_rmtree(tmpdir)
+            if output_dir is not None:
+                _safe_rmtree(output_dir)
+        _release_job(ctx, outcome)
 
 
 def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
     tmpdir: Path | None = None
     output_dir: Path | None = None
-    succeeded = False
+    stream = None
+    outcome = "failed"
     try:
         tmpdir = Path(tempfile.mkdtemp())
         output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
@@ -253,11 +288,12 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
 
             yield format_batch_info(ctx.from_page, ctx.to_page, len(ctx.page_indices))
 
-            for evt in run_translation(
+            stream = run_translation(
                 ctx.settings,
                 str(multi_page_pdf),
                 flow_label=f"job={ctx.job_id}][batch={ctx.from_page}-{ctx.to_page}",
-            ):
+            )
+            for evt in stream:
                 if not isinstance(evt, dict):
                     yield ""
                     continue
@@ -295,7 +331,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
 
             merge_glossary_only(translate_result, ctx.merge_glossary, ctx.from_page, ctx.job_id)
 
-            succeeded = True
+            outcome = "finished"
             yield (
                 "data: "
                 + json.dumps(
@@ -305,6 +341,9 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
             )
             yield f"data: {json.dumps({'type': 'finish', 'progress': 100})}\n\n"
 
+    except GeneratorExit:
+        outcome = "cancelled"
+        raise
     except TranslationError as e:
         logger.warning(
             "[job=%s][batch=%d-%d] translation error: %s",
@@ -329,8 +368,10 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
         )
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
     finally:
-        if tmpdir is not None:
-            _safe_rmtree(tmpdir)
-        if output_dir is not None:
-            _safe_rmtree(output_dir)
-        _release_job(ctx, succeeded)
+        worker_finished = _shutdown_worker(stream, ctx.job_id)
+        if worker_finished:
+            if tmpdir is not None:
+                _safe_rmtree(tmpdir)
+            if output_dir is not None:
+                _safe_rmtree(output_dir)
+        _release_job(ctx, outcome)

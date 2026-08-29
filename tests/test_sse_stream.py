@@ -1,7 +1,8 @@
+import asyncio
 import csv
 import json
 import tempfile
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -81,6 +82,7 @@ def _make_ctx(
     job_id="test-job",
     finish_job=None,
     fail_job=None,
+    cancel_job=None,
     replace_page=None,
     merge_glossary=None,
     glossary_cache_path=None,
@@ -95,6 +97,8 @@ def _make_ctx(
         finish_job = MagicMock(return_value=True)
     if fail_job is None:
         fail_job = MagicMock(return_value=True)
+    if cancel_job is None:
+        cancel_job = MagicMock(return_value=True)
     if replace_page is None:
         replace_page = MagicMock()
     if merge_glossary is None:
@@ -108,6 +112,7 @@ def _make_ctx(
         job_id=job_id,
         finish_job=finish_job,
         fail_job=fail_job,
+        cancel_job=cancel_job,
         replace_page=replace_page,
         merge_glossary=merge_glossary,
         glossary_cache_path=glossary_cache_path,
@@ -422,7 +427,7 @@ def test_generate_cleans_up_on_no_translate_result(tmp_path):
 
 
 def test_generate_cleans_up_on_generator_close(tmp_path):
-    """3.3: gen.close() -> GeneratorExit -> dirs removed"""
+    """3.3: gen.close() -> GeneratorExit -> dirs removed, job released as cancelled"""
     events = [
         {
             "type": "progress_start",
@@ -436,7 +441,13 @@ def test_generate_cleans_up_on_generator_close(tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     fail_job = MagicMock(return_value=True)
-    ctx = _make_ctx(job_id="job-disconnect", fail_job=fail_job, cache_dir=cache_dir)
+    cancel_job = MagicMock(return_value=True)
+    ctx = _make_ctx(
+        job_id="job-disconnect",
+        fail_job=fail_job,
+        cancel_job=cancel_job,
+        cache_dir=cache_dir,
+    )
 
     tmpdir = tmp_path / "tmp"
     tmpdir.mkdir()
@@ -452,7 +463,8 @@ def test_generate_cleans_up_on_generator_close(tmp_path):
 
     assert not tmpdir.exists()
     assert not output_dir.exists()
-    fail_job.assert_called_once_with("job-disconnect")
+    cancel_job.assert_called_once_with("job-disconnect")
+    fail_job.assert_not_called()
 
 
 def test_generate_cleans_up_on_success(tmp_path):
@@ -512,6 +524,7 @@ def _make_batch_ctx(
     job_id="test-job",
     finish_job=None,
     fail_job=None,
+    cancel_job=None,
     from_page=2,
     to_page=5,
     page_indices=None,
@@ -528,6 +541,8 @@ def _make_batch_ctx(
         finish_job = MagicMock(return_value=True)
     if fail_job is None:
         fail_job = MagicMock(return_value=True)
+    if cancel_job is None:
+        cancel_job = MagicMock(return_value=True)
     if replace_pages is None:
         replace_pages = MagicMock()
     if merge_glossary is None:
@@ -543,6 +558,7 @@ def _make_batch_ctx(
         job_id=job_id,
         finish_job=finish_job,
         fail_job=fail_job,
+        cancel_job=cancel_job,
         from_page=from_page,
         to_page=to_page,
         page_indices=page_indices,
@@ -712,3 +728,137 @@ def test_generate_setup_exception_fails_active_job(tmp_path):
     assert any('"type": "error"' in item for item in result)
     fail_job.assert_called_once_with("job-setup-error")
     finish_job.assert_not_called()
+
+
+# --- P1-01: SSE disconnect and background worker ownership ---
+
+
+def test_generate_disconnect_cancels_worker_and_discards_late_result(tmp_path):
+    """Client closes SSE mid-stream: the worker is cancelled cooperatively, a
+    late translate_result never reaches replace_page, temp dirs are removed
+    only after the worker actually exits, and the job slot is released as
+    cancelled."""
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+
+    async def slow_completing_source(settings, file) -> AsyncIterator[dict]:
+        yield {"type": "progress_start", "stage": "layout_analysis"}
+        await asyncio.sleep(0.3)
+        yield {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result}
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    replace_page = MagicMock()
+    finish_job = MagicMock(return_value=True)
+    fail_job = MagicMock(return_value=True)
+    cancel_job = MagicMock(return_value=True)
+    ctx = _make_ctx(
+        job_id="job-disconnect-late",
+        finish_job=finish_job,
+        fail_job=fail_job,
+        cancel_job=cancel_job,
+        replace_page=replace_page,
+        cache_dir=cache_dir,
+    )
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("translation_orchestrator.do_translate_async_stream", slow_completing_source):
+            with patch("sse_stream.debug_trace"):
+                gen = generate(ctx)
+                next(gen)
+                gen.close()
+
+    assert not tmpdir.exists()
+    assert not output_dir.exists()
+    replace_page.assert_not_called()
+    finish_job.assert_not_called()
+    fail_job.assert_not_called()
+    cancel_job.assert_called_once_with("job-disconnect-late")
+
+
+def test_generate_keeps_dirs_when_worker_survives_join_timeout(tmp_path):
+    """A non-cooperative worker still running when SSE closes must not lose its
+    temp dirs: after the join timeout the dirs are kept for recovery, the job is
+    released as cancelled, and nothing is written to the document."""
+
+    async def stuck_source(settings, file) -> AsyncIterator[dict]:
+        yield {"type": "progress_start", "stage": "layout_analysis"}
+        await asyncio.sleep(3600)
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    replace_page = MagicMock()
+    cancel_job = MagicMock(return_value=True)
+    ctx = _make_ctx(
+        job_id="job-stuck",
+        cancel_job=cancel_job,
+        replace_page=replace_page,
+        cache_dir=cache_dir,
+    )
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("translation_orchestrator.do_translate_async_stream", stuck_source):
+            with patch("sse_stream.WORKER_JOIN_TIMEOUT", 0.2):
+                with patch("sse_stream.debug_trace"):
+                    gen = generate(ctx)
+                    next(gen)
+                    gen.close()
+
+    assert tmpdir.exists()
+    assert output_dir.exists()
+    replace_page.assert_not_called()
+    cancel_job.assert_called_once_with("job-stuck")
+
+
+def test_generate_batch_disconnect_cancels_worker(tmp_path):
+    """generate_batch shares the same worker ownership: disconnect cancels the
+    worker, discards the late result and cleans dirs only after worker exit."""
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+
+    async def slow_completing_source(settings, file) -> AsyncIterator[dict]:
+        yield {"type": "progress_start", "stage": "layout_analysis"}
+        await asyncio.sleep(0.3)
+        yield {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result}
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    replace_pages = MagicMock()
+    cancel_job = MagicMock(return_value=True)
+    ctx = _make_batch_ctx(
+        job_id="job-batch-disconnect",
+        cancel_job=cancel_job,
+        replace_pages=replace_pages,
+        cache_dir=cache_dir,
+    )
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("translation_orchestrator.do_translate_async_stream", slow_completing_source):
+            with patch("sse_stream.debug_trace"):
+                gen = generate_batch(ctx)
+                next(gen)
+                gen.close()
+
+    assert not tmpdir.exists()
+    assert not output_dir.exists()
+    replace_pages.assert_not_called()
+    cancel_job.assert_called_once_with("job-batch-disconnect")

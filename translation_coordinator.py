@@ -64,6 +64,9 @@ class TranslationCoordinator:
     def fail(self, job_id: str) -> bool:
         return self._release(job_id, "failed")
 
+    def cancel(self, job_id: str) -> bool:
+        return self._release(job_id, "cancelled")
+
     def _release(self, job_id: str, outcome: str) -> bool:
         with self._lock:
             if self._active_job is None or self._active_job.job_id != job_id:

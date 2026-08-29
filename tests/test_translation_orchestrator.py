@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from unittest.mock import MagicMock, patch
 
@@ -47,3 +48,62 @@ def test_run_translation_propagates_error_event():
     assert len(result) == 2
     assert result[0]["type"] == "error"
     assert result[0]["error"] == "engine error"
+
+
+def test_translation_stream_cancel_stops_cooperative_worker():
+    """cancel() asks the worker to stop at the next event boundary; the worker
+    thread actually exits instead of relying on daemon process exit."""
+
+    async def endless_stream(settings, file) -> AsyncIterator[dict]:
+        i = 0
+        while True:
+            await asyncio.sleep(0)
+            yield {
+                "type": "progress_update",
+                "overall_progress": i % 100,
+                "stage": "translating",
+                "stage_current": 0,
+                "stage_total": 0,
+            }
+            i += 1
+
+    with patch("translation_orchestrator.do_translate_async_stream", endless_stream):
+        stream = run_translation(MagicMock(), "fake.pdf")
+        while not isinstance(next(stream), dict):
+            pass
+        stream.cancel()
+        stream.join(timeout=5.0)
+
+    assert not stream.is_alive
+
+
+def test_translation_stream_join_timeout_reports_worker_alive():
+    """A non-cooperative upstream that ignores cancellation stays alive after
+    join timeout; is_alive reports the real worker state."""
+
+    async def stuck_stream(settings, file) -> AsyncIterator[dict]:
+        yield {"type": "progress_start", "stage": "layout_analysis"}
+        await asyncio.sleep(3600)
+
+    with patch("translation_orchestrator.do_translate_async_stream", stuck_stream):
+        stream = run_translation(MagicMock(), "fake.pdf")
+        assert isinstance(next(stream), dict)
+        stream.cancel()
+        stream.join(timeout=0.3)
+
+    assert stream.is_alive
+
+
+def test_translation_stream_heartbeat_when_worker_silent():
+    """Empty queue yields heartbeat strings, not a terminal state."""
+
+    async def slow_stream(settings, file) -> AsyncIterator[dict]:
+        await asyncio.sleep(5)
+        yield {"type": "progress_start", "stage": "layout_analysis"}
+
+    with patch("translation_orchestrator.do_translate_async_stream", slow_stream):
+        with patch("translation_orchestrator.QUEUE_POLL_TIMEOUT", 0.05):
+            stream = run_translation(MagicMock(), "fake.pdf")
+            first = next(stream)
+
+    assert first == ""
