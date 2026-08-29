@@ -527,19 +527,19 @@ PDF_reader/
 
 ### P2-05 统一错误响应、脱敏和前端安全渲染
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：SSE 直接把部分 `str(e)` 返回前端；缺少统一 500 JSON 处理；前端用 `insertAdjacentHTML` 插入错误文本。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`5402610be45d92e012a43a72b220d8bfaf98cd89`
+- 验证证据：子代理实现验证：新增/更新 `tests/test_routes.py`（400 各分支稳定 code、404/405/500 JSON 契约、500 脱敏与日志保留）、`tests/test_sse_stream.py`（上游 error 事件/`TranslationError`/普通异常/无结果统一 `format_sse_error` 且原始内容只进日志，含单页与批量 parity）、`tests/test_server_config.py`（`is_loopback_host` 参数化）、`tests/test_app.py`（loopback 不警告、`0.0.0.0` 警告且不含 key）；前端新增 `tests/run-error-safety-tests.mjs` 并纳入 `npm test`（恶意 sentinel 仅以 `textContent` 呈现、`app.js` 无 `insertAdjacentHTML`），`tests/run-translator-tests.mjs` 增加非 JSON/网络异常/缺字段固定 fallback。针对性 Python 194+223/70 passed、前端全部通过；完整 `scripts/verify.ps1`（Python 3.12）：437 个 Python 测试与全部前端测试通过，logs/cache 前后零增长。父代理独立验收通过：针对性 231 Python + error-safety + translator 48、完整 verify 437 Python + 全部前端、logs/cache 零增长、`git diff --check` 通过。
+- 剩余问题：无
 
 #### 目标与验收
 
-- [ ] 服务端日志保留完整异常，客户端只获得稳定错误码和安全摘要。
-- [ ] API 404/409/500 使用一致 JSON 结构。
-- [ ] SSE 错误事件包含稳定 code，内部路径、密钥和上游原始响应不返回浏览器。
-- [ ] 前端错误使用 DOM 节点和 `textContent`，不拼接未转义 HTML。
-- [ ] 明确本服务只能绑定本机；若配置为非 localhost，启动时给出安全警告或拒绝不安全默认设置。
+- [x] 服务端日志保留完整异常，客户端只获得稳定错误码和安全摘要。
+- [x] API 404/409/500 使用一致 JSON 结构。
+- [x] SSE 错误事件包含稳定 code，内部路径、密钥和上游原始响应不返回浏览器。
+- [x] 前端错误使用 DOM 节点和 `textContent`，不拼接未转义 HTML。
+- [x] 明确本服务只能绑定本机；若配置为非 localhost，启动时给出安全警告或拒绝不安全默认设置。
 
 ### P2-06 增加任务级日志上下文和可诊断性
 
@@ -766,3 +766,4 @@ PDF_reader/
 | 2026-08-29 | P0-01 | 已完成 | `97b94e9` | 以不可变 `document_id` 约束抽取、PDF 提交和术语合并，拒绝迟到任务写入新文档。 |
 | 2026-08-29 | P0-02 | 已完成 | `50f3844` | 增加线程安全的单任务协调器、稳定 409 协议、全路径释放和 `job_id` 日志关联。 |
 | 2026-08-29 | P2-07 | 已完成 | `2218f79` | 统一项目根路径与测试文件隔离：新增 `paths.py` 集中解析 `PROJECT_ROOT`/`DATA_ROOT`（`config.example.toml` 标记定根，`PDF_READER_ROOT`/`PDF_READER_DATA_ROOT` 仅接受绝对路径，缺失 marker 快速失败）；config/glossary/相对缓存/日志与 Flask templates/static 全部接入同一策略，双 CWD 启动位置一致；pytest 经 conftest 将数据根重定向到临时目录并复位日志 handler，完整验证前后 logs/cache 零增长。新增 tests/test_paths.py（18 用例）等，父代理独立验收通过。 |
+| 2026-08-29 | P2-05 | 已完成 | `5402610` | 统一错误响应、脱敏与前端安全渲染：所有 API 4xx/5xx 返回 `{code, error}`（保留 409 `translation_busy`/`active_job_id`），新增 HTTPException 与 500 handler（完整异常只进日志）；SSE 统一 `format_sse_error(code, message)`，上游原始 error/TranslationError/普通异常/无结果均不发浏览器；`is_loopback_host` 识别 localhost/127/8/::1，非 loopback 启动 WARNING；前端 `showError()` 纯 textContent 渲染并移除 `insertAdjacentHTML`，translator 增加非 JSON/网络/缺字段固定 fallback；新增 run-error-safety-tests.mjs 纳入 npm test。完整验证 437 Python + 全部前端，logs/cache 零增长，父代理独立验收通过。 |
