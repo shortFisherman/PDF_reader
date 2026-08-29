@@ -558,11 +558,11 @@ PDF_reader/
 
 ### P2-07 统一项目根路径与测试文件隔离
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：`config.toml` 和手动术语表按模块位置定位，但日志和默认缓存部分依赖当前工作目录；从不同目录启动时可能把文件写到不同位置，测试也可能写入仓库 `logs/`。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`2218f79c6f57aedfa5f433da67ae1455a9941035`
+- 验证证据：子代理实现验证：新增 `tests/test_paths.py`（含双 CWD 子进程真实 `create_app()` 解析一致、进程内双 CWD 切换、相对缓存锚定 DATA_ROOT、绝对缓存不被重写、相对 override 拒绝、缺失 marker 快速失败、src 迁移前瞻、`reset_logging()` 可重建 handler）；`tests/conftest.py` 在应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 临时目录并逐测试复位日志 handler；完整验证 413 个 Python 测试与全部前端测试通过，logs/cache 前后零增长。父代理独立验收通过：针对性 200 passed、完整 verify 413 Python + 全部前端通过、logs/cache 前后零增长、`git diff --check` 通过。
+- 剩余问题：无
 
 #### 目标状态
 
@@ -573,11 +573,11 @@ PDF_reader/
 
 #### 验收标准
 
-- [ ] 从至少两个不同 CWD 启动，配置、模板、静态文件、日志和缓存位置一致。
-- [ ] 跑完整测试前后，仓库 `logs/` 和 `cache/` 不产生测试数据增长。
-- [ ] 路径不依赖测试通过修改 `sys.path` 或强制 `Set-Location` 掩盖。
-- [ ] 路径约定记录在 `docs/architecture.md` 和 README。
-- [ ] P2-01 迁移后沿用同一策略，不因 `__file__` 移入 `src/` 再次改变数据位置。
+- [x] 从至少两个不同 CWD 启动，配置、模板、静态文件、日志和缓存位置一致。
+- [x] 跑完整测试前后，仓库 `logs/` 和 `cache/` 不产生测试数据增长。
+- [x] 路径不依赖测试通过修改 `sys.path` 或强制 `Set-Location` 掩盖。
+- [x] 路径约定记录在 `docs/architecture.md` 和 README。
+- [x] P2-01 迁移后沿用同一策略，不因 `__file__` 移入 `src/` 再次改变数据位置。
 
 ---
 
@@ -765,3 +765,4 @@ PDF_reader/
 | 2026-08-29 | P0-03 | 已完成 | `59d8545` | 移除不可移植依赖锁内容，明确运行/开发依赖，并通过干净 Python 3.12 环境安装与验证。 |
 | 2026-08-29 | P0-01 | 已完成 | `97b94e9` | 以不可变 `document_id` 约束抽取、PDF 提交和术语合并，拒绝迟到任务写入新文档。 |
 | 2026-08-29 | P0-02 | 已完成 | `50f3844` | 增加线程安全的单任务协调器、稳定 409 协议、全路径释放和 `job_id` 日志关联。 |
+| 2026-08-29 | P2-07 | 已完成 | `2218f79` | 统一项目根路径与测试文件隔离：新增 `paths.py` 集中解析 `PROJECT_ROOT`/`DATA_ROOT`（`config.example.toml` 标记定根，`PDF_READER_ROOT`/`PDF_READER_DATA_ROOT` 仅接受绝对路径，缺失 marker 快速失败）；config/glossary/相对缓存/日志与 Flask templates/static 全部接入同一策略，双 CWD 启动位置一致；pytest 经 conftest 将数据根重定向到临时目录并复位日志 handler，完整验证前后 logs/cache 零增长。新增 tests/test_paths.py（18 用例）等，父代理独立验收通过。 |
