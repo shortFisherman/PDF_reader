@@ -46,19 +46,23 @@ cd PDF_reader
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.lock
-pip install -e .
+pip install -e . --no-deps
 Copy-Item config.example.toml config.toml
 ```
 
-`requirements.txt` 只声明直接运行依赖，`requirements-dev.txt` 在其基础上声明测试和代码检查依赖；`requirements.lock` 是 README、CI 和本地验证共同使用的唯一锁文件。锁文件由 Python 3.12 和 `pip-tools` 生成：
+`pyproject.toml` 是唯一直接依赖声明源：`project.dependencies` 声明运行直接依赖，`project.optional-dependencies.dev` 声明 pytest、Ruff、coverage、mypy 与 pip-tools（P2-03 才启用 coverage/类型检查，本项只建立依赖边界）。`requirements.lock` 是 README、CI 和本地验证共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从 `pyproject.toml`（含 dev extra）生成：
 
 ```powershell
 py -3.12 -m venv .tmp-lock-venv
 .\.tmp-lock-venv\Scripts\python.exe -m pip install pip-tools==7.6.1
-.\.tmp-lock-venv\Scripts\python.exe -m piptools compile --upgrade --resolver=backtracking --strip-extras --output-file requirements.lock requirements-dev.txt
+$env:CUSTOM_COMPILE_COMMAND = 'pip-compile --resolver=backtracking --strip-extras --extra=dev --output-file=requirements.lock pyproject.toml'
+.\.tmp-lock-venv\Scripts\python.exe -m piptools compile --resolver=backtracking --strip-extras --extra=dev --output-file requirements.lock pyproject.toml
+Remove-Item Env:CUSTOM_COMPILE_COMMAND
 ```
 
-生成后应删除临时环境，并在新的 Python 3.12 虚拟环境中执行安装、关键导入和完整验证。不要从日常工作环境运行 `pip freeze` 更新锁文件。
+说明：pip-tools 7.6.1 在本环境会在 header 记录多余的 `--no-index`；用其官方 `CUSTOM_COMPILE_COMMAND` 机制把 header 固定为上面的真实命令（最小调整）。生成后应删除临时环境，并在新的 Python 3.12 虚拟环境中执行 `pip install -r requirements.lock` + `pip install -e . --no-deps`、关键导入和完整验证。不要从日常工作环境运行 `pip freeze` 更新锁文件。
+
+便捷安装（非可复现开发/验证安装）：直接 `pip install -e .[dev]` 会从索引解析最新兼容版本；可复现安装必须使用上面的锁文件流程。
 
 例如，可将干净环境的解释器显式传给统一验证脚本，避免误用仓库中已有的 `venv`：
 
@@ -206,10 +210,12 @@ npm ci
 powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
 ```
 
+`scripts/verify.ps1` 会先输出最终选用的 Python 绝对路径与版本：显式 `-PythonExecutable` 优先；未指定时优先仓库 `venv`；仓库 `venv` 缺失而回退 PATH 中的 `python` 时会输出醒目 WARNING（不会静默）。显式路径无效时快速失败、不回退。
+
 安装后的关键 Python 依赖可用以下命令快速检查：
 
 ```powershell
-python -c "import flask, pymupdf, pdf2zh_next"
+python -c "import flask, pymupdf, pdf2zh_next, pdf_reader"
 ```
 
 单独运行前端回归测试：

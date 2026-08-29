@@ -13,6 +13,15 @@ dependencies = [
     "pdf2zh-next==2.9.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.3",
+    "ruff==0.15.18",
+    "coverage>=7.6",
+    "mypy>=1.11",
+    "pip-tools==7.6.1",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

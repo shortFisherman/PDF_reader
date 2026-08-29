@@ -5,12 +5,12 @@ TBD - created by archiving change add-ci-and-lint-cleanup. Update Purpose after 
 ## Requirements
 ### Requirement: Lint and test pipeline on push and PR
 
-The repository SHALL include a GitHub Actions workflow that, on every push to the main branch and on every pull request, automatically installs dependencies from `requirements.lock` and runs `ruff check .` followed by `pytest -q`. The workflow SHALL fail the CI status when either lint or tests report failures, so regressions are blocked before merge.
+The repository SHALL include a GitHub Actions workflow that, on every push to the main branch and on every pull request, automatically installs dependencies from `requirements.lock`, installs the local package with `pip install -e . --no-deps`, installs frontend test dependencies with `npm ci`, and runs the single unified `scripts/verify.ps1` entry. The workflow SHALL fail the CI status when any lint or test step reports failures, so regressions are blocked before merge.
 
 #### Scenario: CI runs on push
 
 - **WHEN** a commit is pushed to the main branch
-- **THEN** the GitHub Actions workflow SHALL trigger and run `ruff check .` and `pytest -q`
+- **THEN** the GitHub Actions workflow SHALL trigger and run `scripts/verify.ps1`
 
 #### Scenario: CI runs on pull request
 

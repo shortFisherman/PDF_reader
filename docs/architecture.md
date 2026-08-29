@@ -36,7 +36,7 @@
 | 路径 | 职责 |
 |---|---|
 | `src/pdf_reader/app.py` | 启动边界 `main(argv)`、`create_app()` 装配 Flask 与全局 `AppState`、启动服务；`src/pdf_reader/__main__.py` 提供 `python -m pdf_reader` 入口 |
-| `pyproject.toml` | P2-01 最小可安装包元数据（setuptools src 布局，`pip install -e .`，直接运行依赖沿用 requirements 声明） |
+| `pyproject.toml` | P2-01/P2-04 可安装包与依赖契约：setuptools src 布局、`project.dependencies` 唯一直接依赖声明、`project.optional-dependencies.dev`（pytest/Ruff/coverage/mypy/pip-tools） |
 | `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python -m pdf_reader` |
 | `src/pdf_reader/config.py` | 读取 `config.toml`、定义 `EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
 | `src/pdf_reader/paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
@@ -202,9 +202,9 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 ## 测试、CI 与验证入口
 
-`requirements.txt` 只声明直接运行依赖，`requirements-dev.txt` 在运行依赖之上声明 pytest 与 Ruff；`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从开发依赖入口生成。锁文件不包含 editable、本机路径或 `file:///` 来源。
+`pyproject.toml` 是唯一直接依赖声明源（`project.dependencies` 运行依赖、`project.optional-dependencies.dev` 开发工具）；已删除 `requirements.txt`/`requirements-dev.txt`。`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从 `pyproject.toml`（含 dev extra）生成，header 记录真实命令（用 `CUSTOM_COMPILE_COMMAND` 规避 pip-tools 7.6.1 在本环境写入多余 `--no-index` 的怪癖）。锁文件不包含 editable、本机路径或 `file:///` 来源。安装契约：`pip install -r requirements.lock` 后 `pip install -e . --no-deps`；便捷安装 `pip install -e .[dev]` 与可复现安装明确区分。
 
-统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（全部 Python 测试）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -e .`（CI 在 `pip install -r requirements.lock` 后执行），仓库根不再提供生产模块 shim。
+统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本 → Ruff lint → Ruff format check → `pytest -q`（全部 Python 测试）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
 
 测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
 
@@ -214,7 +214,7 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 系统级回归：`tests/test_system_concurrency_failure.py` 的 16 个用例穿过真实 Flask route、真实 Response/SSE generator、`TranslationCoordinator`、真实 `TranslationStream` worker 线程、`AppState` 与磁盘缓存边界；仅 `translation_orchestrator.do_translate_async_stream` 使用确定性 fake（外部翻译引擎），故障注入只作用于 `tempfile.mkdtemp`、`pymupdf.Document.save` 与 `os.replace`。覆盖：翻译进行中打开 B 被 409 拒绝且 A 的结果只写回 A；两个 Flask 客户端只有一个任务被接受；SSE 断开后 worker 继续运行/最终失败/join timeout 三条所有权路径；临时目录、输出目录与 PDF 保存失败及重试；单页与批量提交失败后的 `right.pdf`/`translated_pages`/渲染恢复；PDF 提交与术语合并的部分提交语义；打开—翻译—渲染闭环的最终 PDF 字节/页内容、`document_id`、coordinator 与 worker 状态、临时目录清理断言。
 
-CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依赖（`requirements.lock`），执行 `import flask, pymupdf, pdf2zh_next` 冒烟检查，安装 Node 22 测试依赖（`npm ci`），再执行同一 `scripts/verify.ps1`。`tests/README.md` 说明正式测试与历史诊断脚本的区别。
+CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依赖（`pip install -r requirements.lock` + `pip install -e . --no-deps`），执行 `import flask, pymupdf, pdf2zh_next, pdf_reader` 冒烟检查，安装 Node 22 测试依赖（`npm ci`，Node 只承担前端测试且由 `package-lock.json` 锁定），再执行同一 `scripts/verify.ps1`。`tests/README.md` 说明正式测试与历史诊断脚本的区别。
 
 ## 当前技术约束与已确认风险
 

@@ -7,7 +7,7 @@ if not exist ".\venv\Scripts\python.exe" (
     echo [start.bat] Create it first:
     echo [start.bat]   python -m venv venv
     echo [start.bat]   .\venv\Scripts\python.exe -m pip install -r requirements.lock
-    echo [start.bat]   .\venv\Scripts\python.exe -m pip install -e .
+    echo [start.bat]   .\venv\Scripts\python.exe -m pip install -e . --no-deps
     exit /b 1
 )
 

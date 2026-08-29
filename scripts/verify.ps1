@@ -4,6 +4,32 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Resolve-VerifyPython {
+    param(
+        [string]$PythonExecutable,
+        [string]$RepoRoot = (Join-Path $PSScriptRoot '..')
+    )
+
+    if ($PythonExecutable) {
+        if (-not (Get-Command $PythonExecutable -ErrorAction SilentlyContinue)) {
+            throw "Python executable not found: $PythonExecutable"
+        }
+        return $PythonExecutable
+    }
+
+    $venvPython = Join-Path $RepoRoot 'venv\Scripts\python.exe'
+    if (Test-Path -LiteralPath $venvPython) {
+        return $venvPython
+    }
+
+    if (-not (Get-Command 'python' -ErrorAction SilentlyContinue)) {
+        throw "Python executable not found: no repository venv and no python on PATH"
+    }
+
+    Write-Warning "No repository venv found at $venvPython; falling back to python on PATH. Pass -PythonExecutable explicitly for reproducible verification."
+    return 'python'
+}
+
 function Invoke-Checked {
     param(
         [Parameter(Mandatory = $true)]
@@ -19,20 +45,19 @@ function Invoke-Checked {
     }
 }
 
-$pythonCommand = $PythonExecutable
-if (-not $pythonCommand) {
-    $pythonCommand = Join-Path $PSScriptRoot '..\venv\Scripts\python.exe'
-    if (-not (Test-Path -LiteralPath $pythonCommand)) {
-        $pythonCommand = 'python'
+if ($MyInvocation.InvocationName -ne '.') {
+    $pythonCommand = Resolve-VerifyPython -PythonExecutable $PythonExecutable
+    $pythonInfo = & $pythonCommand -c "import sys; print(sys.executable); print(sys.version.split()[0])"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to query Python interpreter: $pythonCommand"
     }
-}
-if (-not (Get-Command $pythonCommand -ErrorAction SilentlyContinue)) {
-    throw "Python executable not found: $pythonCommand"
-}
+    Write-Host "Resolved Python: $($pythonInfo[0])"
+    Write-Host "Python version: $($pythonInfo[1])"
 
-Invoke-Checked 'Ruff lint' { & $pythonCommand -m ruff check . }
-Invoke-Checked 'Ruff format check' { & $pythonCommand -m ruff format --check . }
-Invoke-Checked 'Python tests' { & $pythonCommand -m pytest -q }
-Invoke-Checked 'Frontend tests' { npm test }
+    Invoke-Checked 'Ruff lint' { & $pythonCommand -m ruff check . }
+    Invoke-Checked 'Ruff format check' { & $pythonCommand -m ruff format --check . }
+    Invoke-Checked 'Python tests' { & $pythonCommand -m pytest -q }
+    Invoke-Checked 'Frontend tests' { npm test }
 
-Write-Host 'All verification checks passed.'
+    Write-Host 'All verification checks passed.'
+}
