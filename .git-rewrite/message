@@ -1,1 +1,0 @@
-fix: hold _lock for entire render_page to prevent concurrent close race

@@ -1,9 +1,0 @@
-2ce9d9e51bb722f4915a56cb704e2c9b7ae28fbb commit	refs/heads/agents/vscode-default-terminal-cmd
-7bfd3355878240bcb44fdd823fc76b8e34b1c6a5 commit	refs/heads/feature/20260624/defer-config-validation
-c3107ab04dd0ea62e76de151b5303c9f9b7ae369 commit	refs/heads/main
-5cab7e6fb2da7b2876631610faf7cd03919c5691 commit	refs/original/refs/heads/feature/20260624/defer-config-validation
-17f2769ee477fb123398bd58bb4f80da3d3d6a22 commit	refs/original/refs/heads/main
-735b514b255bc37fb8c3f274ce7627cae4b2aeae commit	refs/original/refs/stash
-1f90bd4a538cf81539fa10edf211da04066166dd commit	refs/sessions/d1c7ee7f-36a7-4ced-a16d-961a6b28587f/checkpoints/turn/0
-7c19c621ad65118973d6ea2ef801321a73c453f4 commit	refs/sessions/d1c7ee7f-36a7-4ced-a16d-961a6b28587f/checkpoints/turn/1
-5c81cfcf934ccf12c6c8c9d5d2ffe529de3c0729 commit	refs/stash
