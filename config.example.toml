@@ -38,9 +38,9 @@
 # PDF 阅读器设置
 # -----------------------------------------------------------------------------
 [pdf_reader]
-# 页面渲染 DPI（越高越清晰，但图片越大，默认 200）
+# 页面渲染 DPI（必须为正整数，布尔值不算；默认 200）
 dpi = 200
-# 翻译缓存目录（保存中间文件，默认 "cache"）
+# 翻译缓存目录（非空字符串，保存中间文件；默认 "cache"）
 cache_dir = "cache"
 
 
@@ -54,9 +54,11 @@ provider = "deepseek"
 
 # API Key（必填）
 #   环境变量 MODEL_API_KEY 优先级更高
+#   必须是非空字符串（数字/布尔不接受）；环境变量为合法非空字符串时可覆盖文件中的无效值
 api_key = "sk-your-api-key-here"
 
 # 模型名称（必填）
+#   必须是非空字符串（数字/布尔/列表不接受）
 #   各引擎默认值 & 常见可选值（完整列表请查阅各供应商文档）：
 #     deepseek:          deepseek-chat / deepseek-reasoner
 #                        deepseek-v4-* 系列支持 thinking_mode（如 deepseek-v4-flash）

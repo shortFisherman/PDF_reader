@@ -78,12 +78,24 @@ except ConfigError as exc:
     CONFIG = {}
     _CONFIG_LOAD_ERROR = str(exc)
 
-model_cfg = CONFIG.get("model", {})
-MODEL_PROVIDER = model_cfg.get("provider", "openai_compatible")
+
+def _section(config_data: dict, name: str) -> dict:
+    """安全提取 TOML section：非 table 时返回空映射，导入期不崩溃。"""
+    section = config_data.get(name, {})
+    return section if isinstance(section, dict) else {}
+
+
+def _string(value: object, default: str = "") -> str:
+    """安全字符串：非 str 时返回默认值，导入期不崩溃。"""
+    return value if isinstance(value, str) else default
+
+
+model_cfg = _section(CONFIG, "model")
+MODEL_PROVIDER = _string(model_cfg.get("provider"), "openai_compatible")
 _raw_api_key = os.environ.get("MODEL_API_KEY", model_cfg.get("api_key", ""))
-MODEL_API_KEY = (_raw_api_key or "").strip()
-MODEL = model_cfg.get("model", "")
-MODEL_BASE_URL = model_cfg.get("base_url") or None
+MODEL_API_KEY = _raw_api_key.strip() if isinstance(_raw_api_key, str) else ""
+MODEL = _string(model_cfg.get("model"), "")
+MODEL_BASE_URL = _string(model_cfg.get("base_url")) or None
 
 MODEL_THINKING_MODE = model_cfg.get("thinking_mode")
 MODEL_REASONING_EFFORT = model_cfg.get("reasoning_effort")
@@ -221,23 +233,85 @@ ENGINE_REGISTRY: list[EngineSpec] = [
 
 PROVIDER_INDEX: dict[str, EngineSpec] = {spec.provider: spec for spec in ENGINE_REGISTRY}
 
-DPI = CONFIG.get("pdf_reader", {}).get("dpi", 200)
-CACHE_DIR = Path(CONFIG.get("pdf_reader", {}).get("cache_dir", "cache")).resolve()
+pdf_reader_cfg = _section(CONFIG, "pdf_reader")
+DPI = pdf_reader_cfg.get("dpi", 200)
+CACHE_DIR = Path(_string(pdf_reader_cfg.get("cache_dir"), "cache")).resolve()
 GLOSSARY_PATH = Path(__file__).parent / "docs" / "glossary.csv"
-TRANSLATION_LANG_IN = CONFIG.get("translation", {}).get("lang_in", "en")
-TRANSLATION_LANG_OUT = CONFIG.get("translation", {}).get("lang_out", "zh")
+translation_cfg = _section(CONFIG, "translation")
+TRANSLATION_LANG_IN = _string(translation_cfg.get("lang_in"), "en")
+TRANSLATION_LANG_OUT = _string(translation_cfg.get("lang_out"), "zh")
 
 
 def _validate_required_config() -> None:
-    if not MODEL:
+    if not isinstance(MODEL, str) or not MODEL:
         raise ConfigError("请设置 model.model")
-    if not MODEL_API_KEY or MODEL_API_KEY.startswith("sk-your-api-key"):
+    if not isinstance(MODEL_API_KEY, str) or not MODEL_API_KEY or MODEL_API_KEY.startswith("sk-your-api-key"):
         raise ConfigError("请设置 model.api_key 或环境变量 MODEL_API_KEY")
 
 
-def validate_startup_requirements() -> None:
-    """启动服务器前的必填配置校验（缺失 config.toml 时在此给出清晰错误）。"""
-    _validate_required_config()
+def _require_table(config_data: dict, name: str) -> dict:
+    section = config_data.get(name, {})
+    if not isinstance(section, dict):
+        raise ConfigError(f"[{name}] 必须是 TOML table")
+    return section
+
+
+def _validate_model_section(section: dict) -> None:
+    provider = section.get("provider", "openai_compatible")
+    if not isinstance(provider, str) or not provider.strip():
+        raise ConfigError("[model].provider 必须是非空字符串")
+
+    model_name = section.get("model", "")
+    if not isinstance(model_name, str) or not model_name.strip():
+        raise ConfigError("[model].model 必须是非空字符串")
+
+    base_url = section.get("base_url")
+    if base_url is not None and (not isinstance(base_url, str) or not base_url.strip()):
+        raise ConfigError("[model].base_url 若设置必须是非空字符串")
+
+    env_key = os.environ.get("MODEL_API_KEY")
+    if env_key is not None:
+        key = env_key
+    else:
+        file_key = section.get("api_key", "")
+        key = file_key if isinstance(file_key, str) else ""
+    if not isinstance(key, str) or not key.strip():
+        raise ConfigError("请设置 model.api_key 或环境变量 MODEL_API_KEY")
+    if key.strip().startswith("sk-your-api-key"):
+        raise ConfigError("请设置 model.api_key 或环境变量 MODEL_API_KEY（当前为示例占位值）")
+
+
+def _validate_pdf_reader_section(section: dict) -> None:
+    dpi = section.get("dpi", 200)
+    if isinstance(dpi, bool) or not isinstance(dpi, int) or dpi <= 0:
+        raise ConfigError("[pdf_reader].dpi 必须是正整数（布尔值不算）")
+    cache_dir = section.get("cache_dir", "cache")
+    if not isinstance(cache_dir, str) or not cache_dir.strip():
+        raise ConfigError("[pdf_reader].cache_dir 必须是非空字符串")
+
+
+def _validate_translation_section(section: dict) -> None:
+    for key in ("lang_in", "lang_out"):
+        value = section.get(key, "en" if key == "lang_in" else "zh")
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError(f"[translation].{key} 必须是非空字符串")
+
+
+def validate_startup_requirements(config_data: dict | None = None) -> None:
+    """启动服务器前的统一配置校验（[server] 由 resolve_server_config 校验）。
+
+    直接消费的 section 必须为 table，核心字段类型/非空要求清晰；
+    任何错误抛 ConfigError，由 main 以退出码 2 结束。
+    """
+    data = CONFIG if config_data is None else config_data
+    if config_data is None and _CONFIG_LOAD_ERROR is not None:
+        raise ConfigError(_CONFIG_LOAD_ERROR)
+    model_section = _require_table(data, "model")
+    pdf_reader_section = _require_table(data, "pdf_reader")
+    translation_section = _require_table(data, "translation")
+    _validate_model_section(model_section)
+    _validate_pdf_reader_section(pdf_reader_section)
+    _validate_translation_section(translation_section)
 
 
 def _resolve_file_debug(config_data: dict) -> bool:

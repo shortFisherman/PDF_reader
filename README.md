@@ -94,6 +94,9 @@ $env:MODEL_API_KEY = 'your-api-key'
 启动服务器前会严格校验 `config.toml`：
 
 - `[server]` 必须是 table；`host` 必须是非空字符串；`port` 必须是 1–65535 的整数（布尔值不算整数）；`debug` 必须是布尔值 `true` / `false`。
+- `[model]`、`[pdf_reader]`、`[translation]` 若存在必须是 table；`model.provider`、`model.model`、`model.api_key`、`model.base_url`（若有）必须是非空字符串（数字/布尔/列表均拒绝）；`pdf_reader.dpi` 必须是正整数（布尔值不算）、`cache_dir` 必须是非空字符串；`translation.lang_in` / `lang_out` 必须是非空字符串。
+- 导入 `config` / `app` 不因这些错误类型崩溃（非 table section 与错误类型在导入期使用安全默认值），错误统一由启动入口在启动服务器前以 `ERROR: ...` 和非零状态报出。
+- `MODEL_API_KEY` 环境变量仍优先于文件；环境值为合法非空字符串（且非示例占位值）时可以覆盖文件中无效的 `api_key`，但 `[model]` 段本身仍必须是 table。
 - `config.toml` 缺失时按空配置安全加载，但缺少 `model.model` 或 `model.api_key`（且未设置 `MODEL_API_KEY`）会在启动服务器前报错退出。
 - TOML 语法错误、字段类型错误、非法端口、非法 debug 值都会在启动时输出 `ERROR: ...` 并以非零状态退出；错误信息不包含 API Key。
 

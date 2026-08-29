@@ -11,6 +11,17 @@ import config
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _valid_config(server: dict | None = None) -> dict:
+    cfg = {
+        "model": {"provider": "deepseek", "model": "deepseek-chat", "api_key": "sk-test"},
+        "pdf_reader": {"dpi": 200, "cache_dir": "cache"},
+        "translation": {"lang_in": "en", "lang_out": "zh"},
+    }
+    if server is not None:
+        cfg["server"] = server
+    return cfg
+
+
 @pytest.fixture
 def valid_model_config(monkeypatch):
     """让 main() 通过必填模型校验；CI 无 config.toml 时也稳定。"""
@@ -30,7 +41,7 @@ def main_entry(monkeypatch, valid_model_config):
 class TestMainDebugPriority:
     def test_default_debug_false_and_reloader_false(self, monkeypatch, main_entry):
         monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
-        monkeypatch.setattr(config, "CONFIG", {})
+        monkeypatch.setattr(config, "CONFIG", _valid_config())
         mock_app, run = main_entry
 
         assert run([]) == 0
@@ -40,7 +51,7 @@ class TestMainDebugPriority:
 
     def test_cli_debug_overrides_env_and_config(self, monkeypatch, main_entry):
         monkeypatch.setenv("PDF_READER_DEBUG", "false")
-        monkeypatch.setattr(config, "CONFIG", {"server": {"debug": False}})
+        monkeypatch.setattr(config, "CONFIG", _valid_config({"debug": False}))
         mock_app, run = main_entry
 
         assert run(["--debug"]) == 0
@@ -50,7 +61,7 @@ class TestMainDebugPriority:
 
     def test_cli_no_debug_overrides_env_and_config(self, monkeypatch, main_entry):
         monkeypatch.setenv("PDF_READER_DEBUG", "true")
-        monkeypatch.setattr(config, "CONFIG", {"server": {"host": "0.0.0.0", "port": 8000, "debug": True}})
+        monkeypatch.setattr(config, "CONFIG", _valid_config({"host": "0.0.0.0", "port": 8000, "debug": True}))
         mock_app, run = main_entry
 
         assert run(["--no-debug"]) == 0
@@ -60,7 +71,7 @@ class TestMainDebugPriority:
 
     def test_env_true_overrides_config_false(self, monkeypatch, main_entry):
         monkeypatch.setenv("PDF_READER_DEBUG", "true")
-        monkeypatch.setattr(config, "CONFIG", {"server": {"debug": False}})
+        monkeypatch.setattr(config, "CONFIG", _valid_config({"debug": False}))
         mock_app, run = main_entry
 
         assert run([]) == 0
@@ -69,7 +80,7 @@ class TestMainDebugPriority:
 
     def test_env_false_overrides_config_true(self, monkeypatch, main_entry):
         monkeypatch.setenv("PDF_READER_DEBUG", "0")
-        monkeypatch.setattr(config, "CONFIG", {"server": {"debug": True}})
+        monkeypatch.setattr(config, "CONFIG", _valid_config({"debug": True}))
         mock_app, run = main_entry
 
         assert run([]) == 0
@@ -78,7 +89,7 @@ class TestMainDebugPriority:
 
     def test_config_true_when_no_env_or_cli(self, monkeypatch, main_entry):
         monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
-        monkeypatch.setattr(config, "CONFIG", {"server": {"debug": True}})
+        monkeypatch.setattr(config, "CONFIG", _valid_config({"debug": True}))
         mock_app, run = main_entry
 
         assert run([]) == 0
@@ -139,19 +150,21 @@ class TestMainErrorPaths:
         monkeypatch.setattr(config, "MODEL", "")
         monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
         monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.delenv("MODEL_API_KEY", raising=False)
         monkeypatch.setattr(config, "CONFIG", {})
         mock_app, run = main_entry
 
         assert run([]) == 2
 
-        assert "model.model" in capsys.readouterr().err
+        assert "[model].model 必须是非空字符串" in capsys.readouterr().err
         mock_app.run.assert_not_called()
 
     def test_missing_api_key_blocks_startup(self, monkeypatch, main_entry, capsys):
         monkeypatch.setattr(config, "MODEL", "deepseek-chat")
         monkeypatch.setattr(config, "MODEL_API_KEY", "")
         monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
-        monkeypatch.setattr(config, "CONFIG", {})
+        monkeypatch.delenv("MODEL_API_KEY", raising=False)
+        monkeypatch.setattr(config, "CONFIG", {"model": {"model": "deepseek-chat"}})
         mock_app, run = main_entry
 
         assert run([]) == 2
@@ -177,12 +190,44 @@ class TestMainErrorPaths:
         monkeypatch.setattr(config, "MODEL", "")
         monkeypatch.setattr(config, "MODEL_API_KEY", "sk-super-secret-value")
         monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.delenv("MODEL_API_KEY", raising=False)
         monkeypatch.setattr(config, "CONFIG", {})
         mock_app, run = main_entry
 
         assert run([]) == 2
 
         assert "sk-super-secret-value" not in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        ("bad_config", "message"),
+        [
+            ({"model": "bad", "pdf_reader": {}, "translation": {}}, "[model] 必须是 TOML table"),
+            (
+                {"model": {"model": 123, "api_key": "sk-x"}, "pdf_reader": {}, "translation": {}},
+                "[model].model 必须是非空字符串",
+            ),
+            (
+                {"model": {"model": "m", "api_key": "sk-x"}, "pdf_reader": {"dpi": "200"}, "translation": {}},
+                "[pdf_reader].dpi 必须是正整数",
+            ),
+            (
+                {"model": {"model": "m", "api_key": "sk-x"}, "pdf_reader": {}, "translation": {"lang_in": 123}},
+                "[translation].lang_in 必须是非空字符串",
+            ),
+        ],
+    )
+    def test_invalid_startup_sections_return_2(self, monkeypatch, main_entry, capsys, bad_config, message):
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.delenv("MODEL_API_KEY", raising=False)
+        monkeypatch.setattr(config, "CONFIG", bad_config)
+        mock_app, run = main_entry
+
+        assert run([]) == 2
+
+        stderr = capsys.readouterr().err
+        assert "ERROR:" in stderr
+        assert message in stderr
+        mock_app.run.assert_not_called()
 
 
 class TestImportHasNoCliSideEffects:
@@ -218,7 +263,7 @@ class TestCreateAppLogging:
         from flask import Flask
 
         monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
-        monkeypatch.setattr(config, "CONFIG", {})
+        monkeypatch.setattr(config, "CONFIG", _valid_config())
         monkeypatch.setattr(config, "MODEL", "deepseek-chat")
         monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
         monkeypatch.setattr(config, "DEBUG", False)
@@ -234,7 +279,7 @@ class TestCreateAppLogging:
         from flask import Flask
 
         monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
-        monkeypatch.setattr(config, "CONFIG", {})
+        monkeypatch.setattr(config, "CONFIG", _valid_config())
         monkeypatch.setattr(config, "MODEL", "deepseek-chat")
         monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
         monkeypatch.setattr(config, "DEBUG", False)
@@ -276,3 +321,20 @@ class TestRealEntry:
 
         assert result.returncode != 0
         assert "PDF_READER_DEBUG 非法值" in result.stderr
+
+    def test_real_entry_injected_bad_config_exits_2(self):
+        script = (
+            "import app, config, sys;"
+            "config.CONFIG = {'model': {'model': 123, 'api_key': 'sk-x'}, 'pdf_reader': {}, 'translation': {}};"
+            "sys.exit(app.main([]))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
+        assert result.returncode == 2
+        assert "[model].model 必须是非空字符串" in result.stderr

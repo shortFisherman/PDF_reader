@@ -1,3 +1,9 @@
+import io
+import sys
+import types
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 
 import config
@@ -5,8 +11,9 @@ import config
 
 @pytest.fixture(autouse=True)
 def _no_pdf_reader_debug(monkeypatch) -> None:
-    """每个用例默认不读真实环境变量，需要时再显式 setenv。"""
+    """每个用例默认不读真实运行时环境变量，需要时再显式 setenv。"""
     monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
 
 
 class TestServerConfigValidation:
@@ -118,3 +125,157 @@ class TestConfigFileLoading:
         bad.write_bytes(b"not = = valid [[")
         with pytest.raises(config.ConfigError, match="TOML 语法错误"):
             config._load_config(bad)
+
+
+class TestStartupValidationSections:
+    @staticmethod
+    def _base() -> dict:
+        return {
+            "model": {"model": "deepseek-chat", "api_key": "sk-test"},
+            "pdf_reader": {"dpi": 200, "cache_dir": "cache"},
+            "translation": {"lang_in": "en", "lang_out": "zh"},
+        }
+
+    def test_valid_config_passes(self):
+        config.validate_startup_requirements(
+            {
+                **self._base(),
+                "model": {
+                    "provider": "deepseek",
+                    "model": "deepseek-chat",
+                    "api_key": "sk-test",
+                    "base_url": "https://api.example.com/v1",
+                },
+                "pdf_reader": {"dpi": 300, "cache_dir": "cache"},
+            }
+        )
+
+    @pytest.mark.parametrize("section", ["model", "pdf_reader", "translation"])
+    def test_sections_must_be_tables(self, section):
+        cfg = self._base()
+        cfg[section] = "bad"
+        with pytest.raises(config.ConfigError, match=rf"\[{section}\] 必须是 TOML table"):
+            config.validate_startup_requirements(cfg)
+
+    @pytest.mark.parametrize(
+        ("fields", "message"),
+        [
+            ({"model": {"provider": 123}}, r"\[model\]\.provider 必须是非空字符串"),
+            ({"model": {"provider": "   "}}, r"\[model\]\.provider 必须是非空字符串"),
+            ({"model": {"model": 123}}, r"\[model\]\.model 必须是非空字符串"),
+            ({"model": {"model": True}}, r"\[model\]\.model 必须是非空字符串"),
+            ({"model": {"model": ["m"]}}, r"\[model\]\.model 必须是非空字符串"),
+            ({"model": {"model": ""}}, r"\[model\]\.model 必须是非空字符串"),
+            ({"model": {"api_key": 123}}, "请设置 model.api_key 或环境变量 MODEL_API_KEY"),
+            ({"model": {"api_key": True}}, "请设置 model.api_key 或环境变量 MODEL_API_KEY"),
+            ({"model": {"api_key": ["sk-x"]}}, "请设置 model.api_key 或环境变量 MODEL_API_KEY"),
+            ({"model": {"api_key": "sk-your-api-key"}}, "示例占位值"),
+            ({"model": {"base_url": 123}}, r"\[model\]\.base_url 若设置必须是非空字符串"),
+            ({"model": {"base_url": ""}}, r"\[model\]\.base_url 若设置必须是非空字符串"),
+            ({"pdf_reader": {"dpi": "200"}}, r"\[pdf_reader\]\.dpi 必须是正整数"),
+            ({"pdf_reader": {"dpi": True}}, r"\[pdf_reader\]\.dpi 必须是正整数"),
+            ({"pdf_reader": {"dpi": 0}}, r"\[pdf_reader\]\.dpi 必须是正整数"),
+            ({"pdf_reader": {"cache_dir": 123}}, r"\[pdf_reader\]\.cache_dir 必须是非空字符串"),
+            ({"pdf_reader": {"cache_dir": ""}}, r"\[pdf_reader\]\.cache_dir 必须是非空字符串"),
+            ({"translation": {"lang_in": 123}}, r"\[translation\]\.lang_in 必须是非空字符串"),
+            ({"translation": {"lang_out": ""}}, r"\[translation\]\.lang_out 必须是非空字符串"),
+        ],
+    )
+    def test_invalid_fields_rejected(self, fields, message):
+        cfg = self._base()
+        for section, values in fields.items():
+            cfg[section].update(values)
+        with pytest.raises(config.ConfigError, match=message):
+            config.validate_startup_requirements(cfg)
+
+    @pytest.mark.parametrize("dpi", [1, 200, 10000])
+    def test_positive_dpi_accepted(self, dpi):
+        cfg = self._base()
+        cfg["pdf_reader"] = {"dpi": dpi, "cache_dir": "cache"}
+        config.validate_startup_requirements(cfg)
+
+
+class TestEnvApiKeyOverride:
+    def _base(self) -> dict:
+        return {"model": {"model": "deepseek-chat", "api_key": "sk-file"}, "pdf_reader": {}, "translation": {}}
+
+    def test_env_valid_overrides_invalid_file_api_key_type(self, monkeypatch):
+        monkeypatch.setenv("MODEL_API_KEY", "sk-env-key")
+        cfg = self._base()
+        cfg["model"]["api_key"] = 123
+        config.validate_startup_requirements(cfg)
+
+    def test_env_valid_overrides_placeholder_file_api_key(self, monkeypatch):
+        monkeypatch.setenv("MODEL_API_KEY", "sk-env-key")
+        cfg = self._base()
+        cfg["model"]["api_key"] = "sk-your-api-key"
+        config.validate_startup_requirements(cfg)
+
+    def test_env_cannot_fix_non_table_model_section(self, monkeypatch):
+        monkeypatch.setenv("MODEL_API_KEY", "sk-env-key")
+        with pytest.raises(config.ConfigError, match=r"\[model\] 必须是 TOML table"):
+            config.validate_startup_requirements({"model": "bad"})
+
+    def test_empty_env_key_rejected(self, monkeypatch):
+        monkeypatch.setenv("MODEL_API_KEY", "")
+        with pytest.raises(config.ConfigError, match="请设置 model.api_key 或环境变量 MODEL_API_KEY"):
+            config.validate_startup_requirements(self._base())
+
+    def test_env_placeholder_rejected(self, monkeypatch):
+        monkeypatch.setenv("MODEL_API_KEY", "sk-your-api-key")
+        with pytest.raises(config.ConfigError, match="示例占位值"):
+            config.validate_startup_requirements(self._base())
+
+
+class TestImportTypeSafety:
+    def _reimport(self, toml_bytes: bytes, monkeypatch) -> types.ModuleType:
+        monkeypatch.delenv("MODEL_API_KEY", raising=False)
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        with patch.dict(sys.modules):
+            sys.modules.pop("config", None)
+            with patch("builtins.open", return_value=io.BytesIO(toml_bytes)):
+                import config as fresh_config
+        return fresh_config
+
+    def test_import_survives_non_table_and_bad_field_types(self, monkeypatch):
+        fresh = self._reimport(
+            b"model = 'bad'\n"
+            b"[pdf_reader]\n"
+            b"dpi = 'high'\n"
+            b"cache_dir = 123\n"
+            b"[translation]\n"
+            b"lang_in = 123\n"
+            b"lang_out = true\n",
+            monkeypatch,
+        )
+
+        assert fresh.MODEL == ""
+        assert fresh.MODEL_PROVIDER == "openai_compatible"
+        assert fresh.MODEL_API_KEY == ""
+        assert fresh.MODEL_BASE_URL is None
+        assert fresh.CACHE_DIR == Path("cache").resolve()
+        assert fresh.TRANSLATION_LANG_IN == "en"
+        assert fresh.TRANSLATION_LANG_OUT == "zh"
+
+        with pytest.raises(fresh.ConfigError, match=r"\[model\] 必须是 TOML table"):
+            fresh.validate_startup_requirements()
+
+    def test_import_survives_invalid_model_field_types(self, monkeypatch):
+        fresh = self._reimport(
+            b"[model]\n"
+            b"provider = 'deepseek'\n"
+            b"model = 123\n"
+            b"api_key = 456\n"
+            b"[pdf_reader]\n"
+            b"dpi = 200\n"
+            b"cache_dir = 'cache'\n"
+            b"[translation]\n"
+            b"lang_in = 'en'\n"
+            b"lang_out = 'zh'\n",
+            monkeypatch,
+        )
+
+        assert fresh.MODEL == ""
+        assert fresh.MODEL_API_KEY == ""
+        with pytest.raises(fresh.ConfigError, match=r"\[model\]\.model 必须是非空字符串"):
+            fresh.validate_startup_requirements()
