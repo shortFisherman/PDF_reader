@@ -12,6 +12,7 @@ from flask import (
     send_file,
     stream_with_context,
 )
+from werkzeug.exceptions import HTTPException
 
 import config
 import glossary_service
@@ -26,8 +27,8 @@ logger = logging.getLogger("pdf_reader.routes")
 bp = Blueprint("main", __name__)
 
 
-def error_response(msg: str, code: int) -> tuple:
-    return jsonify({"error": msg}), code
+def error_response(msg: str, code: int, error_code: str) -> tuple:
+    return jsonify({"code": error_code, "error": msg}), code
 
 
 def _get_state():
@@ -55,7 +56,7 @@ def open_pdf():
     logger.debug("[route] open_pdf path=%s", pdf_path)
     if not pdf_path or not os.path.isfile(pdf_path):
         logger.debug("[route] open_pdf invalid path")
-        return error_response("file not found", 400)
+        return error_response("file not found", 400, "invalid_file_path")
 
     coordinator = _get_coordinator()
     active_job = coordinator.active_job
@@ -74,7 +75,7 @@ def save_reading_progress():
     page = data.get("page")
     if not isinstance(page, int) or isinstance(page, bool):
         logger.debug("[route] save-reading-progress invalid page=%r", page)
-        return error_response("invalid page", 400)
+        return error_response("invalid page", 400, "invalid_page")
 
     state = _get_state()
     try:
@@ -82,8 +83,11 @@ def save_reading_progress():
     except ValueError as e:
         msg = str(e)
         logger.debug("[route] save-reading-progress page=%d rejected: %s", page, msg)
-        code = 400 if msg in ("no document opened", "page out of range") else 400
-        return error_response(msg, code)
+        code_by_message = {
+            "no document opened": "no_document_opened",
+            "page out of range": "page_out_of_range",
+        }
+        return error_response(msg, 400, code_by_message.get(msg, "invalid_request"))
 
     logger.debug("[route] save-reading-progress page=%d", page)
     return jsonify({"ok": True})
@@ -92,13 +96,13 @@ def save_reading_progress():
 @bp.route("/api/page/<side>/<int:page>")
 def get_page(side: str, page: int):
     if side not in ("left", "right"):
-        return error_response("invalid side", 400)
+        return error_response("invalid side", 400, "invalid_side")
 
     state = _get_state()
     try:
         png_data = state.render_page(side, page, render_page, config.DPI)
     except ValueError:
-        return error_response("page out of range", 404)
+        return error_response("page out of range", 404, "page_out_of_range")
 
     return send_file(
         io.BytesIO(png_data),
@@ -113,7 +117,7 @@ def page_count(side: str):
         return jsonify({"count": state.left_doc.page_count})
     elif side == "right" and state.right_doc:
         return jsonify({"count": state.right_doc.page_count})
-    return error_response("no document opened", 400)
+    return error_response("no document opened", 400, "no_document_opened")
 
 
 @bp.route("/")
@@ -129,10 +133,10 @@ def translate_page(page: int):
         snapshot = state.translation_snapshot()
     except ValueError:
         logger.debug("[route] translate_page no doc")
-        return error_response("no document opened", 400)
+        return error_response("no document opened", 400, "no_document_opened")
     if page < 0 or page >= snapshot.page_count:
         logger.debug("[route] translate_page page out of range")
-        return error_response("page out of range", 400)
+        return error_response("page out of range", 400, "page_out_of_range")
 
     data = request.get_json(silent=True) or {}
     user_prompt = (data.get("prompt") or "").strip() or None
@@ -192,7 +196,7 @@ def translate_batch():
         snapshot = state.translation_snapshot()
     except ValueError:
         logger.debug("[route] translate_batch no doc")
-        return error_response("no document opened", 400)
+        return error_response("no document opened", 400, "no_document_opened")
 
     data = request.get_json(silent=True) or {}
     from_page = data.get("from")
@@ -202,13 +206,13 @@ def translate_batch():
 
     if not isinstance(from_page, int) or not isinstance(to_page, int):
         logger.debug("[route] translate_batch invalid page numbers")
-        return error_response("invalid page numbers", 400)
+        return error_response("invalid page numbers", 400, "invalid_page_numbers")
     if from_page < 1 or to_page < 1 or from_page > page_count or to_page > page_count:
         logger.debug("[route] translate_batch page out of range")
-        return error_response("page out of range", 400)
+        return error_response("page out of range", 400, "page_out_of_range")
     if from_page > to_page:
         logger.debug("[route] translate_batch invalid page range")
-        return error_response("invalid page range", 400)
+        return error_response("invalid page range", 400, "invalid_page_range")
 
     user_prompt = (data.get("prompt") or "").strip() or None
     page_indices = list(range(from_page - 1, to_page))
@@ -279,7 +283,27 @@ def get_stages():
 
 @bp.app_errorhandler(404)
 def not_found(e):
-    return jsonify({"error": "not found"}), 404
+    return jsonify({"code": "not_found", "error": "not found"}), 404
+
+
+@bp.app_errorhandler(HTTPException)
+def http_error(exc: HTTPException):
+    status = exc.code or 500
+    logger.warning("HTTP error %s while processing %s %s", status, request.method, request.path)
+    if status == 500:
+        return jsonify({"code": "internal_error", "error": "服务器内部错误"}), 500
+    return jsonify({"code": f"http_{status}", "error": "请求错误"}), status
+
+
+@bp.app_errorhandler(Exception)
+def internal_error(exc: Exception):
+    logger.error(
+        "Unhandled exception while processing %s %s",
+        request.method,
+        request.path,
+        exc_info=exc,
+    )
+    return jsonify({"code": "internal_error", "error": "服务器内部错误"}), 500
 
 
 def register_routes(app):

@@ -365,3 +365,105 @@ def test_translate_batch_emits_batch_info_and_finish(app_state, sample_pdf, monk
         assert '"type": "batch_info"' in body
         assert '"from": 1' in body and f'"to": {page_count}' in body
         assert '"type": "finish"' in body
+
+
+def _assert_error_shape(resp, expected_code) -> dict:
+    data = json.loads(resp.data)
+    assert data["code"] == expected_code, f"unexpected code in {data}"
+    assert isinstance(data["error"], str) and data["error"]
+    return data
+
+
+def test_api_error_contract_400_and_404_branches(test_client):
+    cases = [
+        ("open missing", test_client.post("/api/open", json={"path": "/nonexistent/file.pdf"}), "invalid_file_path"),
+        ("reading invalid", test_client.post("/api/reading-progress", json={"page": "x"}), "invalid_page"),
+        ("page count no doc", test_client.get("/api/page-count/left"), "no_document_opened"),
+        ("translate no doc", test_client.post("/api/translate/0"), "no_document_opened"),
+        ("batch no doc", test_client.post("/api/translate-batch", json={"from": 1, "to": 1}), "no_document_opened"),
+        ("missing route", test_client.get("/api/does-not-exist"), "not_found"),
+    ]
+    for label, resp, expected_code in cases:
+        _assert_error_shape(resp, expected_code)
+
+
+def test_api_error_contract_with_open_document(app_state, sample_pdf):
+    from file_hash import sha256 as sha256_func
+    from routes import register_routes
+
+    app_state.open_pdf(str(sample_pdf), sha256_func)
+    app = Flask(__name__)
+    app.config.update(app_state=app_state, TESTING=True)
+    register_routes(app)
+
+    with app.test_client() as client:
+        cases = [
+            ("invalid side", client.get("/api/page/bad/0"), "invalid_side"),
+            ("page out of range", client.get(f"/api/page/left/{app_state.page_count}"), "page_out_of_range"),
+            (
+                "reading out of range",
+                client.post("/api/reading-progress", json={"page": app_state.page_count}),
+                "page_out_of_range",
+            ),
+            (
+                "translate out of range",
+                client.post(f"/api/translate/{app_state.page_count}", json={}),
+                "page_out_of_range",
+            ),
+            (
+                "batch invalid numbers",
+                client.post("/api/translate-batch", json={"from": None, "to": 1}),
+                "invalid_page_numbers",
+            ),
+            ("batch out of range", client.post("/api/translate-batch", json={"from": 0, "to": 1}), "page_out_of_range"),
+            (
+                "batch invalid range",
+                client.post("/api/translate-batch", json={"from": 2, "to": 1}),
+                "invalid_page_range",
+            ),
+        ]
+        for label, resp, expected_code in cases:
+            _assert_error_shape(resp, expected_code)
+
+
+def test_method_not_allowed_returns_json_error(test_client):
+    resp = test_client.post("/api/page/left/0")
+    assert resp.status_code == 405
+    data = json.loads(resp.data)
+    assert data["code"] == "http_405"
+    assert data["error"]
+
+
+def test_internal_error_sanitizes_response_and_keeps_log(caplog, monkeypatch, tmp_path):
+    import logging
+
+    from routes import register_routes
+    from state import AppState
+    from translation_coordinator import TranslationCoordinator
+
+    state = AppState(tmp_path / "cache")
+    app = Flask(__name__)
+    app.config.update(
+        app_state=state,
+        TESTING=False,
+        translation_coordinator=TranslationCoordinator(),
+    )
+    register_routes(app)
+
+    sentinel = "sk-secret-123 C:\\Users\\secret\\file.txt <img src=x onerror=alert(1)>"
+
+    def boom(page):  # noqa: ANN202
+        raise RuntimeError(sentinel)
+
+    monkeypatch.setattr(state, "save_reading_progress", boom)
+    with caplog.at_level(logging.ERROR, logger="pdf_reader.routes"):
+        with app.test_client() as client:
+            resp = client.post("/api/reading-progress", json={"page": 0})
+
+    assert resp.status_code == 500
+    data = json.loads(resp.data)
+    assert data == {"code": "internal_error", "error": "服务器内部错误"}
+    body = resp.data.decode("utf-8")
+    for secret in ("sk-secret-123", "Users\\secret", "onerror"):
+        assert secret not in body
+    assert "sk-secret-123" in caplog.text

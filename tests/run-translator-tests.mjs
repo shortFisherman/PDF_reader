@@ -287,6 +287,58 @@ console.log('--- Test 3.5: prompt forwarding ---');
     assert(capturedBody === '{"prompt":null}', `Test 3.5.2: null prompt in body, got "${capturedBody}"`);
 }
 
+// Test 3.6: SSE error event missing error field -> fixed fallback
+console.log('--- Test 3.6: SSE error event missing error -> fallback ---');
+{
+    const record = [];
+    const stream = makeSSEStream('data: {"type":"error","code":"translation_error"}\n\n');
+    const mockFetchResp = createMockResponse({ ok: true, body: stream });
+    globalThis.fetch = async () => mockFetchResp;
+
+    await translateCurrentPage(1, {
+        onStageChange: () => {}, onProgress: () => {}, onFinish: () => {},
+        onError: (msg) => record.push(msg),
+    });
+
+    assert(record.length === 1, 'Test 3.6.1: onError called');
+    assert(record[0] === '翻译失败', `Test 3.6.2: fallback message, got "${record[0]}"`);
+}
+
+// Test 3.7: HTTP !ok with non-JSON body -> fixed fallback
+console.log('--- Test 3.7: HTTP !ok non-JSON -> fallback ---');
+{
+    const record = [];
+    const mockFetchResp = {
+        ok: false,
+        status: 500,
+        json: async () => { throw new SyntaxError('not json'); },
+    };
+    globalThis.fetch = async () => mockFetchResp;
+
+    await translateCurrentPage(1, {
+        onStageChange: () => {}, onProgress: () => {}, onFinish: () => {},
+        onError: (msg) => record.push(msg),
+    });
+
+    assert(record.length === 1, 'Test 3.7.1: onError called');
+    assert(record[0] === '翻译请求失败', `Test 3.7.2: fallback message, got "${record[0]}"`);
+}
+
+// Test 3.8: fetch network rejection -> fixed fallback
+console.log('--- Test 3.8: network rejection -> fallback ---');
+{
+    const record = [];
+    globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+
+    await translateCurrentPage(1, {
+        onStageChange: () => {}, onProgress: () => {}, onFinish: () => {},
+        onError: (msg) => record.push(msg),
+    });
+
+    assert(record.length === 1, 'Test 3.8.1: onError called');
+    assert(record[0] === '网络错误，请稍后重试', `Test 3.8.2: fallback message, got "${record[0]}"`);
+}
+
 // ============================================================
 // translator translateBatch Tests
 // ============================================================
@@ -360,6 +412,26 @@ console.log('--- Test 4.3: translateBatch prompt forwarding ---');
         onFinish: () => {}, onError: () => {}, prompt: '正式语气',
     });
     assert(capturedBody === '{"from":1,"to":1,"prompt":"正式语气"}', `Test 4.3.1: body has from/to/prompt`);
+}
+
+// Test 4.4: translateBatch HTTP !ok with non-JSON body -> fixed fallback
+console.log('--- Test 4.4: batch HTTP !ok non-JSON -> fallback ---');
+{
+    const record = [];
+    const mockFetchResp = {
+        ok: false,
+        status: 500,
+        json: async () => { throw new SyntaxError('not json'); },
+    };
+    globalThis.fetch = async () => mockFetchResp;
+
+    await translateBatch(1, 2, {
+        onBatchInfo: () => {}, onStageChange: () => {}, onProgress: () => {},
+        onFinish: () => {}, onError: (msg) => record.push(msg), prompt: null,
+    });
+
+    assert(record.length === 1, 'Test 4.4.1: onError called');
+    assert(record[0] === '翻译请求失败', `Test 4.4.2: fallback message, got "${record[0]}"`);
 }
 
 // ============================================================

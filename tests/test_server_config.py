@@ -128,6 +128,22 @@ class TestConfigFileLoading:
             config._load_config(bad)
 
 
+class TestLoopbackHost:
+    @pytest.mark.parametrize(
+        "host",
+        ["127.0.0.1", "127.1.2.3", "localhost", "LOCALHOST", "::1", "0:0:0:0:0:0:0:1"],
+    )
+    def test_loopback_hosts(self, host):
+        assert config.is_loopback_host(host) is True
+
+    @pytest.mark.parametrize(
+        "host",
+        ["0.0.0.0", "::", "192.168.1.5", "example.com", "", "localhost.localdomain"],
+    )
+    def test_non_loopback_hosts(self, host):
+        assert config.is_loopback_host(host) is False
+
+
 class TestStartupValidationSections:
     @staticmethod
     def _base() -> dict:

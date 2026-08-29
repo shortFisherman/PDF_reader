@@ -58,7 +58,9 @@ EXPECTED_FINISH_PROGRESS_SSE = (
     + "\n\n"
 )
 
-EXPECTED_ERROR_SSE = "data: " + json.dumps({"type": "error", "error": "test error"}) + "\n\n"
+EXPECTED_ERROR_SSE = (
+    "data: " + json.dumps({"type": "error", "code": "translation_error", "error": "上游翻译失败"}) + "\n\n"
+)
 
 EXPECTED_FINAL_PROGRESS_SSE = (
     "data: "
@@ -140,7 +142,9 @@ def test_golden_sample_progress_update():
 
 
 def test_golden_sample_error():
-    assert EXPECTED_ERROR_SSE == ('data: {"type": "error", "error": "test error"}\n\n')
+    assert EXPECTED_ERROR_SSE == (
+        "data: " + json.dumps({"type": "error", "code": "translation_error", "error": "上游翻译失败"}) + "\n\n"
+    )
 
 
 # --- format_sse_event tests ---
@@ -268,7 +272,7 @@ def test_generate_error_event_stops_stream(tmp_path):
     assert result[1] == EXPECTED_ERROR_SSE
 
 
-def test_generate_translation_error_yields_error_event(tmp_path):
+def test_generate_translation_error_yields_error_event(tmp_path, caplog):
     from translation_orchestrator import TranslationError
 
     events = [{"type": "progress_start", "stage": "layout_analysis"}]
@@ -287,12 +291,14 @@ def test_generate_translation_error_yields_error_event(tmp_path):
 
     with patch("sse_stream.run_translation", return_value=error_iter()):
         with patch("sse_stream.debug_trace"):
-            result = list(generate(ctx))
+            with caplog.at_level("WARNING", logger="pdf_reader.translate"):
+                result = list(generate(ctx))
 
     assert len(result) == 2
     assert result[0] == EXPECTED_PROGRESS_START_SSE
-    assert "error" in result[1]
-    assert "thread crashed" in result[1]
+    assert result[1] == EXPECTED_ERROR_SSE
+    assert "thread crashed" not in result[1]
+    assert "thread crashed" in caplog.text
 
 
 def test_generate_merges_glossary_with_str_auto_path(tmp_path):
@@ -862,3 +868,164 @@ def test_generate_batch_disconnect_cancels_worker(tmp_path):
     assert not output_dir.exists()
     replace_pages.assert_not_called()
     cancel_job.assert_called_once_with("job-batch-disconnect")
+
+
+# --- P2-05: SSE error sanitization ---
+
+
+def test_generate_upstream_error_event_not_leaked(tmp_path, caplog):
+    """上游 error 事件只发稳定 code+安全消息；原始错误仅进服务端日志。"""
+    sentinel = "UPSTREAM-RAW sk-secret-999 C:\\Users\\priv\\file <img src=x onerror=alert(1)>"
+    events = [{"type": "error", "error": sentinel}]
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(cache_dir=cache_dir)
+
+    with patch("sse_stream.run_translation", return_value=iter(events)):
+        with patch("sse_stream.debug_trace"):
+            with caplog.at_level("WARNING", logger="pdf_reader.translate"):
+                result = list(generate(ctx))
+
+    assert result[-1] == EXPECTED_ERROR_SSE
+    joined = "".join(result)
+    assert "UPSTREAM-RAW" not in joined
+    assert "sk-secret-999" not in joined
+    assert "onerror" not in joined
+    assert sentinel in caplog.text
+
+
+def test_generate_generic_exception_not_leaked(tmp_path, caplog):
+    """普通异常只发 internal_error 安全摘要；原始异常保留在服务端日志。"""
+    sentinel = "BOOM sk-secret-777 C:\\Users\\x <img src=x onerror=alert(1)>"
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(
+        cache_dir=cache_dir,
+        extract_page=MagicMock(side_effect=RuntimeError(sentinel)),
+    )
+
+    with patch("sse_stream.run_translation"):
+        with patch("sse_stream.debug_trace"):
+            with caplog.at_level("ERROR", logger="pdf_reader.translate"):
+                result = list(generate(ctx))
+
+    error_events = [item for item in result if '"type": "error"' in item]
+    assert error_events
+    assert '"code": "internal_error"' in error_events[-1]
+    joined = "".join(result)
+    assert "BOOM sk-secret-777" not in joined
+    assert "onerror" not in joined
+    assert sentinel in caplog.text
+
+
+def test_generate_no_translate_result_sanitized(tmp_path, caplog):
+    events = [{"type": "progress_start", "stage": "layout_analysis"}]
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(cache_dir=cache_dir)
+
+    with patch("sse_stream.run_translation", return_value=iter(events)):
+        with patch("sse_stream.debug_trace"):
+            with caplog.at_level("WARNING", logger="pdf_reader.translate"):
+                result = list(generate(ctx))
+
+    expected = (
+        "data: " + json.dumps({"type": "error", "code": "translation_error", "error": "未获取到翻译结果"}) + "\n\n"
+    )
+    assert result[-1] == expected
+    assert "no translation result" in caplog.text
+
+
+def test_generate_batch_error_event_not_leaked(tmp_path, caplog):
+    sentinel = "BATCH-RAW sk-secret-888 C:\\Users\\priv\\file"
+    events = [{"type": "error", "error": sentinel}]
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_batch_ctx(cache_dir=cache_dir)
+
+    with patch("sse_stream.run_translation", return_value=iter(events)):
+        with patch("sse_stream.debug_trace"):
+            with caplog.at_level("WARNING", logger="pdf_reader.translate"):
+                result = list(generate_batch(ctx))
+
+    assert result[-1] == EXPECTED_ERROR_SSE
+    joined = "".join(result)
+    assert "BATCH-RAW" not in joined
+    assert "sk-secret-888" not in joined
+    assert sentinel in caplog.text
+
+
+def test_generate_batch_translation_error_not_leaked(tmp_path, caplog):
+    """批量 TranslationError：客户端固定 translation_error 安全摘要，原始错误只进日志。"""
+    from translation_orchestrator import TranslationError
+
+    sentinel = (
+        "BATCH-TRANSLATION sk-secret-555 C:\\Users\\priv\\file /home/user/private/file <img src=x onerror=alert(1)>"
+    )
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    fail_job = MagicMock(return_value=True)
+    finish_job = MagicMock(return_value=True)
+    ctx = _make_batch_ctx(
+        cache_dir=cache_dir,
+        fail_job=fail_job,
+        finish_job=finish_job,
+    )
+
+    def error_iter() -> Iterator[dict]:
+        yield {"type": "progress_start", "stage": "layout_analysis"}
+        raise TranslationError(sentinel)
+
+    with patch("sse_stream.run_translation", return_value=error_iter()):
+        with patch("sse_stream.debug_trace"):
+            with caplog.at_level("WARNING", logger="pdf_reader.translate"):
+                result = list(generate_batch(ctx))
+
+    assert result[-1] == EXPECTED_ERROR_SSE
+    joined = "".join(result)
+    assert "BATCH-TRANSLATION" not in joined
+    assert "sk-secret-555" not in joined
+    assert "onerror" not in joined
+    assert "/home/user" not in joined
+    assert sentinel in caplog.text
+    fail_job.assert_called_once_with("test-job")
+    finish_job.assert_not_called()
+
+
+def test_generate_batch_generic_exception_not_leaked_and_cleans_up(tmp_path, caplog):
+    """批量普通异常：internal_error 安全摘要、完整日志、fail_job 与目录清理不变量不变。"""
+    sentinel = "BATCH-BOOM sk-secret-666 C:\\Users\\x\\file /tmp/private/file <img src=x onerror=alert(1)>"
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    fail_job = MagicMock(return_value=True)
+    finish_job = MagicMock(return_value=True)
+    ctx = _make_batch_ctx(
+        cache_dir=cache_dir,
+        fail_job=fail_job,
+        finish_job=finish_job,
+        extract_pages=MagicMock(side_effect=RuntimeError(sentinel)),
+    )
+
+    tmpdir = tmp_path / "tmp"
+    tmpdir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("sse_stream.run_translation"):
+            with patch("sse_stream.debug_trace"):
+                with caplog.at_level("ERROR", logger="pdf_reader.translate"):
+                    result = list(generate_batch(ctx))
+
+    error_events = [item for item in result if '"type": "error"' in item]
+    assert error_events
+    assert '"code": "internal_error"' in error_events[-1]
+    joined = "".join(result)
+    assert "BATCH-BOOM" not in joined
+    assert "sk-secret-666" not in joined
+    assert "onerror" not in joined
+    assert sentinel in caplog.text
+    fail_job.assert_called_once_with("test-job")
+    finish_job.assert_not_called()
+    assert not tmpdir.exists()
+    assert not output_dir.exists()

@@ -1,4 +1,4 @@
-import { getElements, createPageEl, calculatePlaceholderHeight } from './modules/dom.js';
+import { getElements, createPageEl, calculatePlaceholderHeight, showError } from './modules/dom.js';
 import { setupIntersectionObserver } from './modules/lazy-loader.js';
 import { createSettleGate, setupPageDetection } from './modules/scroll-sync.js';
 import { createAlignmentController } from './modules/alignment-controller.js';
@@ -72,9 +72,9 @@ async function openPdf() {
             let errMsg = 'Failed to open PDF';
             try {
                 const errData = JSON.parse(errText);
-                errMsg = errData.error || errMsg;
+                errMsg = (errData && typeof errData.error === 'string' && errData.error.trim()) ? errData.error : errMsg;
             } catch (e) {}
-            els.fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">${errMsg}</p>`);
+            showError(els.fileArea, errMsg);
             return;
         }
 
@@ -132,7 +132,7 @@ async function openPdf() {
         };
 
     } catch (e) {
-        els.fileArea.insertAdjacentHTML('beforeend', `<p style="color:#e55;margin-top:10px">Network error: ${e.message}</p>`);
+        showError(els.fileArea, '网络错误，请稍后重试');
     }
 }
 

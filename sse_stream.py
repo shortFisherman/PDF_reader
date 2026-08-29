@@ -128,9 +128,13 @@ def format_sse_event(evt: dict) -> str | None:
             + "\n\n"
         )
     elif evt_type == "error":
-        return f"data: {json.dumps({'type': 'error', 'error': evt.get('error', 'unknown')})}\n\n"
+        return format_sse_error("translation_error", "上游翻译失败")
     else:
         return None
+
+
+def format_sse_error(code: str, message: str) -> str:
+    return "data: " + json.dumps({"type": "error", "code": code, "error": message}) + "\n\n"
 
 
 def _release_job(ctx: GenerateContext | GenerateBatchContext, outcome: str) -> None:
@@ -204,10 +208,17 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                     yield sse
 
                 if evt.get("type") == "error":
+                    logger.warning(
+                        "[job=%s][page=%d] upstream translation error event: %s",
+                        ctx.job_id,
+                        ctx.page,
+                        evt.get("error"),
+                    )
                     return
 
             if translate_result is None:
-                yield f"data: {json.dumps({'type': 'error', 'error': 'no translation result'})}\n\n"
+                logger.warning("[job=%s][page=%d] no translation result", ctx.job_id, ctx.page)
+                yield format_sse_error("translation_error", "未获取到翻译结果")
                 return
 
             elapsed = time.time() - translate_start
@@ -244,8 +255,8 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
         raise
     except TranslationError as e:
         logger.warning("[job=%s][page=%d] translation error: %s", ctx.job_id, ctx.page, e)
-        yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-    except Exception as e:
+        yield format_sse_error("translation_error", "上游翻译失败")
+    except Exception:
         logger.error(
             "[job=%s][page=%d] translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s",
             ctx.job_id,
@@ -257,7 +268,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
             str(tmpdir),
             exc_info=True,
         )
-        yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+        yield format_sse_error("internal_error", "翻译失败，请查看服务端日志")
     finally:
         worker_finished = _shutdown_worker(stream, ctx.job_id)
         if worker_finished:
@@ -306,10 +317,23 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
                     yield sse
 
                 if evt.get("type") == "error":
+                    logger.warning(
+                        "[job=%s][batch=%d-%d] upstream translation error event: %s",
+                        ctx.job_id,
+                        ctx.from_page,
+                        ctx.to_page,
+                        evt.get("error"),
+                    )
                     return
 
             if translate_result is None:
-                yield f"data: {json.dumps({'type': 'error', 'error': 'no translation result'})}\n\n"
+                logger.warning(
+                    "[job=%s][batch=%d-%d] no translation result",
+                    ctx.job_id,
+                    ctx.from_page,
+                    ctx.to_page,
+                )
+                yield format_sse_error("translation_error", "未获取到翻译结果")
                 return
 
             elapsed = time.time() - translate_start
@@ -352,8 +376,8 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
             ctx.to_page,
             e,
         )
-        yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-    except Exception as e:
+        yield format_sse_error("translation_error", "上游翻译失败")
+    except Exception:
         logger.error(
             "[job=%s][batch=%d-%d] translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s",
             ctx.job_id,
@@ -366,7 +390,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
             str(tmpdir),
             exc_info=True,
         )
-        yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+        yield format_sse_error("internal_error", "翻译失败，请查看服务端日志")
     finally:
         worker_finished = _shutdown_worker(stream, ctx.job_id)
         if worker_finished:

@@ -92,6 +92,14 @@ $env:MODEL_API_KEY = 'your-api-key'
 - `DATA_ROOT`（运行数据根）默认等于 `PROJECT_ROOT`：日志仍在仓库 `logs/`，相对缓存仍在仓库根下。环境变量 `PDF_READER_DATA_ROOT` 可覆盖（测试隔离等场景）。
 - 从任意 CWD 通过仓库入口的绝对/已解析路径启动（例如 `C:\...\python.exe C:\...\app.py`，或先 `cd` 到仓库根再运行），配置、手动术语表、模板、静态文件、日志和缓存位置一致；`start.bat` 自身仍会切换到仓库根。
 
+## 错误契约与安全
+
+- 所有 API 4xx/5xx 错误统一返回 JSON：`{"code": <稳定错误码>, "error": <安全消息>}`。`409` 保留既有 `translation_busy` 与 `active_job_id`；`404` 使用 `not_found`；`500` 使用固定 `internal_error` 与通用安全摘要。
+- 服务端日志保留完整异常与 traceback；客户端永远不会收到异常类名、内部文件路径、API Key、提示词或上游原始响应。
+- SSE 错误事件统一为 `{"type": "error", "code": <稳定错误码>, "error": <安全消息>}`；上游 `error` 事件、`TranslationError`、普通异常与“无翻译结果”均只发送安全摘要。
+- 前端错误文本一律经 DOM 节点 `textContent` 呈现，不拼接未转义 HTML。
+- 服务默认绑定 `127.0.0.1`。若配置为 `localhost`/`127.0.0.0/8`/`::1` 之外的地址，启动日志会输出醒目的安全 WARNING（服务无认证，可能暴露本地 PDF 与 API 配置），但不会阻止启动。
+
 ### debug 优先级与安全默认值
 
 | 来源 | 示例 | 优先级 |

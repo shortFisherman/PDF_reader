@@ -80,6 +80,12 @@ def main(argv: list[str] | None = None) -> int:
         run_cfg.debug,
         run_cfg.use_reloader,
     )
+    if not config.is_loopback_host(run_cfg.host):
+        logger.warning(
+            "服务绑定在非 loopback 地址 host=%s；本服务无认证，可能暴露本地 PDF 与 API Key 配置，"
+            "请确认仅限可信内网使用",
+            run_cfg.host,
+        )
     try:
         app.run(
             host=run_cfg.host,

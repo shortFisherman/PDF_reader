@@ -78,3 +78,11 @@ export function createPageEl(pageNum, side, pageWidth, pageHeight) {
 
     return container;
 }
+
+export function showError(parent, message) {
+    const p = document.createElement('p');
+    p.style.color = '#e55';
+    p.style.marginTop = '10px';
+    p.textContent = message;
+    parent.appendChild(p);
+}

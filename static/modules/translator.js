@@ -1,21 +1,40 @@
 import { readSSEStream } from './sse-client.js';
 import { getStageLabel } from './stages.js';
 
+const NETWORK_ERROR_MESSAGE = '网络错误，请稍后重试';
+const REQUEST_ERROR_MESSAGE = '翻译请求失败';
+const SSE_ERROR_MESSAGE = '翻译失败';
+
+function safeMessage(value, fallback) {
+    return (typeof value === 'string' && value.trim()) ? value : fallback;
+}
+
 export async function translateCurrentPage(page, callbacks) {
     const { onStageChange, onProgress, onFinish, onError } = callbacks;
 
+    let resp;
     try {
-        const resp = await fetch(`/api/translate/${page}`, {
+        resp = await fetch(`/api/translate/${page}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt: callbacks.prompt || null }),
         });
+    } catch (e) {
+        onError(NETWORK_ERROR_MESSAGE);
+        return;
+    }
 
-        if (!resp.ok) {
+    if (!resp.ok) {
+        let msg = REQUEST_ERROR_MESSAGE;
+        try {
             const err = await resp.json();
-            throw new Error(err.error || 'Translation failed');
-        }
+            msg = safeMessage(err && err.error, msg);
+        } catch (e) {}
+        onError(msg);
+        return;
+    }
 
+    try {
         await readSSEStream(resp, (evt) => {
             if (evt.type === 'progress') {
                 onProgress(evt.progress);
@@ -29,29 +48,40 @@ export async function translateCurrentPage(page, callbacks) {
             } else if (evt.type === 'finish') {
                 onFinish();
             } else if (evt.type === 'error') {
-                onError(evt.error);
+                onError(safeMessage(evt.error, SSE_ERROR_MESSAGE));
             }
         });
     } catch (e) {
-        onError(e.message || '翻译出错');
+        onError(NETWORK_ERROR_MESSAGE);
     }
 }
 
 export async function translateBatch(from, to, callbacks) {
     const { onBatchInfo, onStageChange, onProgress, onFinish, onError } = callbacks;
 
+    let resp;
     try {
-        const resp = await fetch('/api/translate-batch', {
+        resp = await fetch('/api/translate-batch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ from, to, prompt: callbacks.prompt || null }),
         });
+    } catch (e) {
+        onError(NETWORK_ERROR_MESSAGE);
+        return;
+    }
 
-        if (!resp.ok) {
+    if (!resp.ok) {
+        let msg = REQUEST_ERROR_MESSAGE;
+        try {
             const err = await resp.json();
-            throw new Error(err.error || 'Batch translation failed');
-        }
+            msg = safeMessage(err && err.error, msg);
+        } catch (e) {}
+        onError(msg);
+        return;
+    }
 
+    try {
         await readSSEStream(resp, (evt) => {
             if (evt.type === 'batch_info') {
                 onBatchInfo(evt.from, evt.to, evt.total);
@@ -67,10 +97,10 @@ export async function translateBatch(from, to, callbacks) {
             } else if (evt.type === 'finish') {
                 onFinish();
             } else if (evt.type === 'error') {
-                onError(evt.error);
+                onError(safeMessage(evt.error, SSE_ERROR_MESSAGE));
             }
         });
     } catch (e) {
-        onError(e.message || '批量翻译出错');
+        onError(NETWORK_ERROR_MESSAGE);
     }
 }

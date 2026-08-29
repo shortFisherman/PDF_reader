@@ -39,7 +39,7 @@
 | `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python app.py` |
 | `config.py` | 读取 `config.toml`、定义 `EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
 | `paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
-| `routes.py` | Blueprint：9 个 HTTP/SSE 端点与 JSON 404 处理器 |
+| `routes.py` | Blueprint：9 个 HTTP/SSE 端点；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器与 409 `translation_busy` |
 | `state.py` | `AppState`：不可变文档会话身份、锁内翻译快照、左右文档、缓存路径、哈希、页数/尺寸、翻译页集合、阅读进度、非重入锁 |
 | `file_hash.py` | `sha256()` 流式文件哈希 |
 | `pdf_renderer.py` | `render_page()` 在锁内渲染页面为 PNG |
@@ -194,11 +194,13 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 错误传播：`TranslationError` 与普通异常都被 `generate`/`generate_batch` 捕获并输出 SSE `error` 事件，同时记录上下文日志；临时目录只有在 worker 线程确认退出后才会在 `finally` 中清理（join timeout 时保留并记 WARNING）。
 
+错误契约（P2-05）：所有 API 4xx/5xx 返回顶层 `{"code": <stable_code>, "error": <safe_message>}`；`409` 保留 `translation_busy`、中文安全提示与 `active_job_id`（P0-02/P1-04 回归依赖），其余 400 分支使用稳定 code（`invalid_file_path`、`invalid_page`、`no_document_opened`、`page_out_of_range`、`invalid_side`、`invalid_page_numbers`、`invalid_page_range`），`404` 使用 `not_found`，其它 HTTP 错误使用 `http_<status>`，`500` 固定为 `internal_error`。`routes.http_error` 处理 `HTTPException`（不吞成 500），`routes.internal_error` 记录完整异常（含 traceback）后只返回安全摘要。SSE 统一经 `sse_stream.format_sse_error(code, message)` 输出 `{"type":"error","code","error"}`；上游原始 error、`TranslationError` 消息、普通异常消息与“无翻译结果”均只进服务端日志，不返回浏览器。前端 `static/modules/dom.js` 提供 `showError()`（DOM 节点 + `textContent`），`app.js` 不再使用 `insertAdjacentHTML` 插入错误文本；`static/modules/translator.js` 对非 JSON 响应、网络异常与缺失错误字段使用固定安全 fallback。非 loopback host（非 `localhost`、`127/8`、`::1`）在 `app.main` 中、`app.run` 前输出安全 WARNING（不记录 API Key，不阻止启动）。
+
 ## 测试、CI 与验证入口
 
 `requirements.txt` 只声明直接运行依赖，`requirements-dev.txt` 在运行依赖之上声明 pytest 与 Ruff；`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从开发依赖入口生成。锁文件不包含 editable、本机路径或 `file:///` 来源。
 
-统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（全部 Python 测试）→ `npm test`（前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
+统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（全部 Python 测试）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
 
 测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
 

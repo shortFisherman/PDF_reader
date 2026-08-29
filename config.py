@@ -1,3 +1,4 @@
+import ipaddress
 import os
 import tomllib
 from dataclasses import dataclass
@@ -27,6 +28,19 @@ class ConfigError(ValueError):
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5000
+
+
+def is_loopback_host(host: str) -> bool:
+    """host 是否为明确 loopback（localhost、127/8、::1）。"""
+    if not isinstance(host, str):
+        return False
+    normalized = host.strip().lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
 
 
 @dataclass(frozen=True)

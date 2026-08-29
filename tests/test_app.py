@@ -338,3 +338,32 @@ class TestRealEntry:
 
         assert result.returncode == 2
         assert "[model].model 必须是非空字符串" in result.stderr
+
+
+class TestNonLoopbackHostWarning:
+    def test_loopback_host_no_warning(self, monkeypatch, main_entry, caplog):
+        import logging
+
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.setattr(config, "CONFIG", _valid_config({"host": "127.0.0.1", "debug": False}))
+        mock_app, run = main_entry
+
+        with caplog.at_level(logging.WARNING, logger="pdf_reader.app"):
+            assert run([]) == 0
+
+        warnings = [r.message for r in caplog.records if r.name == "pdf_reader.app" and r.levelno == logging.WARNING]
+        assert not any("loopback" in w for w in warnings)
+
+    def test_non_loopback_host_logs_warning(self, monkeypatch, main_entry, caplog):
+        import logging
+
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        monkeypatch.setattr(config, "CONFIG", _valid_config({"host": "0.0.0.0", "debug": False}))
+        mock_app, run = main_entry
+
+        with caplog.at_level(logging.WARNING, logger="pdf_reader.app"):
+            assert run([]) == 0
+
+        warnings = [r.message for r in caplog.records if r.name == "pdf_reader.app" and r.levelno == logging.WARNING]
+        assert any("0.0.0.0" in w and "loopback" in w for w in warnings)
+        assert all("sk-test-key" not in w for w in warnings)
