@@ -283,7 +283,7 @@ TranslationCoordinator
 - 状态：`已完成`
 - 完成日期：2026-08-29
 - 完成提交：`577da48`
-- 验证证据：`tests/test_glossary_merger.py` 新增同目录 `.tmp` + `os.replace` 原子提交、写/replace 失败保留旧文件并清理临时文件、模块锁阻塞与 8 线程并发不丢更新、损坏/错误表头/空文件/BOM/缺失文件行为测试；`tests/test_document_identity.py` 新增真实合并路径下的迟到术语合并拒绝测试。执行 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"`，252 个 Python 测试与全部前端测试通过。
+- 验证证据：`tests/test_glossary_merger.py` 新增同目录 `.tmp` + `os.replace` 原子提交、打开临时文件失败、`os.fsync` 中途失败（temp 已写入、`os.replace` 未执行）、`os.replace` 提交失败均验证旧文件不变/临时文件清理、模块锁阻塞与 8 线程并发不丢更新、损坏/错误表头/空文件/BOM/缺失文件行为测试；`tests/test_document_identity.py` 新增真实合并路径下的迟到术语合并拒绝测试。执行 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"`，253 个 Python 测试与全部前端测试通过。
 - 剩余问题：无
 
 #### 目标状态
@@ -745,7 +745,7 @@ PDF_reader/
 
 | 日期 | 编号 | 状态 | 提交 | 说明 |
 |---|---|---|---|---|
-| 2026-08-29 | P1-03 | 已完成 | `577da48` | 术语合并改为模块级互斥锁 + 同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交；写入/replace 失败保留旧 CSV 并清理临时文件；损坏或错误表头累计文件中止合并保留旧文件；新增 12 个术语表回归测试（含真实合并路径的迟到身份拒绝与并发不丢更新）。 |
+| 2026-08-29 | P1-03 | 已完成 | `577da48` | 术语合并改为模块级互斥锁 + 同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交；打开临时文件、`os.fsync` 中途写入与 `os.replace` 提交失败均保留旧 CSV 并清理临时文件；损坏或错误表头累计文件中止合并保留旧文件；新增 13 个术语表回归测试（含真实合并路径的迟到身份拒绝与并发不丢更新）。 |
 | 2026-08-29 | P1-02 | 已完成 | `1b8c36f` | `replace_page`/`replace_pages` 改为共享 `_commit_replacement()` 事务：页修改在工作副本上完成，临时文件关闭后再 `os.replace`，磁盘提交成功后才替换内存句柄与 `_translated_pages`；失败路径清理 `.tmp`、关闭全部泄漏句柄并恢复可渲染句柄。新增 11 个故障注入回归测试。 |
 | 2026-08-29 | P1-01 | 已完成 | `10f1676` | 引入 `TranslationStream` 明确 worker 生命周期：SSE 断开触发协作式取消并 join 确认退出后才清理临时目录，join timeout 保留目录；断开结果丢弃并释放为 cancelled；关闭时记录 active job。 |
 | 2026-08-29 | P0-03 | 已完成 | `59d8545` | 移除不可移植依赖锁内容，明确运行/开发依赖，并通过干净 Python 3.12 环境安装与验证。 |

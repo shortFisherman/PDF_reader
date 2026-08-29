@@ -200,6 +200,44 @@ def test_write_open_failure_keeps_old_csv_and_cleans_tmp(tmp_path, monkeypatch):
     assert not list(tmp_path.glob("*.tmp"))
 
 
+def test_fsync_failure_mid_write_keeps_old_csv_and_cleans_tmp(tmp_path, monkeypatch):
+    """Inject failure after header/rows are flushed to the temp file but before os.replace."""
+
+    cumulative_path = tmp_path / "cumulative.csv"
+    auto_path = tmp_path / "auto.csv"
+    write_csv(cumulative_path, [("alpha", "阿尔法")])
+    write_csv(auto_path, [("beta", "贝塔")])
+    old_bytes = cumulative_path.read_bytes()
+    tmp_path_file = cumulative_path.with_name(cumulative_path.name + ".tmp")
+
+    replace_calls: list[tuple[Path, Path]] = []
+    original_replace = os.replace
+
+    def tracking_replace(src: str, dst: str) -> None:
+        replace_calls.append((Path(src), Path(dst)))
+        original_replace(src, dst)
+
+    fsync_seen = {}
+
+    def failing_fsync(fd: int) -> None:
+        fsync_seen["temp_exists"] = tmp_path_file.exists()
+        fsync_seen["temp_size"] = tmp_path_file.stat().st_size if tmp_path_file.exists() else -1
+        raise OSError("fsync failed")
+
+    monkeypatch.setattr(glossary_merger.os, "replace", tracking_replace)
+    monkeypatch.setattr(glossary_merger.os, "fsync", failing_fsync)
+
+    with pytest.raises(OSError, match="fsync failed"):
+        merge_glossary_csvs(cumulative_path, auto_path)
+
+    assert fsync_seen["temp_exists"] is True
+    assert fsync_seen["temp_size"] > 0
+    assert replace_calls == [], "os.replace must not be reached after a mid-write failure"
+    assert cumulative_path.read_bytes() == old_bytes
+    assert read_csv(cumulative_path) == [("alpha", "阿尔法")]
+    assert not list(tmp_path.glob("*.tmp"))
+
+
 def test_merge_holds_process_lock_until_commit(tmp_path):
     cumulative_path = tmp_path / "cumulative.csv"
     auto_path = tmp_path / "auto.csv"
