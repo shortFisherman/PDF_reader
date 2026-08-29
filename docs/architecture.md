@@ -36,6 +36,7 @@
 | 路径 | 职责 |
 |---|---|
 | `app.py` | 命令行参数、`create_app()` 装配 Flask 与全局 `AppState`、启动服务 |
+| `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python app.py` |
 | `config.py` | 读取 `config.toml`、定义 `EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
 | `routes.py` | Blueprint：9 个 HTTP/SSE 端点与 JSON 404 处理器 |
 | `state.py` | `AppState`：不可变文档会话身份、锁内翻译快照、左右文档、缓存路径、哈希、页数/尺寸、翻译页集合、阅读进度、非重入锁 |
@@ -56,7 +57,7 @@
 | `static/app.js` | 前端入口与共享状态 |
 | `static/modules/` | dom、lazy-loader、scroll-sync、alignment-controller、zoom、sse-client、stages、translator |
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
-| `tests/` | 19 个 pytest 文件（269 用例）与前端 `.mjs` 测试运行器 |
+| `tests/` | 20 个 pytest 文件（273 用例）与前端 `.mjs` 测试运行器 |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
 | `docs/`、`docs/archive/`、`docs/reports/` | 常青文档、历史归档与上游研究资料 |
@@ -77,6 +78,7 @@
 2. `create_app()` 调用 `logging_config.setup_logging(config.DEBUG)`，输出启动摘要（provider/model/lang/cache_dir/dpi/debug，不含 api_key）。
 3. 创建 `Flask(__name__)`，装配全局 `AppState(config.CACHE_DIR)` 与 `TranslationCoordinator()`，导入并注册 `routes.register_routes`。
 4. `__main__` 从 `config.toml` 的 `[server]` 读取 host/port/debug（默认 `127.0.0.1:5000`、debug 开启），调用 `app.run()`；`app.run()` 返回或异常退出时检查协调器，仍有 active job 则记录 WARNING（worker 可能成为孤儿）。
+- `start.bat` 是 Windows 便捷启动入口：切换到仓库根目录后先检查 `.\venv\Scripts\python.exe`（缺失时打印创建/安装命令并不为零退出），再用 `netstat -ano -p tcp | findstr "LISTENING" | findstr ":5000 "` 检测端口占用；若 5000 已被监听，打印占用 PID 与 `netstat`/`tasklist` 排查命令并以非零状态退出，绝不执行 `taskkill`/`Stop-Process` 等终止命令；无冲突时 `call .\venv\Scripts\activate.bat` 激活既有虚拟环境并运行 `python app.py`。
 
 ## 配置加载与 Provider 映射
 
@@ -185,7 +187,9 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 `requirements.txt` 只声明直接运行依赖，`requirements-dev.txt` 在运行依赖之上声明 pytest 与 Ruff；`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从开发依赖入口生成。锁文件不包含 editable、本机路径或 `file:///` 来源。
 
-统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（269 个 Python 测试）→ `npm test`（四个前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
+统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（273 个 Python 测试）→ `npm test`（四个前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
+
+启动脚本安全回归：`tests/test_start_bat.py` 在 Windows 下把真实 `start.bat` 复制到 pytest 临时目录，用 fake `netstat.cmd`/`taskkill.cmd`/`python.cmd`/`activate.bat` 在 PATH 上执行真实脚本：断言源文件不含 `taskkill`/`tskill`/`Stop-Process`/`kill` 等终止命令；模拟 5000 被占用时脚本退出非零、不调用 python 也不调用 taskkill；无占用时激活 venv 并调用 `python app.py`；`venv` 缺失时给出提示并非零退出。测试不绑定真实端口、不启动服务器、不杀任何进程。
 
 系统级回归：`tests/test_system_concurrency_failure.py` 的 16 个用例穿过真实 Flask route、真实 Response/SSE generator、`TranslationCoordinator`、真实 `TranslationStream` worker 线程、`AppState` 与磁盘缓存边界；仅 `translation_orchestrator.do_translate_async_stream` 使用确定性 fake（外部翻译引擎），故障注入只作用于 `tempfile.mkdtemp`、`pymupdf.Document.save` 与 `os.replace`。覆盖：翻译进行中打开 B 被 409 拒绝且 A 的结果只写回 A；两个 Flask 客户端只有一个任务被接受；SSE 断开后 worker 继续运行/最终失败/join timeout 三条所有权路径；临时目录、输出目录与 PDF 保存失败及重试；单页与批量提交失败后的 `right.pdf`/`translated_pages`/渲染恢复；PDF 提交与术语合并的部分提交语义；打开—翻译—渲染闭环的最终 PDF 字节/页内容、`document_id`、coordinator 与 worker 状态、临时目录清理断言。
 
@@ -201,6 +205,7 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
 4. **PNG 无文本层。** 页面以图片显示，没有文本选择、搜索、复制、高亮、批注、目录、内部链接或 OCR 流程。
 5. **无队列/暂停/取消/重启续传。** 不存在持久任务队列、暂停、取消、重试队列、进度恢复或进程重启后的翻译续传。
 6. **部分提交语义。** 单页/批量翻译结束时先提交 `right.pdf` 再合并术语表；术语表合并失败被包含（记录 WARNING），不会回滚已提交的 PDF，也不改变任务终态；PDF 提交失败则术语合并不执行。不存在跨两个文件的全局事务。
+7. **启动脚本不自动释放端口。** `start.bat` 只检测并报告端口 5000 的 `LISTENING` 占用，不包含任何进程终止命令；端口冲突需要用户自行确认归属并处理（命令见 README「启动」），或改用 `config.toml` 中 `[server].port` 指定的其他端口。
 
 ## 上游与历史参考
 

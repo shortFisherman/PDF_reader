@@ -77,12 +77,41 @@ $env:MODEL_API_KEY = 'your-api-key'
 
 ## 启动
 
+推荐直接运行根目录的 `start.bat`（在 PowerShell 或 cmd 中执行）：
+
+```powershell
+.\start.bat
+```
+
+脚本会切换到仓库根目录、检查并激活 `.\venv`，然后运行 `python app.py`。如果端口 5000 已被占用，`start.bat` 会打印占用进程的 PID 与排查命令，并以非零状态退出；它不会自动终止任何进程。
+
+也可以手动启动：
+
 ```powershell
 .\venv\Scripts\Activate.ps1
 python app.py
 ```
 
 然后打开 `http://127.0.0.1:5000`，输入本地 PDF 的绝对路径。
+
+### 端口 5000 被占用时的安全处理
+
+`start.bat` 默认只报告、不杀进程。先确认占用者是谁：
+
+```powershell
+netstat -ano -p tcp | findstr ":5000 "
+tasklist /FI "PID eq <pid>"
+```
+
+确认 `<pid>` 对应的是你正在运行的本项目实例或其他可以安全关闭的程序后，再自行处理（例如正常关闭对应程序，或在你确认它没有未保存数据时使用 `taskkill /PID <pid>`）。不要对未确认归属的进程使用 `taskkill /F`。
+
+如果不想结束现有程序，也可以改用其他端口：编辑 `config.toml` 的 `[server]` 段（例如 `port = 5001`）后直接运行：
+
+```powershell
+.\venv\Scripts\python.exe app.py
+```
+
+然后访问 `http://127.0.0.1:5001`。
 
 调试模式：
 
