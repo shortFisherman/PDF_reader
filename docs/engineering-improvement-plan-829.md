@@ -371,11 +371,11 @@ TranslationCoordinator
 
 ### P2-01 迁移为 `src/pdf_reader` 包布局
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：根目录平铺多个 Python 模块，导入依赖当前工作目录，项目包边界不明确。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`55e4d8b`
+- 验证证据：子代理实现验证：全部 19 个生产模块经 `git mv` 迁入 `src/pdf_reader/`，新增 `__init__.py`/`__main__.py` 与最小 `pyproject.toml`（setuptools src 布局，`pip install -e .`）；包内统一 `pdf_reader.*` 绝对导入，测试 patch 字符串统一 `pdf_reader.*`，根目录无生产模块 shim、无 sys.path/PYTHONPATH hack；`python -m pdf_reader` 支持原 CLI/debug 语义且 argparse prog 为 `python -m pdf_reader`；start.bat/README/CI/Ruff/.gitignore/当前 OpenSpec 规范已更新。新增 `tests/test_package_layout.py`（9 个结构性用例）并补冒烟句柄释放回归。完整 `scripts/verify.ps1`（Python 3.12）：471 个 Python 测试与全部前端测试通过，logs/cache 前后零增长；CodeGraph 已同步。父级独立验收通过：targeted 173 passed（package_layout/paths/app/server_config/config_deferred/start_bat）、完整 verify 471 Python + 全部前端、Ruff 通过、logs 2 文件/3,750,478 B 与 cache 3 文件/112,503,805 B 前后零增长；全新临时 venv 中 `pip install -e .` 成功，从仓库外且清除 PYTHONPATH 后 `pdf_reader.__file__` 指向仓库 `src/pdf_reader/__init__.py`，`python -m pdf_reader --help` 成功且 usage 正确，真实 create_app/AppState 打开 1 页 PDF、渲染接口 200、PNG 魔数正确、project/data root 正确，显式关闭句柄后 PDF 删除成功，临时 venv 删除成功；`git diff --check` 通过，无根模块 shim/路径 hack/当前规范旧入口。
+- 剩余问题：无（依赖声明的进一步统一归 P2-04，不阻塞本项）。
 
 #### 是否值得做
 
@@ -453,13 +453,13 @@ PDF_reader/
 
 #### 验收标准
 
-- [ ] `pip install -e .` 或确定的标准安装命令成功。
-- [ ] 测试从已安装的 `pdf_reader` 包导入，不依赖仓库根目录碰巧在 `sys.path`。
-- [ ] `python -m pdf_reader` 或正式入口可以启动。
-- [ ] 从仓库根目录之外启动也能找到配置、模板和静态资源。
-- [ ] 缓存、日志、术语表和用户配置位置与文档约定一致。
-- [ ] 没有为了兼容迁移而加入长期 `sys.path` hack。
-- [ ] 完整验证和一次人工打开 PDF 冒烟测试通过。
+- [x] `pip install -e .` 或确定的标准安装命令成功。
+- [x] 测试从已安装的 `pdf_reader` 包导入，不依赖仓库根目录碰巧在 `sys.path`。
+- [x] `python -m pdf_reader` 或正式入口可以启动。
+- [x] 从仓库根目录之外启动也能找到配置、模板和静态资源。
+- [x] 缓存、日志、术语表和用户配置位置与文档约定一致。
+- [x] 没有为了兼容迁移而加入长期 `sys.path` hack。
+- [x] 完整验证和一次人工打开 PDF 冒烟测试通过（无 GUI 人工操作，采用真实 Flask test client + 真实 AppState 打开最小 PDF 并渲染的等价自动冒烟，父级独立复验通过）。
 
 ### P2-02 拆分前端页面协调与翻译 UI 状态
 
@@ -768,3 +768,4 @@ PDF_reader/
 | 2026-08-29 | P2-07 | 已完成 | `2218f79` | 统一项目根路径与测试文件隔离：新增 `paths.py` 集中解析 `PROJECT_ROOT`/`DATA_ROOT`（`config.example.toml` 标记定根，`PDF_READER_ROOT`/`PDF_READER_DATA_ROOT` 仅接受绝对路径，缺失 marker 快速失败）；config/glossary/相对缓存/日志与 Flask templates/static 全部接入同一策略，双 CWD 启动位置一致；pytest 经 conftest 将数据根重定向到临时目录并复位日志 handler，完整验证前后 logs/cache 零增长。新增 tests/test_paths.py（18 用例）等，父代理独立验收通过。 |
 | 2026-08-29 | P2-05 | 已完成 | `5402610` | 统一错误响应、脱敏与前端安全渲染：所有 API 4xx/5xx 返回 `{code, error}`（保留 409 `translation_busy`/`active_job_id`），新增 HTTPException 与 500 handler（完整异常只进日志）；SSE 统一 `format_sse_error(code, message)`，上游原始 error/TranslationError/普通异常/无结果均不发浏览器；`is_loopback_host` 识别 localhost/127/8/::1，非 loopback 启动 WARNING；前端 `showError()` 纯 textContent 渲染并移除 `insertAdjacentHTML`，translator 增加非 JSON/网络/缺字段固定 fallback；新增 run-error-safety-tests.mjs 纳入 npm test。完整验证 437 Python + 全部前端，logs/cache 零增长，父代理独立验收通过。 |
 | 2026-08-29 | P2-06 | 已完成 | `a143340` | 增加任务级日志上下文与可诊断性：新增 `task_logging.py`（不可变 `TaskContext`、`__post_init__` 强制截断、`contextvars` 传播、统一前缀/1-based 页码、生命周期状态、`SafeFormatter` 脱敏）并贯穿 coordinator/routes/SSE/worker/lifecycle/state/glossary/extraction/debug；`_safe_rmtree` 可验证清理与 `cleanup_deferred` 语义；单页/批量路由向 `coordinator.start` 传 `snapshot.pdf_hash`；新增 tests/test_task_logging.py 与真实路由回归。完整验证 462 Python + 全部前端，logs/cache 零增长，父级独立验收通过。 |
+| 2026-08-29 | P2-01 | 已完成 | `55e4d8b` | 迁移为 `src/pdf_reader` 包布局：19 个生产模块经 `git mv` 迁入 `src/pdf_reader/`，新增 `pyproject.toml`/`__init__.py`/`__main__.py`，包内统一 `pdf_reader.*` 导入，`python -m pdf_reader` 入口与 argparse prog 对齐，测试 patch 全部 `pdf_reader.*`，无根模块 shim/sys.path hack；start.bat/README/CI/Ruff/architecture/当前 OpenSpec 同步；新增 tests/test_package_layout.py 与冒烟句柄释放回归。完整验证 471 Python + 全部前端，logs/cache 零增长，父级独立 clean-venv/outside-CWD/import/help/open-render-release smoke 通过。 |
