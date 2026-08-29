@@ -34,7 +34,7 @@ export async function translateCurrentPage(page, callbacks) {
         try {
             const err = await resp.json();
             msg = safeMessage(err && err.error, msg);
-        } catch (e) {}
+        } catch { /* 非 JSON 错误体：保留固定 fallback */ }
         onError(msg);
         return;
     }
@@ -90,7 +90,7 @@ export async function translateBatch(from, to, callbacks) {
         try {
             const err = await resp.json();
             msg = safeMessage(err && err.error, msg);
-        } catch (e) {}
+        } catch { /* 非 JSON 错误体：保留固定 fallback */ }
         onError(msg);
         return;
     }

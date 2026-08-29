@@ -122,7 +122,7 @@ export function createAlignmentController({ leftEl, rightEl }) {
         realign(dst);
     }
 
-    function onImageLoaded(side, pageIndex) {
+    function onImageLoaded(_side, _pageIndex) {
         realign(leftEl);
         realign(rightEl);
     }
@@ -519,7 +519,7 @@ if (typeof window !== 'undefined' && window.__TEST_ALIGNMENT_CONTROLLER__) {
             const ctrl = createAlignmentController({ leftEl: leftEl, rightEl: rightEl });
             ctrl.setLockTarget(2, 100);
 
-            const targetBefore = ctrl.getLockTarget();
+            const _targetBefore = ctrl.getLockTarget();
             ctrl.onZoomChange(1.1, 1.0);
 
             const targetAfter = ctrl.getLockTarget();

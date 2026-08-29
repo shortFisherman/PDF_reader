@@ -18,6 +18,8 @@ import pytest
 from pdf_reader.file_hash import sha256
 from pdf_reader.pdf_renderer import render_page
 
+pytestmark = pytest.mark.integration
+
 
 def _make_translated_pdf(path: Path, pages: int = 1, label: str = "TRANS") -> Path:
     doc = pymupdf.open()

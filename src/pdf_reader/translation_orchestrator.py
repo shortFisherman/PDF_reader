@@ -51,7 +51,7 @@ class TranslationStream:
         self._pdf_path = pdf_path
         self._flow_label = flow_label
         self._task_ctx = task_ctx
-        self._queue: queue.Queue = queue.Queue()
+        self._queue: queue.Queue[dict] = queue.Queue()
         self._error_info: str | None = None
         self._cancel_event = threading.Event()
         self._late_result_dropped = False

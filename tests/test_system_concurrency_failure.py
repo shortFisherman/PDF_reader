@@ -52,6 +52,8 @@ from pdf_reader.routes import register_routes
 from pdf_reader.state import AppState
 from pdf_reader.translation_coordinator import TranslationCoordinator
 
+pytestmark = pytest.mark.system
+
 
 class FakeTranslateResult:
     """Protocol-shaped result produced by the fake upstream engine."""

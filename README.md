@@ -213,6 +213,8 @@ powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
 
 `scripts/verify.ps1` 会先输出最终选用的 Python 绝对路径与版本：显式 `-PythonExecutable` 优先；未指定时优先仓库 `venv`；仓库 `venv` 缺失而回退 PATH 中的 `python` 时会输出醒目 WARNING（不会静默）。显式路径无效时快速失败、不回退。
 
+统一验证依次执行：Ruff lint/format → coverage（`coverage run --branch -m pytest`，含全局与关键模块阈值策略）→ mypy（仅 `src/pdf_reader`）→ JS lint（`npm run lint:js`，ESLint flat config）→ 前端测试（`npm test`）。本地 coverage 数据写入临时目录并在结束后清理；CI 通过 `PDF_READER_COVERAGE_ARTIFACT_DIR=coverage-artifacts` 输出 coverage JSON/XML 并上传 artifact（该目录已加入 .gitignore）。
+
 安装后的关键 Python 依赖可用以下命令快速检查：
 
 ```powershell
@@ -223,6 +225,12 @@ python -c "import flask, pymupdf, pdf2zh_next, pdf_reader"
 
 ```powershell
 npm test
+```
+
+单独运行 JS 静态检查：
+
+```powershell
+npm run lint:js
 ```
 
 正式测试与历史诊断脚本的区别见 [测试说明](tests/README.md)。

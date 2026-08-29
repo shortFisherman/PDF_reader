@@ -6,7 +6,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, cast
 from uuid import uuid4
 
 import pymupdf
@@ -215,7 +215,7 @@ class AppState:
             doc = self._left_doc if side == "left" else self._right_doc
             if doc is None:
                 raise ValueError("no document opened")
-            return render_func(doc, page_num, dpi)
+            return cast(bytes, render_func(doc, page_num, dpi))
 
     def extract_page(
         self,
@@ -231,7 +231,7 @@ class AppState:
                 self._require_document_locked(expected_document_id)
             if self._left_doc is None:
                 raise ValueError("no document opened")
-            return extract_func(self._left_doc, page, tmpdir)
+            return cast(Path, extract_func(self._left_doc, page, tmpdir))
 
     def replace_page(self, translated_pdf_path: str, page_num: int, expected_document_id: str) -> None:
         with self._lock:
@@ -257,7 +257,7 @@ class AppState:
                 self._require_document_locked(expected_document_id)
             if self._left_doc is None:
                 raise ValueError("no document opened")
-            return extract_func(self._left_doc, page_indices, tmpdir)
+            return cast(Path, extract_func(self._left_doc, page_indices, tmpdir))
 
     def replace_pages(
         self,
@@ -350,6 +350,7 @@ class AppState:
         """Merge glossary output while identity and the document lock remain stable."""
         with self._lock:
             self._require_document_locked(expected_document_id)
+            assert self._pdf_hash is not None
             cumulative_path = self._cache_dir / self._pdf_hash / "cumulative_glossary.csv"
             return merge_func(cumulative_path, extracted_glossary_path)
 

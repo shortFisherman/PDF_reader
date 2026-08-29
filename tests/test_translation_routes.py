@@ -1,11 +1,14 @@
 import logging
 from unittest.mock import MagicMock, patch
 
+import pytest
 from flask import Flask
 
 from pdf_reader.file_hash import sha256
 from pdf_reader.routes import register_routes
 from pdf_reader.translation_coordinator import TranslationCoordinator
+
+pytestmark = pytest.mark.integration
 
 
 def _make_app(app_state, sample_pdf) -> Flask:

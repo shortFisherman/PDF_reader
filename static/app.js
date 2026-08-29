@@ -79,7 +79,7 @@ async function openPdf() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path }),
         });
-    } catch (e) {
+    } catch {
         showError(els.fileArea, '网络错误，请稍后重试');
         return;
     }
@@ -92,7 +92,7 @@ async function openPdf() {
             errMsg = (errData && typeof errData.error === 'string' && errData.error.trim())
                 ? errData.error
                 : errMsg;
-        } catch (e) {}
+        } catch { /* 非 JSON 错误体：保留固定 fallback */ }
         showError(els.fileArea, errMsg);
         return; // 失败打开保留旧 session（与 409 语义一致）
     }
@@ -212,7 +212,7 @@ async function loadTranslatedState() {
             const el = els.rightCol.querySelector(`.page-container[data-page="${p}"]`);
             if (el) el.classList.add('translated');
         });
-    } catch (e) {}
+    } catch { /* 非关键状态刷新，失败静默 */ }
 }
 
 function scrollToPage(index) {
@@ -235,7 +235,7 @@ function saveProgress() {
                 headers: { 'Content-Type': 'application/json' },
                 body,
                 keepalive: true,
-            }).catch(() => {});
+            }).catch(() => { /* 非关键上报，失败静默 */ });
         }
     } else {
         fetch(`${API}/reading-progress`, {
@@ -243,7 +243,7 @@ function saveProgress() {
             headers: { 'Content-Type': 'application/json' },
             body,
             keepalive: true,
-        }).catch(() => {});
+        }).catch(() => { /* 非关键上报，失败静默 */ });
     }
 }
 

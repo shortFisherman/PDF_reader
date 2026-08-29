@@ -54,10 +54,34 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host "Resolved Python: $($pythonInfo[0])"
     Write-Host "Python version: $($pythonInfo[1])"
 
-    Invoke-Checked 'Ruff lint' { & $pythonCommand -m ruff check . }
-    Invoke-Checked 'Ruff format check' { & $pythonCommand -m ruff format --check . }
-    Invoke-Checked 'Python tests' { & $pythonCommand -m pytest -q }
-    Invoke-Checked 'Frontend tests' { npm test }
-
-    Write-Host 'All verification checks passed.'
+    $coverageArtifactDir = $env:PDF_READER_COVERAGE_ARTIFACT_DIR
+    $coverageDir = $coverageArtifactDir
+    $tempCoverageDir = $null
+    if (-not $coverageDir) {
+        $tempCoverageDir = Join-Path $env:TEMP ('pdf-reader-coverage-' + [guid]::NewGuid().ToString('N'))
+        $coverageDir = $tempCoverageDir
+    }
+    New-Item -ItemType Directory -Path $coverageDir -Force | Out-Null
+    $env:COVERAGE_FILE = Join-Path $coverageDir '.coverage'
+    $coverageJson = Join-Path $coverageDir 'coverage.json'
+    try {
+        Invoke-Checked 'Ruff lint' { & $pythonCommand -m ruff check . }
+        Invoke-Checked 'Ruff format check' { & $pythonCommand -m ruff format --check . }
+        Invoke-Checked 'Coverage + Python tests' { & $pythonCommand -m coverage run --branch -m pytest -q }
+        Invoke-Checked 'Coverage report' { & $pythonCommand -m coverage report }
+        Invoke-Checked 'Coverage JSON' { & $pythonCommand -m coverage json -o $coverageJson }
+        Invoke-Checked 'Coverage policy' { & $pythonCommand scripts/check_coverage_policy.py $coverageJson }
+        Invoke-Checked 'Mypy' { & $pythonCommand -m mypy }
+        Invoke-Checked 'JS lint' { npm run lint:js }
+        Invoke-Checked 'Frontend tests' { npm test }
+        if ($coverageArtifactDir) {
+            Invoke-Checked 'Coverage XML artifact' { & $pythonCommand -m coverage xml -o (Join-Path $coverageDir 'coverage.xml') }
+        }
+        Write-Host 'All verification checks passed.'
+    } finally {
+        Remove-Item Env:COVERAGE_FILE -ErrorAction SilentlyContinue
+        if ($tempCoverageDir -and (Test-Path -LiteralPath $tempCoverageDir)) {
+            Remove-Item -LiteralPath $tempCoverageDir -Recurse -Force
+        }
+    }
 }

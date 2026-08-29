@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "npm run test:frontend",
+    "lint:js": "eslint .",
     "test:frontend": "npm run test:ui-copy && npm run test:error-safety && npm run test:translation-ui && npm run test:translator && npm run test:zoom && node tests/run-alignment-controller-tests.mjs",
     "test:translation-ui": "node tests/run-translation-ui-tests.mjs",
     "test:error-safety": "node tests/run-error-safety-tests.mjs",
@@ -21,6 +22,9 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1",
+    "globals": "^17.11.0",
     "jsdom": "^29.1.1"
   }
 }

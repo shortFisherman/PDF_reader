@@ -26,3 +26,5 @@ The remaining `.mjs` files are retained as development history and targeted diag
 - `run-task-4.4-tests.mjs` and `run-task-4.5-tests.mjs` are task-specific historical harnesses that parse older `app.js` function shapes.
 
 Do not interpret failures from historical diagnostics as a failed supported regression suite.
+
+`npm run lint:js`（ESLint flat config）检查 `static/**/*.js` 与正式 `tests/*.mjs`；历史 fixture 与诊断 runner 以精确 ignore 排除，待 P3-03 统一结构。

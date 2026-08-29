@@ -67,9 +67,9 @@ const allCode = [
     stripExports(readFileSync(resolve(__dirname, '..', 'static', 'modules', 'translator.js'), 'utf-8')),
 ].join('\n');
 
-const wrappedCode = `\n${allCode}\nreturn { readSSEStream, translateCurrentPage, translateBatch, getStageLabel };\n`;
+const wrappedCode = `\n${allCode}\nreturn { readSSEStream, translateCurrentPage, translateBatch };\n`;
 
-const { readSSEStream, translateCurrentPage, translateBatch, getStageLabel } = (new Function(wrappedCode))();
+const { readSSEStream, translateCurrentPage, translateBatch } = (new Function(wrappedCode))();
 
 // ============================================================
 // sse-client Tests
@@ -150,7 +150,7 @@ console.log('--- Test 3.1: progress -> finish callback order ---');
     const stream = makeSSEStream(sseBody);
     const mockFetchResp = createMockResponse({ ok: true, body: stream });
 
-    globalThis.fetch = async (url, init) => mockFetchResp;
+    globalThis.fetch = async (_url, _init) => mockFetchResp;
 
     const callbacks = {
         onStageChange: (stage, label) => record.push({ type: 'stage', stage, label }),
@@ -184,7 +184,7 @@ console.log('--- Test 3.2: no stage_current/stage_total -> no suffix ---');
     const stream = makeSSEStream(sseBody);
     const mockFetchResp = createMockResponse({ ok: true, body: stream });
 
-    globalThis.fetch = async (url, init) => mockFetchResp;
+    globalThis.fetch = async (_url, _init) => mockFetchResp;
 
     const callbacks = {
         onStageChange: (stage, label) => record.push({ type: 'stage', stage, label }),
@@ -208,7 +208,7 @@ console.log('--- Test 3.3: SSE error event -> onError ---');
     const stream = makeSSEStream('data: {"type":"error","error":"SSE stream error"}\n\n');
     const mockFetchResp = createMockResponse({ ok: true, body: stream });
 
-    globalThis.fetch = async (url, init) => mockFetchResp;
+    globalThis.fetch = async (_url, _init) => mockFetchResp;
 
     const callbacks = {
         onStageChange: () => {},
@@ -234,7 +234,7 @@ console.log('--- Test 3.4: HTTP not ok -> onError ---');
         jsonData: { error: '已有翻译任务正在进行，请稍后再试', code: 'translation_busy' },
     });
 
-    globalThis.fetch = async (url, init) => mockFetchResp;
+    globalThis.fetch = async (_url, _init) => mockFetchResp;
 
     const callbacks = {
         onStageChange: () => {},
@@ -359,7 +359,7 @@ console.log('--- Test 4.1: translateBatch batch_info/progress/finish ---');
     ].join('');
     const stream = makeSSEStream(sseBody);
     const mockFetchResp = createMockResponse({ ok: true, body: stream });
-    globalThis.fetch = async (url, init) => mockFetchResp;
+    globalThis.fetch = async (_url, _init) => mockFetchResp;
 
     const callbacks = {
         onBatchInfo: (f, t, total) => record.push({ type: 'batchInfo', f, t, total }),
@@ -385,7 +385,7 @@ console.log('--- Test 4.2: translateBatch HTTP not ok -> onError ---');
 {
     const record = [];
     const mockFetchResp = createMockResponse({ ok: false, jsonData: { error: 'page out of range' } });
-    globalThis.fetch = async (url, init) => mockFetchResp;
+    globalThis.fetch = async (_url, _init) => mockFetchResp;
 
     await translateBatch(0, 1, {
         onBatchInfo: () => {}, onStageChange: () => {}, onProgress: () => {},

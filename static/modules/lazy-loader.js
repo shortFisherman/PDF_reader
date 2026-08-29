@@ -234,10 +234,10 @@ if (typeof window !== 'undefined' && window.__TEST_DELAYED_RECLAIM__) {
         farContainer.getBoundingClientRect = () => farGBCR;
 
         const OriginalIO = globalThis.IntersectionObserver;
-        let capturedCallback = null;
+        let _capturedCallback = null;
 
-        globalThis.IntersectionObserver = function (cb, opts) {
-            capturedCallback = cb;
+        globalThis.IntersectionObserver = function (cb, _opts) {
+            _capturedCallback = cb;
             this.observe = function () {};
             this.unobserve = function () {};
             this.disconnect = function () {};
@@ -249,11 +249,11 @@ if (typeof window !== 'undefined' && window.__TEST_DELAYED_RECLAIM__) {
             onSettle: (cb) => { settledCb = cb; },
         };
 
-        let loadCallCount = 0;
-        let unloadCallCount = 0;
+        let _loadCallCount = 0;
+        let _unloadCallCount = 0;
         const unloadedContainers = [];
-        const mockLoad = () => { loadCallCount++; };
-        const mockUnload = (container) => { unloadCallCount++; unloadedContainers.push(container); };
+        const mockLoad = () => { _loadCallCount++; };
+        const mockUnload = (container) => { _unloadCallCount++; unloadedContainers.push(container); };
 
         try {
             const result = setupIntersectionObserver({
@@ -354,13 +354,13 @@ if (typeof window !== 'undefined' && window.__TEST_SETTLE_SCAN__) {
         outOfViewContainer.getBoundingClientRect = () => outOfViewGBCR;
 
         const OriginalIO = globalThis.IntersectionObserver;
-        let capturedCallback = null;
-        let capturedOptions = null;
+        let _capturedCallback = null;
+        let _capturedOptions = null;
         let observeCalls = [];
 
-        globalThis.IntersectionObserver = function (cb, opts) {
-            capturedCallback = cb;
-            capturedOptions = opts;
+        globalThis.IntersectionObserver = function (cb, _opts) {
+            _capturedCallback = cb;
+            _capturedOptions = _opts;
             this.observe = function (el) { observeCalls.push(el); };
             this.unobserve = function () {};
             this.disconnect = function () {};
@@ -372,11 +372,11 @@ if (typeof window !== 'undefined' && window.__TEST_SETTLE_SCAN__) {
             onSettle: (cb) => { settledCb = cb; },
         };
 
-        let loadCallCount = 0;
-        let unloadCallCount = 0;
+        let _loadCallCount = 0;
+        let _unloadCallCount = 0;
         const loadedContainers = [];
-        const mockLoad = (container) => { loadCallCount++; loadedContainers.push(container); };
-        const mockUnload = () => { unloadCallCount++; };
+        const mockLoad = (container) => { _loadCallCount++; loadedContainers.push(container); };
+        const mockUnload = () => { _unloadCallCount++; };
 
         try {
             const result = setupIntersectionObserver({
@@ -389,7 +389,7 @@ if (typeof window !== 'undefined' && window.__TEST_SETTLE_SCAN__) {
 
             result.pendingReclaim.add(outOfViewContainer);
 
-            capturedCallback([
+            _capturedCallback([
                 { target: inViewContainer, isIntersecting: true },
                 { target: outOfViewContainer, isIntersecting: true },
             ]);
@@ -400,7 +400,7 @@ if (typeof window !== 'undefined' && window.__TEST_SETTLE_SCAN__) {
             settledCb();
 
             assert(loadedContainers.includes(inViewContainer), 'Test 3: in-viewport container was loaded on settle');
-            assert(loadCallCount === 1, 'Test 3b: exactly one load call on settle');
+            assert(_loadCallCount === 1, 'Test 3b: exactly one load call on settle');
 
             assert(!loadedContainers.includes(outOfViewContainer), 'Test 4a: out-of-viewport container was NOT loaded');
             assert(!result.pendingLoad.has(outOfViewContainer), 'Test 4b: out-of-viewport container removed from pendingLoad');

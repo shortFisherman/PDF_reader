@@ -1,4 +1,5 @@
 import logging
+from typing import Any, cast
 
 from pdf_reader import config
 
@@ -27,7 +28,9 @@ def resolve_engine(provider: str) -> config.EngineSpec:  # noqa: ANN201
 
 
 def build_engine_kwargs(spec: config.EngineSpec) -> dict:  # noqa: ANN001, ANN201
-    engine_fields = spec.settings_cls.model_fields
+    # 保持运行时直接属性访问：settings_cls 缺 model_fields 时仍快速抛 AttributeError，
+    # 不静默回退空字段。cast(Any) 只解决静态类型，不改变运行时行为。
+    engine_fields = cast(Any, spec.settings_cls).model_fields
     kwargs: dict = {}
 
     for unified_name, engine_field in spec.field_map.items():

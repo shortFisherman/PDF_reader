@@ -145,7 +145,7 @@ const controller = new TranslationUIController({
     const started = controller.run({
         prefix: '',
         finishLabel: '翻译完成',
-        task: ({ signal, onStage, onProgress, onFinish, onError, onAbort }) => {
+        task: ({ signal, onStage, onProgress, onFinish }) => {
             check(signal instanceof AbortSignal, 'operation receives AbortSignal');
             onProgress(30);
             onStage('translating', '正在翻译…');
@@ -229,13 +229,11 @@ const controller = new TranslationUIController({
         scheduler: sched.set,
         clearScheduled: sched.clear,
     });
-    let secondCallbacks = null;
     let finishSecond;
     const secondGate = new Promise((r) => { finishSecond = r; });
     secondController.run({
         prefix: 'op2 · ',
         task: (cbs) => {
-            secondCallbacks = cbs;
             cbs.onStage('translating', '第二阶段');
             return secondGate;
         },
@@ -748,6 +746,8 @@ const { createReaderSession } = loadModule(['createReaderSession'], ['reader-ses
     await api.openPdf();
     const session1 = api.getSession();
     check(session1 !== null && session1.disposed === false, 'first successful open creates active session');
+    check(pagehideAdds === 1, 'first open registers pagehide listener');
+    check(visAdds === 1, 'first open registers visibilitychange listener');
     const fakeController = api.getTranslationController();
     fakeController.run({ task: () => {} });
     check(fakeController.active === true, 'fake controller has active request before session swap');
@@ -765,6 +765,8 @@ const { createReaderSession } = loadModule(['createReaderSession'], ['reader-ses
     harnessEls.pdfPathInput.value = '/second.pdf';
     await api.openPdf();
     check(session1.disposed === true, 'old session disposed after second successful open');
+    check(pagehideAdds === 2, 'second open registers new pagehide listener');
+    check(visAdds === 2, 'second open registers new visibilitychange listener');
     check(zoom.dispose.count() === before.zoom + 1, 'zoom.dispose exactly once on session swap');
     check(alignment.dispose.count() === before.alignment + 1, 'alignment.dispose exactly once on session swap');
     check(io.observer.disconnect.count() === before.io + 1, 'observer.disconnect exactly once on session swap');

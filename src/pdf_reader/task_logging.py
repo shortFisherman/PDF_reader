@@ -148,7 +148,7 @@ def task_log(
     message: str,
     *args: object,
     task: TaskContext | None = None,
-    **kwargs: object,
+    exc_info: bool | BaseException | None = None,
 ) -> None:
     """输出任务日志；有上下文时加统一前缀，无上下文时保持可读原样。"""
     ctx = task if task is not None else _current_task.get()
@@ -159,7 +159,10 @@ def task_log(
             fields.append(label)
         fields.append(f"status={ctx.status}")
         message = f"[{' '.join(fields)}] {message}"
-    logger.log(level, message, *args, **kwargs)
+    if exc_info is not None:
+        logger.log(level, message, *args, exc_info=exc_info)
+    else:
+        logger.log(level, message, *args)
 
 
 def _configured_secrets() -> set[str]:

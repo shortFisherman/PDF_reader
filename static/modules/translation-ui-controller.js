@@ -104,7 +104,7 @@ export class TranslationUIController {
                     this._render();
                 }),
             });
-        } catch (error) {
+        } catch {
             if (isCurrent()) {
                 this._failSafe();
             }

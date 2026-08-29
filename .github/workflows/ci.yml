@@ -40,3 +40,13 @@ jobs:
       - name: Verify repository
         shell: powershell
         run: ./scripts/verify.ps1
+        env:
+          PDF_READER_COVERAGE_ARTIFACT_DIR: coverage-artifacts
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage-artifacts/
+          if-no-files-found: error

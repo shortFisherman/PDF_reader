@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from pdf_reader import config
 from pdf_reader.engine_resolver import build_engine_kwargs, resolve_engine
 
@@ -284,3 +286,16 @@ def test_fake_engine_optional_field_warns(monkeypatch, caplog):
     assert kwargs["minimal_key"] == "sk-minimal"
     assert kwargs["minimal_model"] == "minimal-model"
     assert any("不支持字段" in record.message for record in caplog.records)
+
+
+def test_build_engine_kwargs_missing_model_fields_fails_fast():
+    """settings_cls 缺 model_fields 时保持直接属性访问，必须抛 AttributeError。"""
+    no_fields_cls = type("NoFields", (), {})
+    spec = config.EngineSpec(
+        provider="no-fields",
+        settings_cls=no_fields_cls,
+        field_map={"model": "model"},
+        required_fields=("model",),
+    )
+    with pytest.raises(AttributeError):
+        build_engine_kwargs(spec)

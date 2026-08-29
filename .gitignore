@@ -8,6 +8,9 @@ page.*.pdf
 page.*.csv
 *.tmp
 *.egg-info/
+.coverage
+.coverage.*
+coverage-artifacts/
 logs/*.log*
 node_modules/
 .worktrees/

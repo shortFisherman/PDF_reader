@@ -52,7 +52,7 @@ export function createSettleGate(leftEl, rightEl) {
  *   比例互推逻辑将迁移到 createAlignmentController.onScroll/realign，
  *   scroll-sync.js 仅保留 createSettleGate 与 setupPageDetection。
  */
-export function setupScrollSync({ left, right }) {
+export function setupScrollSync({ left: _left, right: _right }) {
     // @deprecated align-model-rewrite: 比例互推已由 AlignmentController 替代。
     //   本函数保留空壳以维持 import 不破坏，将在 align-model-rewrite 完成后移除。
 }

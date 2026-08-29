@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+from typing import cast
 
 from flask import (
     Blueprint,
@@ -35,7 +36,7 @@ def _get_state():
 
 
 def _get_coordinator() -> TranslationCoordinator:
-    return current_app.config["translation_coordinator"]
+    return cast(TranslationCoordinator, current_app.config["translation_coordinator"])
 
 
 def translation_busy_response(active_job: TranslationJob | None = None) -> tuple:
