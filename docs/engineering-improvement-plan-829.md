@@ -74,7 +74,7 @@
 |---|---|---|---|---|
 | P0-01 | P0 | 翻译结果绑定不可变文档身份 | `待处理` | 无 |
 | P0-02 | P0 | 服务端单任务互斥与任务身份 | `待处理` | P0-01 可并行设计 |
-| P0-03 | P0 | 修复依赖锁与干净环境安装 | `待处理` | 无 |
+| P0-03 | P0 | 修复依赖锁与干净环境安装 | `已完成` | 无 |
 | P1-01 | P1 | 明确 SSE 断开和后台任务所有权 | `待处理` | P0-02 |
 | P1-02 | P1 | PDF 替换失败恢复与事务边界 | `待处理` | P0-01 |
 | P1-03 | P1 | 术语表原子写入与任务隔离 | `待处理` | P0-02 |
@@ -195,11 +195,11 @@ TranslationCoordinator
 
 ### P0-03 修复依赖锁与干净环境安装
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：`requirements.lock` 含本机绝对可编辑路径 `-e d:\open-glm\project_glm\open-autoglm`，全新环境无法可靠安装。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`59d8545`
+- 验证证据：Python 3.12 临时虚拟环境执行 `pip install -r requirements.lock`、`pip check`、`python -c "import flask, pymupdf, pdf2zh_next"`，再以该解释器执行 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable <clean-python>`；193 个 Python 测试与全部前端测试通过。锁文件检查未发现 `open-autoglm`、绝对本机路径、`file:///` 或 editable 条目。
+- 剩余问题：无
 
 #### 目标状态
 
@@ -219,11 +219,11 @@ TranslationCoordinator
 
 #### 验收标准
 
-- [ ] 锁文件不存在绝对本机路径、`file:///` 或无意的 `-e` 条目。
-- [ ] 干净 Python 3.12 环境中 `pip install -r requirements.lock` 成功，或新的标准安装命令成功。
-- [ ] 干净环境运行完整验证通过。
-- [ ] README、CI 和本地验证使用同一依赖入口。
-- [ ] 记录重新生成锁文件的命令。
+- [x] 锁文件不存在绝对本机路径、`file:///` 或无意的 `-e` 条目。
+- [x] 干净 Python 3.12 环境中 `pip install -r requirements.lock` 成功，或新的标准安装命令成功。
+- [x] 干净环境运行完整验证通过。
+- [x] README、CI 和本地验证使用同一依赖入口。
+- [x] 记录重新生成锁文件的命令。
 
 ---
 
