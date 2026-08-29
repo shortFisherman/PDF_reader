@@ -65,7 +65,7 @@ The system SHALL log at INFO when translated page(s) are replaced into `right.pd
 
 ### Requirement: Translation orchestrator boundary logging
 
-The system SHALL log at INFO when the async translation thread starts (with page context) and when it ends, and SHALL log at ERROR with `exc_info` if the thread captures an exception before signalling completion. The `thread.join(timeout=5)` timeout path SHALL log at WARNING if the thread did not terminate within the timeout.
+The system SHALL log at INFO when the async translation thread starts (with page context) and when it ends, and SHALL log at ERROR with `exc_info` if the thread captures an exception before signalling completion. The `thread.join(timeout=30)` timeout path SHALL log at WARNING if the thread did not terminate within the timeout.
 
 #### Scenario: Thread starts and ends
 
@@ -79,7 +79,7 @@ The system SHALL log at INFO when the async translation thread starts (with page
 
 #### Scenario: Join timeout
 
-- **WHEN** `thread.join(timeout=5)` returns but the thread is still alive
+- **WHEN** `thread.join(timeout=30)` returns but the thread is still alive
 - **THEN** a WARNING record under `pdf_reader.translate` is emitted noting the timeout
 
 ### Requirement: High-frequency render logging is DEBUG
