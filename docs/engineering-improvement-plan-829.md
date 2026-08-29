@@ -78,7 +78,7 @@
 | P1-01 | P1 | 明确 SSE 断开和后台任务所有权 | `已完成` | P0-02 |
 | P1-02 | P1 | PDF 替换失败恢复与事务边界 | `已完成` | P0-01 |
 | P1-03 | P1 | 术语表原子写入与任务隔离 | `已完成` | P0-02 |
-| P1-04 | P1 | 建立系统级并发和故障回归测试 | `待处理` | P0/P1 对应设计 |
+| P1-04 | P1 | 建立系统级并发和故障回归测试 | `已完成` | P0/P1 对应设计 |
 | P1-05 | P1 | 修复启动脚本误杀进程风险 | `待处理` | 无 |
 | P1-06 | P1 | 统一 debug、启动和配置语义 | `待处理` | 无 |
 | P2-01 | P2 | 迁移为 `src/pdf_reader` 包布局 | `待处理` | P0/P1 稳定后 |
@@ -302,23 +302,23 @@ TranslationCoordinator
 
 ### P1-04 建立系统级并发和故障回归测试
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：现有测试擅长模块内行为，但缺少跨路由、线程、文档和持久化边界的时序测试。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`b2df768`
+- 验证证据：新增 `tests/test_system_concurrency_failure.py`（16 个系统级用例，覆盖下方九项）；执行 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"`，269 个 Python 测试与全部前端测试通过。
+- 剩余问题：无新增剩余问题。系统级用例仍以受控 fake 替代真实 pdf2zh-next 网络翻译，真实上游事件契约由既有模块级测试覆盖；join timeout 后保留的孤儿临时目录自动回收仍属 P3-05 范围。
 
 #### 必须覆盖的场景
 
-- [ ] A 翻译未完成时打开 B，A 的结果不能写入 B。
-- [ ] 两个客户端同时发起翻译，服务端只接受一个。
-- [ ] SSE 中途断开，但 worker 继续运行。
-- [ ] SSE 中途断开且 worker 最终失败。
-- [ ] 后台线程 join timeout。
-- [ ] 临时目录、输出目录和 PDF 保存失败。
-- [ ] 单页和批量提交失败后的状态恢复。
-- [ ] 术语合并与 PDF 提交其中一步失败时的定义行为。
-- [ ] Flask 测试客户端完成一次打开—翻译—渲染闭环。
+- [x] A 翻译未完成时打开 B，A 的结果不能写入 B。`test_open_b_rejected_while_translation_active_and_result_stays_in_a`：真实 SSE 翻译进行中 `/api/open` 返回 409 `translation_busy`，B 的缓存目录不创建，A 的结果只写回 A 的 `right.pdf`，`document_id` 不变。
+- [x] 两个客户端同时发起翻译，服务端只接受一个。`test_two_clients_only_one_translation_accepted`：第一个客户端真实流式任务占槽，第二个客户端批量请求返回 409 与赢家 `active_job_id`，且不启动 worker、不创建临时目录。
+- [x] SSE 中途断开，但 worker 继续运行。`test_sse_disconnect_worker_continues_late_result_discarded`：断开后受控 worker 继续产出迟到 finish，结果被丢弃，worker 确认退出后才清理目录，任务释放为 cancelled。
+- [x] SSE 中途断开且 worker 最终失败。`test_sse_disconnect_worker_fails_late_task_released`：断开后 worker 最终抛错，失败被包含，目录清理、任务释放、文档不变。
+- [x] 后台线程 join timeout。`test_sse_disconnect_join_timeout_keeps_dirs_and_releases_task`：非协作 worker 越过 join timeout 时临时目录保留供恢复，任务槽仍释放为 cancelled。
+- [x] 临时目录、输出目录和 PDF 保存失败。`test_temp_dir_creation_failure_yields_error_and_recovers`、`test_output_dir_creation_failure_cleans_extract_dir_and_recovers`、`test_extraction_pdf_save_failure_cleans_up_and_recovers`、`test_replace_pdf_save_failure_keeps_document_and_recovers`：均验证 SSE error、worker 不启动（如适用）、目录清理、任务释放、文档不变与重试恢复。
+- [x] 单页和批量提交失败后的状态恢复。`test_single_page_commit_failure_keeps_state_and_recovers`、`test_batch_commit_failure_keeps_state_and_recovers`：注入 `os.replace` 失败后 `right.pdf` 字节/页内容、`translated_pages`、渲染与再次提交均验证。
+- [x] 术语合并与 PDF 提交其中一步失败时的定义行为。单页/批量各两个用例：PDF 提交失败时术语合并不执行、SSE error、任务 failed；术语合并失败被 `merge_after_translate` 包含，PDF 提交保留、旧术语表不变、任务仍 finished。固定当前「先 PDF、后术语表」的部分提交语义，不声称跨文件全局事务。
+- [x] Flask 测试客户端完成一次打开—翻译—渲染闭环。`test_open_translate_render_round_trip`：真实 route/SSE/worker/AppState/术语合并与磁盘边界，检查最终 PDF 页文本、`translated_pages`、`document_id`、coordinator/worker 状态与临时资源清理。
 
 不要只增加用例数量；这些测试必须验证最终文件内容、文档身份、任务状态和资源清理。
 
@@ -745,6 +745,7 @@ PDF_reader/
 
 | 日期 | 编号 | 状态 | 提交 | 说明 |
 |---|---|---|---|---|
+| 2026-08-29 | P1-04 | 已完成 | `b2df768` | 新增 16 个系统级并发与故障回归用例，穿过真实 Flask route、SSE generator、单任务协调器、真实 worker 线程、AppState 与磁盘边界，仅外部翻译引擎使用受控 fake；固定「先 PDF、后术语表」的部分提交语义；单页/批量提交失败、SSE 断开、join timeout、临时/输出目录与 PDF 保存失败均有最终文件、身份、任务与资源清理断言；完整验证 269 个 Python 测试与全部前端测试通过。 |
 | 2026-08-29 | P1-03 | 已完成 | `577da48` | 术语合并改为模块级互斥锁 + 同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交；打开临时文件、`os.fsync` 中途写入与 `os.replace` 提交失败均保留旧 CSV 并清理临时文件；损坏或错误表头累计文件中止合并保留旧文件；新增 13 个术语表回归测试（含真实合并路径的迟到身份拒绝与并发不丢更新）。 |
 | 2026-08-29 | P1-02 | 已完成 | `1b8c36f` | `replace_page`/`replace_pages` 改为共享 `_commit_replacement()` 事务：页修改在工作副本上完成，临时文件关闭后再 `os.replace`，磁盘提交成功后才替换内存句柄与 `_translated_pages`；失败路径清理 `.tmp`、关闭全部泄漏句柄并恢复可渲染句柄。新增 11 个故障注入回归测试。 |
 | 2026-08-29 | P1-01 | 已完成 | `10f1676` | 引入 `TranslationStream` 明确 worker 生命周期：SSE 断开触发协作式取消并 join 确认退出后才清理临时目录，join timeout 保留目录；断开结果丢弃并释放为 cancelled；关闭时记录 active job。 |
