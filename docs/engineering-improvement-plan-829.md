@@ -463,11 +463,11 @@ PDF_reader/
 
 ### P2-02 拆分前端页面协调与翻译 UI 状态
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：`static/app.js` 同时管理文档打开、页面、进度、翻译状态、错误提示和多个控制器实例；单页和批量翻译 UI 状态重复。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`23e3e40`
+- 验证证据：子代理实现验证：新增 `static/modules/translation-ui-controller.js`（共享状态机 idle→running→succeeded/failed/aborted→idle，集中 busy 控件、进度条、stage/status 文本、成功/失败恢复、延时清理、operation generation 迟到回调隔离与 AbortController 生命周期；终态单次封闭、终态后 sync throw 被忽略、sync throw/Promise rejection 只显示固定安全摘要、resolve 无终态转 failed）与 `static/modules/reader-session.js`（zoom/alignment/observer/settle/page 清理的幂等 dispose 边界）；单页/批量差异经 operation descriptor/callback 注入，批量动态前缀仅经 operation-scoped `onPrefix` 安全回调（已删除公共 `setPrefix` 遗留入口）；`app.js` 只保留页面装配与协调，不再复制两套 busy/progress/error DOM 逻辑；`translator.js` 接收 AbortSignal 且 AbortError 走 `onAbort` 不显示普通失败；pagehide handler 自身在 saveProgress 后主动 abort 当前请求。仅在新文档 open 成功、准备替换 DOM 时 dispose 旧 session，失败打开保留旧 session（409 语义不变）。新增 `tests/run-translation-ui-tests.mjs`（115 项，覆盖状态转换/迟到隔离/终态守卫/abort/pagehide/session 资源释放与静态契约）并纳入 `npm test`。完整 `scripts/verify.ps1`（Python 3.12）：485 个 Python 测试与全部前端套件通过，logs/cache 前后零增长。父级独立验收通过：translation-ui targeted 115 passed；完整 verify 解释器路径/3.12.8 输出、Ruff lint/format、485 Python、全部前端通过（translation-ui 115、translator 48、zoom 31、alignment 20、ui-copy/error-safety）；代码审阅确认 app.js 无直接 busy/progress/error DOM 重复、动态 prefix 仅 operation-scoped、terminal 单次封闭、sync throw/reject/resolve-without-terminal 安全、pagehide abort、session 成功替换释放/失败保留/幂等；logs 2 文件/3,750,478 B 与 cache 3 文件/112,503,805 B 零增长、`git diff --check` 通过。
+- 剩余问题：无（前端测试夹具/历史 runner 的统一归 P3-03，不阻塞本项）。
 
 #### 目标状态
 
@@ -479,10 +479,10 @@ PDF_reader/
 
 #### 验收标准
 
-- [ ] 单页和批量流程不再复制 busy/progress/error 控件代码。
-- [ ] 状态转换有自动化测试。
-- [ ] 打开新文档会释放旧事件监听、observer、zoom 和 alignment 实例。
-- [ ] 不通过引入大型前端框架完成本项。
+- [x] 单页和批量流程不再复制 busy/progress/error 控件代码。
+- [x] 状态转换有自动化测试。
+- [x] 打开新文档会释放旧事件监听、observer、zoom 和 alignment 实例。
+- [x] 不通过引入大型前端框架完成本项。
 
 ### P2-03 改进测试覆盖率、类型检查和 JS 静态检查
 
@@ -770,3 +770,4 @@ PDF_reader/
 | 2026-08-29 | P2-06 | 已完成 | `a143340` | 增加任务级日志上下文与可诊断性：新增 `task_logging.py`（不可变 `TaskContext`、`__post_init__` 强制截断、`contextvars` 传播、统一前缀/1-based 页码、生命周期状态、`SafeFormatter` 脱敏）并贯穿 coordinator/routes/SSE/worker/lifecycle/state/glossary/extraction/debug；`_safe_rmtree` 可验证清理与 `cleanup_deferred` 语义；单页/批量路由向 `coordinator.start` 传 `snapshot.pdf_hash`；新增 tests/test_task_logging.py 与真实路由回归。完整验证 462 Python + 全部前端，logs/cache 零增长，父级独立验收通过。 |
 | 2026-08-29 | P2-01 | 已完成 | `55e4d8b` | 迁移为 `src/pdf_reader` 包布局：19 个生产模块经 `git mv` 迁入 `src/pdf_reader/`，新增 `pyproject.toml`/`__init__.py`/`__main__.py`，包内统一 `pdf_reader.*` 导入，`python -m pdf_reader` 入口与 argparse prog 对齐，测试 patch 全部 `pdf_reader.*`，无根模块 shim/sys.path hack；start.bat/README/CI/Ruff/architecture/当前 OpenSpec 同步；新增 tests/test_package_layout.py 与冒烟句柄释放回归。完整验证 471 Python + 全部前端，logs/cache 零增长，父级独立 clean-venv/outside-CWD/import/help/open-render-release smoke 通过。 |
 | 2026-08-29 | P2-04 | 已完成 | `a65c2e6` | 整理依赖声明、开发依赖与验证环境：`pyproject.toml` 成为唯一直接依赖声明源（dev extra：pytest/Ruff/coverage/mypy/pip-tools），删除 `requirements.txt`/`requirements-dev.txt`；`requirements.lock` 由 pip-tools 7.6.1 从 pyproject（含 dev extra）重生成且 header 记录真实命令；安装契约 `requirements.lock` + `pip install -e . --no-deps` 在 CI/README/start.bat 一致；verify.ps1 输出 Python 绝对路径/版本、显式优先、venv 优先、回退 WARNING、无效快速失败；新增 dependency_contract 与 verify_script 测试。两次 485 Python + 全部前端验证通过，canonical 重编译 SHA 与仓库锁一致，logs/cache 零增长，父级独立验收通过。 |
+| 2026-08-29 | P2-02 | 已完成 | `23e3e40` | 拆分前端页面协调与翻译 UI 状态：新增 `translation-ui-controller.js`（共享状态机、busy/progress/stage/error/reset、AbortController、operation generation 迟到隔离、终态单次封闭、sync throw/reject/resolve 无终态安全）与 `reader-session.js`（文档资源幂等 dispose）；动态前缀仅 operation-scoped `onPrefix`；app.js 只保留装配/协调，translator 透传 AbortSignal 且 AbortError 静默；pagehide 主动 abort；成功换文档释放旧资源恰好一次、失败打开保留、dispose 幂等。新增 run-translation-ui-tests.mjs（115 项）纳入 npm test。完整验证 485 Python + 全部前端，logs/cache 零增长，父级独立验收通过。 |
