@@ -342,12 +342,13 @@ TranslationCoordinator
 
 - 状态：`已完成`
 - 完成日期：2026-08-29
-- 实现/测试提交：`8ae9d7f`（feat: unify debug, startup, and config semantics (P1-06)，含 README、`config.example.toml`、`docs/architecture.md` 同步）
+- 实现/测试提交：`8ae9d7f`（初始实现，含 README、`config.example.toml`、`docs/architecture.md` 同步）；`015d2bf`（验收缺口修正：导入期安全默认 + 统一启动校验）
 - 完成记录提交：`docs: record P1-06 completion`
 - 验证证据：
   - RED：删除 `tests/test_app.py` 中复制 argparse 的假测试，先写 89 个针对性用例（重写 `test_app.py` 调用真实 `app.main(argv)`、新增 `tests/test_server_config.py`、`test_config_deferred.py` 增加 `MODEL_API_KEY` 环境覆盖用例）；实现前运行得到 `AttributeError: module 'app' has no attribute 'main'` 等失败。另确认旧实现会把 `--no-debug` 与非法 `PDF_READER_DEBUG` 当作未知输入直接启动服务器，因此两条真实入口子进程用例带超时保护。
-  - 针对性：`pytest tests/test_app.py tests/test_server_config.py tests/test_config_deferred.py -q` → 89 passed；配置/应用/日志相关 `pytest tests/test_app.py tests/test_server_config.py tests/test_config_deferred.py tests/test_logging_config.py tests/test_debug_trace.py tests/test_start_bat.py -q` → 127 passed。
-  - 完整：`pytest -q` → 356 passed（基线 273，净增 83）；`powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"` → Ruff lint/format check、356 个 Python 测试与四个前端套件（UI copy、translator 40、zoom 31、alignment 20）全部通过。
+  - 验收缺口修正（`015d2bf`）：`config` 导入对非 table section 与非字符串字段不再崩溃（`_section`/`_string` 安全默认，保留原始 `CONFIG`）；`validate_startup_requirements` 统一校验 `[model]`/`[pdf_reader]`/`[translation]` 的 table 与核心字段类型（provider/model/api_key/base_url 非空字符串，int/bool/list 拒绝；dpi 正整数且 bool 不算；cache_dir、lang_in/lang_out 非空字符串）；`MODEL_API_KEY` 环境值合法时覆盖无效文件 `api_key`，但 `[model]` 段仍须 table；新增受控 TOML 重载导入安全测试、字段校验参数化测试与真实入口注入错误配置子进程测试。
+  - 针对性（修正后）：`pytest tests/test_app.py tests/test_server_config.py tests/test_config_deferred.py -q` → 127 passed；配置/应用/日志相关合集 → 165 passed。
+  - 完整：`pytest -q` → 394 passed（基线 273，净增 121）；`powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"` → Ruff lint/format check、394 个 Python 测试与四个前端套件（UI copy、translator 40、zoom 31、alignment 20）全部通过。
   - 测试直接断言 `app.run` 收到的 `host/port/debug/use_reloader`；真实入口 `python app.py --debug --no-debug` 与 `PDF_READER_DEBUG=banana python app.py` 均以退出码 2 结束且不启动服务器。
 - 剩余问题：
   - `use_reloader` 与 debug 绑定（`use_reloader == debug`），没有独立 reloader 开关或配置键；这是 P1-06 明确的简化语义，未来如需独立控制应另立配置名。
