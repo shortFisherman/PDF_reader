@@ -5,8 +5,8 @@ real TranslationCoordinator, a real TranslationStream worker thread, the real
 AppState document/identity boundaries and the real disk cache.  Only the
 external translation engine boundary (``do_translate_async_stream``) is
 replaced by a deterministic fake; failure injection is limited to
-``tempfile.mkdtemp``, ``pymupdf.Document.save`` and ``os.replace`` so the
-surrounding real lifecycle still runs.
+``tempfile.mkdtemp``, ``cache_ops.write_temp_marker``, ``pymupdf.Document.save``
+and ``os.replace`` so the surrounding real lifecycle still runs.
 
 Test matrix (each row maps to one or more tests below):
 
@@ -22,8 +22,8 @@ Test matrix (each row maps to one or more tests below):
 5. (e) Worker ignores cancellation past the join timeout: dirs are kept for
    recovery, job slot is still released as cancelled, and the test releases
    the worker afterwards and joins it so no daemon thread leaks past the case.
-6. (f) temp-dir creation, output-dir creation and PDF save failures each
-   produce an SSE error, clean up, release the job and allow a retry.
+6. (f) workspace-root creation, marker-write and PDF save failures each produce
+   an SSE error, clean up, release the job and allow a retry.
 7. (g) Single-page and batch commit failures leave right.pdf/translated_pages
    at their last committed state, stay renderable and recover on retry.
 8. (h) Partial-commit semantics pinned: PDF replace runs first, glossary merge
@@ -46,7 +46,7 @@ import pymupdf
 import pytest
 from flask import Flask
 
-from pdf_reader import config, sse_stream, translation_orchestrator
+from pdf_reader import cache_ops, config, sse_stream, translation_orchestrator
 from pdf_reader.file_hash import sha256
 from pdf_reader.routes import register_routes
 from pdf_reader.state import AppState
@@ -353,7 +353,7 @@ def test_two_clients_only_one_translation_accepted(system_app, system_client, tm
     assert payload["code"] == "translation_busy"
     assert payload["active_job_id"] == coordinator.active_job.job_id
     assert len(streams) == 1, "rejected request must not start a worker"
-    assert len(created) == 2, "rejected request must not create temp dirs"
+    assert len(created) == 1, "rejected request must not create a temp workspace"
     assert state.translation_snapshot().document_id == doc["document_id"]
 
     source.release.set()
@@ -453,8 +453,12 @@ def test_sse_disconnect_join_timeout_keeps_dirs_and_releases_task(system_app, sy
 
     assert streams[0].is_alive is True, "non-cooperative worker survives join timeout"
     assert coordinator.active_job is None, "job slot still released as cancelled"
-    assert len(created) == 2
-    assert all(p.exists() for p in created), "dirs must be kept for recovery"
+    assert len(created) == 1
+    workspace = created[0]
+    assert workspace.exists(), "workspace must be kept for recovery"
+    assert (workspace / "input").is_dir(), "input dir must be kept for recovery"
+    assert (workspace / "output").is_dir(), "output dir must be kept for recovery"
+    assert (workspace / cache_ops.TEMP_MARKER_NAME).is_file(), "marker must be kept for recovery"
     _assert_marker(state, marker)
 
     # Test-controlled teardown: release the fake upstream, then explicitly
@@ -462,7 +466,10 @@ def test_sse_disconnect_join_timeout_keeps_dirs_and_releases_task(system_app, sy
     source.release.set()
     streams[0].join(timeout=5)
     assert streams[0].is_alive is False, "worker must be joined before the case ends"
-    assert all(p.exists() for p in created), "retained dirs must not be deleted by production logic"
+    assert workspace.exists(), "retained workspace must not be deleted by production logic"
+    assert (workspace / "input").is_dir()
+    assert (workspace / "output").is_dir()
+    assert (workspace / cache_ops.TEMP_MARKER_NAME).is_file()
 
 
 # --- (f) temp/output dir and PDF save failures -------------------------
@@ -495,7 +502,7 @@ def test_temp_dir_creation_failure_yields_error_and_recovers(system_app, system_
     assert all(not p.exists() for p in created)
 
 
-def test_output_dir_creation_failure_cleans_extract_dir_and_recovers(system_app, system_client, tmp_path, monkeypatch):
+def test_marker_write_failure_cleans_workspace_and_recovers(system_app, system_client, tmp_path, monkeypatch):
     state = system_app.config["app_state"]
     coordinator = system_app.config["translation_coordinator"]
     pdf = _make_pdf(tmp_path / "outfail.pdf", 2, ["N_0", "N_1"])
@@ -504,15 +511,25 @@ def test_output_dir_creation_failure_cleans_extract_dir_and_recovers(system_app,
     source = ControlledUpstream(result=FakeTranslateResult(mono_pdf_path=str(translated)))
     _install_upstream(monkeypatch, source)
     streams = _install_stream_spy(monkeypatch)
-    created = _install_mkdtemp_control(monkeypatch, fail_at=2)
+    created = _install_mkdtemp_control(monkeypatch)
+    real_write_marker = cache_ops.write_temp_marker
+    counter = {"n": 0}
+
+    def failing_marker(dir_path, *, job_id, pid=None) -> None:
+        counter["n"] += 1
+        if counter["n"] == 1:
+            raise OSError("injected marker write failure")
+        real_write_marker(dir_path, job_id=job_id, pid=pid)
+
+    monkeypatch.setattr(cache_ops, "write_temp_marker", failing_marker)
     marker = _document_marker(state)
 
     body = _consume(system_client.post("/api/translate/0", json={}, buffered=False))
     assert '"type": "error"' in body
-    assert streams == [], "no worker may start when output dir creation fails"
+    assert streams == [], "no worker may start when workspace marker write fails"
     assert coordinator.active_job is None
     assert len(created) == 1
-    assert not created[0].exists(), "extract dir must be cleaned even on setup failure"
+    assert not created[0].exists(), "workspace root must be cleaned even on setup failure"
     _assert_marker(state, marker)
 
     source.release.set()

@@ -1,8 +1,6 @@
 import json
 import logging
-import os
 import shutil
-import tempfile
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -43,7 +41,7 @@ logger = logging.getLogger("pdf_reader.translate")
 
 
 def _safe_rmtree(path: Path | None) -> bool:
-    """删除临时/输出目录并返回可验证结果；目标原本不存在也算成功。"""
+    """删除任务工作区（根目录，含 input/output）并返回可验证结果；目标原本不存在也算成功。"""
     if path is None or not path.exists():
         return True
     try:
@@ -223,14 +221,15 @@ def _shutdown_worker(stream: TranslationStream | None, task_ctx: TaskContext | N
 
 def generate(ctx: GenerateContext) -> Iterator[str]:
     with task_log_context(ctx.task_ctx):
+        workspace: Path | None = None
         tmpdir: Path | None = None
         output_dir: Path | None = None
         stream = None
         outcome = "failed"
         try:
-            tmpdir = Path(tempfile.mkdtemp())
-            output_dir = Path(tempfile.mkdtemp(prefix=cache_ops.TEMP_WORKSPACE_PREFIX, dir=str(ctx.cache_dir)))
-            cache_ops.write_temp_marker(output_dir, job_id=ctx.job_id, pid=os.getpid())
+            workspace = cache_ops.create_temp_workspace(ctx.cache_dir, job_id=ctx.job_id)
+            tmpdir = workspace / "input"
+            output_dir = workspace / "output"
             ctx.settings.translation.output = str(output_dir)
             with debug_trace.debug_session(ctx.glossary_cache_path, ctx.page, ctx.job_id, debug=ctx.debug):
                 task_log(logger, logging.INFO, "submit translate", task=ctx.task_ctx)
@@ -355,10 +354,8 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                         "late worker result discarded",
                         task=with_status(ctx.task_ctx, STATUS_DISCARDED),
                     )
-                if tmpdir is not None:
-                    cleanup_ok = _safe_rmtree(tmpdir) and cleanup_ok
-                if output_dir is not None:
-                    cleanup_ok = _safe_rmtree(output_dir) and cleanup_ok
+                if workspace is not None:
+                    cleanup_ok = _safe_rmtree(workspace) and cleanup_ok
             _release_job(ctx, outcome)
             if cleanup_ok:
                 task_log(
@@ -378,14 +375,15 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
 
 def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
     with task_log_context(ctx.task_ctx):
+        workspace: Path | None = None
         tmpdir: Path | None = None
         output_dir: Path | None = None
         stream = None
         outcome = "failed"
         try:
-            tmpdir = Path(tempfile.mkdtemp())
-            output_dir = Path(tempfile.mkdtemp(prefix=cache_ops.TEMP_WORKSPACE_PREFIX, dir=str(ctx.cache_dir)))
-            cache_ops.write_temp_marker(output_dir, job_id=ctx.job_id, pid=os.getpid())
+            workspace = cache_ops.create_temp_workspace(ctx.cache_dir, job_id=ctx.job_id)
+            tmpdir = workspace / "input"
+            output_dir = workspace / "output"
             ctx.settings.translation.output = str(output_dir)
             with debug_trace.debug_session(ctx.glossary_cache_path, ctx.from_page, ctx.job_id, debug=ctx.debug):
                 task_log(logger, logging.INFO, "submit translate", task=ctx.task_ctx)
@@ -512,10 +510,8 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
                         "late worker result discarded",
                         task=with_status(ctx.task_ctx, STATUS_DISCARDED),
                     )
-                if tmpdir is not None:
-                    cleanup_ok = _safe_rmtree(tmpdir) and cleanup_ok
-                if output_dir is not None:
-                    cleanup_ok = _safe_rmtree(output_dir) and cleanup_ok
+                if workspace is not None:
+                    cleanup_ok = _safe_rmtree(workspace) and cleanup_ok
             _release_job(ctx, outcome)
             if cleanup_ok:
                 task_log(

@@ -50,7 +50,7 @@ def test_overlapping_single_and_batch_requests_accept_only_one(app_state, sample
     assert coordinator.is_busy is False
 
 
-def test_busy_request_does_not_create_stream_or_temp_directory(app_state, sample_pdf):
+def test_busy_request_does_not_create_stream_or_temp_workspace(app_state, sample_pdf):
     app = _make_app(app_state, sample_pdf)
     coordinator = app.config["translation_coordinator"]
     snapshot = app_state.translation_snapshot()
@@ -59,7 +59,7 @@ def test_busy_request_does_not_create_stream_or_temp_directory(app_state, sample
     with (
         patch("pdf_reader.routes.build_settings", return_value=MagicMock()),
         patch("pdf_reader.routes.sse_stream.generate") as generate_single,
-        patch("pdf_reader.sse_stream.tempfile.mkdtemp") as make_temp_dir,
+        patch("pdf_reader.cache_ops.create_temp_workspace") as create_workspace,
     ):
         with app.test_client() as client:
             response = client.post("/api/translate/0", json={})
@@ -71,7 +71,7 @@ def test_busy_request_does_not_create_stream_or_temp_directory(app_state, sample
         "error": "已有翻译任务正在进行，请稍后再试",
     }
     generate_single.assert_not_called()
-    make_temp_dir.assert_not_called()
+    create_workspace.assert_not_called()
     assert coordinator.active_job == active_job
     coordinator.fail(active_job.job_id)
 

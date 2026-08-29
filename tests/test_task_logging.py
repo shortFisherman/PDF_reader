@@ -281,10 +281,8 @@ def test_single_cleanup_failure_records_cleanup_deferred(caplog, tmp_path):
     task_ctx = task_context_from_indices(job.job_id, job.document_id, job.pdf_hash or "", [0])
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
 
     result = MagicMock()
     result.mono_pdf_path = str(tmp_path / "t.pdf")
@@ -306,7 +304,7 @@ def test_single_cleanup_failure_records_cleanup_deferred(caplog, tmp_path):
         task_ctx=task_ctx,
     )
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
         with patch(
             "pdf_reader.sse_stream.run_translation",
             return_value=iter([{"type": "finish", "translate_result": result}]),
@@ -331,10 +329,8 @@ def test_batch_cleanup_failure_records_cleanup_deferred(caplog, tmp_path):
     task_ctx = task_context_from_indices(job.job_id, job.document_id, job.pdf_hash or "", [1, 2])
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
 
     ctx = GenerateBatchContext(
         settings=MagicMock(),
@@ -354,7 +350,7 @@ def test_batch_cleanup_failure_records_cleanup_deferred(caplog, tmp_path):
         task_ctx=task_ctx,
     )
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
         with patch(
             "pdf_reader.sse_stream.run_translation",
             return_value=iter(

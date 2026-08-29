@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from pdf_reader import cache_ops
 from pdf_reader.glossary_service import merge_after_translate
 from pdf_reader.sse_stream import (
     GenerateBatchContext,
@@ -387,51 +388,45 @@ def test_generate_passes_through_keepalive_empty_string(tmp_path):
 
 
 def test_generate_cleans_up_on_error_event(tmp_path):
-    """3.1: error event early exit -> tmpdir/output_dir removed"""
+    """3.1: error event early exit -> owned workspace (input/output/marker) removed"""
     events = [{"type": "error", "error": "test error"}]
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     ctx = _make_ctx(cache_dir=cache_dir)
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
         with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
             with patch("pdf_reader.sse_stream.debug_trace"):
                 list(generate(ctx))
 
-    assert not tmpdir.exists()
-    assert not output_dir.exists()
+    assert not workspace.exists()
 
 
 def test_generate_cleans_up_on_no_translate_result(tmp_path):
-    """3.2: no translate_result early exit -> tmpdir/output_dir removed"""
+    """3.2: no translate_result early exit -> owned workspace removed"""
     events = [{"type": "progress_start", "stage": "layout_analysis"}]
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     ctx = _make_ctx(cache_dir=cache_dir)
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
         with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
             with patch("pdf_reader.sse_stream.debug_trace"):
                 list(generate(ctx))
 
-    assert not tmpdir.exists()
-    assert not output_dir.exists()
+    assert not workspace.exists()
 
 
 def test_generate_cleans_up_on_generator_close(tmp_path):
-    """3.3: gen.close() -> GeneratorExit -> dirs removed, job released as cancelled"""
+    """3.3: gen.close() -> GeneratorExit -> workspace removed, job released as cancelled"""
     events = [
         {
             "type": "progress_start",
@@ -453,26 +448,23 @@ def test_generate_cleans_up_on_generator_close(tmp_path):
         cache_dir=cache_dir,
     )
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
         with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
             with patch("pdf_reader.sse_stream.debug_trace"):
                 gen = generate(ctx)
                 next(gen)
                 gen.close()
 
-    assert not tmpdir.exists()
-    assert not output_dir.exists()
+    assert not workspace.exists()
     cancel_job.assert_called_once_with("job-disconnect")
     fail_job.assert_not_called()
 
 
 def test_generate_cleans_up_on_success(tmp_path):
-    """3.4: success path -> dirs removed exactly once"""
+    """3.4: success path -> workspace removed exactly once"""
     mock_result = MagicMock()
     mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
     mock_result.dual_pdf_path = None
@@ -484,38 +476,32 @@ def test_generate_cleans_up_on_success(tmp_path):
     cache_dir.mkdir()
     ctx = _make_ctx(cache_dir=cache_dir)
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
         with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
             with patch("pdf_reader.sse_stream.debug_trace"):
                 list(generate(ctx))
 
-    assert not tmpdir.exists()
-    assert not output_dir.exists()
+    assert not workspace.exists()
 
 
 def test_generate_cleans_up_on_exception(tmp_path):
-    """Exception during translation -> dirs removed"""
+    """Exception during translation -> workspace removed"""
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     ctx = _make_ctx(cache_dir=cache_dir)
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
         with patch("pdf_reader.sse_stream.run_translation", side_effect=RuntimeError("boom")):
             with patch("pdf_reader.sse_stream.debug_trace"):
                 list(generate(ctx))
 
-    assert not tmpdir.exists()
-    assert not output_dir.exists()
+    assert not workspace.exists()
 
 
 def test_format_batch_info_event():
@@ -726,7 +712,7 @@ def test_generate_setup_exception_fails_active_job(tmp_path):
         cache_dir=cache_dir,
     )
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=OSError("no temp space")):
+    with patch("pdf_reader.cache_ops.create_temp_workspace", side_effect=OSError("no temp space")):
         result = list(generate(ctx))
 
     assert any('"type": "error"' in item for item in result)
@@ -767,20 +753,17 @@ def test_generate_disconnect_cancels_worker_and_discards_late_result(tmp_path):
         cache_dir=cache_dir,
     )
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
         with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", slow_completing_source):
             with patch("pdf_reader.sse_stream.debug_trace"):
                 gen = generate(ctx)
                 next(gen)
                 gen.close()
 
-    assert not tmpdir.exists()
-    assert not output_dir.exists()
+    assert not workspace.exists()
     replace_page.assert_not_called()
     finish_job.assert_not_called()
     fail_job.assert_not_called()
@@ -789,8 +772,9 @@ def test_generate_disconnect_cancels_worker_and_discards_late_result(tmp_path):
 
 def test_generate_keeps_dirs_when_worker_survives_join_timeout(tmp_path):
     """A non-cooperative worker still running when SSE closes must not lose its
-    temp dirs: after the join timeout the dirs are kept for recovery, the job is
-    released as cancelled, and nothing is written to the document."""
+    workspace: after the join timeout the whole owned workspace (input/output/
+    marker) is kept for recovery, the job is released as cancelled, and nothing
+    is written to the document."""
 
     async def stuck_source(settings, file) -> AsyncIterator[dict]:
         yield {"type": "progress_start", "stage": "layout_analysis"}
@@ -807,12 +791,10 @@ def test_generate_keeps_dirs_when_worker_survives_join_timeout(tmp_path):
         cache_dir=cache_dir,
     )
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
         with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_source):
             with patch("pdf_reader.sse_stream.WORKER_JOIN_TIMEOUT", 0.2):
                 with patch("pdf_reader.sse_stream.debug_trace"):
@@ -820,15 +802,18 @@ def test_generate_keeps_dirs_when_worker_survives_join_timeout(tmp_path):
                     next(gen)
                     gen.close()
 
-    assert tmpdir.exists()
-    assert output_dir.exists()
+    assert workspace.exists()
+    assert (workspace / "input").is_dir()
+    assert (workspace / "output").is_dir()
+    assert (workspace / cache_ops.TEMP_MARKER_NAME).is_file()
     replace_page.assert_not_called()
     cancel_job.assert_called_once_with("job-stuck")
 
 
 def test_generate_batch_disconnect_cancels_worker(tmp_path):
     """generate_batch shares the same worker ownership: disconnect cancels the
-    worker, discards the late result and cleans dirs only after worker exit."""
+    worker, discards the late result and cleans the owned workspace only after
+    worker exit."""
     mock_result = MagicMock()
     mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
     mock_result.dual_pdf_path = None
@@ -850,20 +835,17 @@ def test_generate_batch_disconnect_cancels_worker(tmp_path):
         cache_dir=cache_dir,
     )
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
         with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", slow_completing_source):
             with patch("pdf_reader.sse_stream.debug_trace"):
                 gen = generate_batch(ctx)
                 next(gen)
                 gen.close()
 
-    assert not tmpdir.exists()
-    assert not output_dir.exists()
+    assert not workspace.exists()
     replace_pages.assert_not_called()
     cancel_job.assert_called_once_with("job-batch-disconnect")
 
@@ -1004,12 +986,10 @@ def test_generate_batch_generic_exception_not_leaked_and_cleans_up(tmp_path, cap
         extract_pages=MagicMock(side_effect=RuntimeError(sentinel)),
     )
 
-    tmpdir = tmp_path / "tmp"
-    tmpdir.mkdir()
-    output_dir = tmp_path / "output"
-    output_dir.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
 
-    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
         with patch("pdf_reader.sse_stream.run_translation"):
             with patch("pdf_reader.sse_stream.debug_trace"):
                 with caplog.at_level("ERROR", logger="pdf_reader.translate"):
@@ -1025,5 +1005,83 @@ def test_generate_batch_generic_exception_not_leaked_and_cleans_up(tmp_path, cap
     assert sentinel in caplog.text
     fail_job.assert_called_once_with("test-job")
     finish_job.assert_not_called()
-    assert not tmpdir.exists()
-    assert not output_dir.exists()
+    assert not workspace.exists()
+
+
+# --- P3-05: per-task owned workspace boundary (single page and batch) ---
+
+
+def test_generate_uses_owned_workspace_boundaries(tmp_path):
+    """单页翻译：cache 根一个带前缀+标记的根工作区；抽取在 input/，上游输出指向
+    output/，标记在任务期间存在，成功后整个根工作区被删除。"""
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+
+    events = [{"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}}]
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    captured = {}
+
+    def extract_spy(page, tmpdir, func) -> Path:
+        captured["workspace"] = Path(tmpdir).parent
+        captured["tmpdir"] = Path(tmpdir)
+        captured["output_present"] = (Path(tmpdir).parent / "output").is_dir()
+        captured["marker_present"] = (Path(tmpdir).parent / cache_ops.TEMP_MARKER_NAME).is_file()
+        return Path("/fake/page.pdf")
+
+    settings = MagicMock()
+    ctx = _make_ctx(settings=settings, cache_dir=cache_dir, extract_page=extract_spy)
+
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
+            list(generate(ctx))
+
+    workspace = captured["workspace"]
+    assert workspace.parent == cache_dir
+    assert workspace.name.startswith(cache_ops.TEMP_WORKSPACE_PREFIX)
+    assert captured["tmpdir"] == workspace / "input"
+    assert captured["output_present"] is True
+    assert captured["marker_present"] is True
+    assert str(settings.translation.output) == str(workspace / "output")
+    assert not workspace.exists()
+
+
+def test_generate_batch_uses_owned_workspace_boundaries(tmp_path):
+    """批量翻译与单页一致：同一根工作区边界，input/output/marker 归属与清理不变。"""
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+
+    events = [{"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}}]
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    captured = {}
+
+    def extract_spy(indices, tmpdir, func) -> Path:
+        captured["workspace"] = Path(tmpdir).parent
+        captured["tmpdir"] = Path(tmpdir)
+        captured["output_present"] = (Path(tmpdir).parent / "output").is_dir()
+        captured["marker_present"] = (Path(tmpdir).parent / cache_ops.TEMP_MARKER_NAME).is_file()
+        return Path("/fake/pages.pdf")
+
+    settings = MagicMock()
+    ctx = _make_batch_ctx(settings=settings, cache_dir=cache_dir, extract_pages=extract_spy)
+
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
+            with patch("pdf_reader.sse_stream.merge_glossary_only"):
+                list(generate_batch(ctx))
+
+    workspace = captured["workspace"]
+    assert workspace.parent == cache_dir
+    assert workspace.name.startswith(cache_ops.TEMP_WORKSPACE_PREFIX)
+    assert captured["tmpdir"] == workspace / "input"
+    assert captured["output_present"] is True
+    assert captured["marker_present"] is True
+    assert str(settings.translation.output) == str(workspace / "output")
+    assert not workspace.exists()

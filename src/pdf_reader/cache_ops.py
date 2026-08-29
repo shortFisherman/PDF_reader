@@ -1,10 +1,12 @@
-"""缓存分类、只读统计与孤儿翻译临时工作区清理（P3-05）。
+"""缓存分类、任务工作区所有权、只读统计与孤儿翻译临时工作区清理（P3-05）。
 
 安全边界：
 
 - 用户有价值数据（``right.pdf``、``cumulative_glossary.csv``、``reading_progress.json``、
   手动术语表）永不作为临时文件处理；本模块只识别**直接位于 cache_dir 下**、
-  名称带固定前缀**且**含标记文件的翻译输出工作区。
+  名称带固定前缀**且**含标记文件的翻译工作区。
+- 每个翻译任务在 cache 根拥有一个带前缀+标记的根工作区（内部 ``input/`` 与
+  ``output/``）；创建中途失败只清理本次新建目录，绝不触碰用户缓存。
 - 清理默认 dry-run；真正删除前逐项核验标记与 PID 存活状态；未知/无标记目录一律保留。
 - 统计与清理都只读遍历，不读取文件内容。
 """
@@ -14,12 +16,22 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 TEMP_WORKSPACE_PREFIX = "pdf-reader-translation-"
 TEMP_MARKER_NAME = ".pdf-reader-temp-workspace"
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+STILL_ACTIVE = 259
+ERROR_INVALID_PARAMETER = 87
+
+_OpenProcess = Callable[[int, bool, int], tuple[int, int]]
+_GetExitCodeProcess = Callable[[int], tuple[bool, int]]
+_CloseHandle = Callable[[int], None]
+_WindowsApi = tuple[_OpenProcess, _GetExitCodeProcess, _CloseHandle]
 
 
 @dataclass(frozen=True)
@@ -102,7 +114,7 @@ def _read_marker(dir_path: Path) -> dict:
 
 
 def write_temp_marker(dir_path: Path, *, job_id: str, pid: int | None = None) -> None:
-    """写入翻译临时工作区标记（由 sse_stream 在创建输出目录后调用）。"""
+    """写入翻译临时工作区标记（由 create_temp_workspace 在创建子目录后调用）。"""
     marker = {
         "kind": "pdf-reader-translation-temp",
         "job_id": job_id,
@@ -113,6 +125,30 @@ def write_temp_marker(dir_path: Path, *, job_id: str, pid: int | None = None) ->
         json.dumps(marker, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def create_temp_workspace(cache_dir: Path, *, job_id: str) -> Path:
+    """创建单任务翻译临时工作区（cache 根直接子目录）并写入归属标记。
+
+    根工作区固定包含 ``input/``（抽取输入）与 ``output/``（上游输出）两个子目录；
+    标记写在根工作区，使整个根工作区（含 input/output）可被 stats 统计、启动恢复
+    与 ``cache_manage`` 识别。任何中途失败（子目录创建、标记写入）都只尝试清理
+    本次新建的工作区；清理失败时保留未标记目录供保守处理，绝不删除或修改 cache
+    中其他内容。
+    """
+    workspace = Path(tempfile.mkdtemp(prefix=TEMP_WORKSPACE_PREFIX, dir=str(cache_dir)))
+    try:
+        (workspace / "input").mkdir()
+        (workspace / "output").mkdir()
+        write_temp_marker(workspace, job_id=job_id)
+    except Exception:
+        if workspace.is_dir() and workspace.name.startswith(TEMP_WORKSPACE_PREFIX):
+            try:
+                shutil.rmtree(workspace, ignore_errors=True)
+            except Exception:
+                pass
+        raise
+    return workspace
 
 
 def _is_live_pid(pid: int | None) -> bool:
@@ -129,28 +165,58 @@ def _is_live_pid(pid: int | None) -> bool:
     return True
 
 
+def _load_windows_api() -> _WindowsApi | None:
+    """按需加载只读 Windows 进程查询 API；非 Windows 返回 None。"""
+    if os.name != "nt":
+        return None
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_bool, ctypes.c_uint32]
+    kernel32.GetExitCodeProcess.restype = ctypes.c_bool
+    kernel32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+    kernel32.CloseHandle.restype = ctypes.c_bool
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+
+    def open_process(access: int, inherit: bool, pid: int) -> tuple[int, int]:
+        handle = kernel32.OpenProcess(access, inherit, pid)
+        return int(handle or 0), ctypes.get_last_error()
+
+    def get_exit_code(handle: int) -> tuple[bool, int]:
+        exit_code = ctypes.c_ulong()
+        ok = bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)))
+        return ok, int(exit_code.value)
+
+    def close_handle(handle: int) -> None:
+        kernel32.CloseHandle(handle)
+
+    return open_process, get_exit_code, close_handle
+
+
 def _windows_pid_alive(pid: int) -> bool:
-    """Windows 安全存活探测：OpenProcess + GetExitCodeProcess。
+    """Windows 安全存活探测：OpenProcess + GetExitCodeProcess，句柄必关。
 
     Windows 上不能使用 ``os.kill(pid, 0)``（会 TerminateProcess 直接杀死目标
     进程），因此用只读查询权限打开进程并读取退出码判断是否仍在运行；查询失败
-    时按“可能存活”保守处理，宁保留不误删。
+    时按“可能存活”保守处理。只有明确不存在（OpenProcess 返回
+    ERROR_INVALID_PARAMETER=87 等可靠信号）才返回 False；拒绝访问/未知错误/
+    GetExitCodeProcess 失败一律返回 True，宁保留不误删。
     """
-    import ctypes
-
-    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    STILL_ACTIVE = 259
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    api = _load_windows_api()
+    if api is None:
+        return True
+    open_process, get_exit_code, close_handle = api
+    handle, last_error = open_process(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not handle:
-        return False
+        return last_error != ERROR_INVALID_PARAMETER
     try:
-        exit_code = ctypes.c_ulong()
-        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+        ok, exit_code = get_exit_code(handle)
+        if not ok:
             return True
-        return exit_code.value == STILL_ACTIVE
+        return exit_code == STILL_ACTIVE
     finally:
-        kernel32.CloseHandle(handle)
+        close_handle(handle)
 
 
 def list_temp_workspaces(cache_dir: Path) -> list[TempWorkspace]:

@@ -110,7 +110,7 @@ $env:MODEL_API_KEY = 'your-api-key'
 | `reading_progress.json` | 阅读进度 |
 | `debug_trace.log` | 仅 debug 模式产生 |
 
-翻译任务运行时会在 `cache/` 直接子目录创建**临时工作区** `pdf-reader-translation-*`，内含 `.pdf-reader-temp-workspace` 标记（`kind`/`job_id`/`pid`/`created_at`）。工作区只在后台 worker 确认退出后删除；join timeout、进程崩溃或强制退出留下的工作区会保留，供下次启动识别并安全处理。
+翻译任务运行时会在 `cache/` 直接子目录创建一个**任务根工作区** `pdf-reader-translation-*`，内部固定含 `input/`（抽取输入 PDF）与 `output/`（上游译文输出）两个子目录，根工作区内含 `.pdf-reader-temp-workspace` 标记（`kind`/`job_id`/`pid`/`created_at`）。整个根工作区只在后台 worker 确认退出后一次性删除；join timeout、进程崩溃或强制退出留下的工作区会**整体保留**（input/output/标记都在），供下次启动识别并安全处理。标记写入或创建中途失败时，只清理本次新建的空目录，不触碰其他缓存内容。
 
 只读统计与手动清理入口（`python scripts/cache_manage.py`）：
 
@@ -122,7 +122,7 @@ python scripts/cache_manage.py clean             # dry-run：只预览，不删�
 python scripts/cache_manage.py clean --yes       # 真正删除
 ```
 
-`clean` 的删除边界严格限定为：`cache_dir` 直接子目录 + 名称带固定前缀 + 含有效标记（`kind` 匹配且 `pid` 为正整数）+ 非符号链接/junction + PID 已不存活。未知、无标记、标记损坏、链接路径或可能仍在使用的目录一律保留；`right.pdf`、术语表、阅读进度和任何文档缓存目录永远不会作为清理目标。`--cache-dir PATH` 可覆盖默认缓存根（默认取配置解析后的 `cache_dir`）。
+`clean` 的删除边界严格限定为：`cache_dir` 直接子目录 + 名称带固定前缀 + 含有效标记（`kind` 匹配且 `pid` 为正整数）+ 非符号链接/junction + PID 已不存活。Windows 上 PID 探测使用只读 `OpenProcess` + `GetExitCodeProcess`（不使用会终止进程的 `os.kill(pid, 0)`）：只有明确不存在（如 `ERROR_INVALID_PARAMETER`）才判定为不存活，拒绝访问或查询失败一律按“可能存活”保留。未知、无标记、标记损坏、链接路径或可能仍在使用的目录一律保留；`right.pdf`、术语表、阅读进度和任何文档缓存目录永远不会作为清理目标。`--cache-dir PATH` 可覆盖默认缓存根（默认取配置解析后的 `cache_dir`）。
 
 启动时 `main` 会执行崩溃恢复：只清理上述可验证归属且 PID 已不存活的临时工作区，其余保守保留并记录日志。正常关闭时，`main` 先对 active job 做有界等待（默认 10 秒，协作式取消、不强制 kill），按“完成/超时/保留”记录日志，再调用 `AppState.close()` 幂等关闭并释放左右 PyMuPDF 文档句柄。
 
