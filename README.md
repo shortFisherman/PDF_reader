@@ -99,6 +99,33 @@ $env:MODEL_API_KEY = 'your-api-key'
 - `DATA_ROOT`（运行数据根）默认等于 `PROJECT_ROOT`：日志仍在仓库 `logs/`，相对缓存仍在仓库根下。环境变量 `PDF_READER_DATA_ROOT` 可覆盖（测试隔离等场景）。
 - 安装本包后，从任意 CWD 运行 `python -m pdf_reader`（或 `start.bat`，其自身仍会切换到仓库根），配置、手动术语表、模板、静态文件、日志和缓存位置一致。
 
+## 缓存与临时工作区
+
+`DATA_ROOT/cache/<pdf-hash>/` 是**持久用户缓存**，属于用户数据，任何生命周期或清理逻辑都不会自动删除：
+
+| 文件 | 说明 |
+|---|---|
+| `right.pdf` | 该文档的译文工作副本（首次打开时复制源文件，翻译后原子替换） |
+| `cumulative_glossary.csv` | 该文档的累计术语表 |
+| `reading_progress.json` | 阅读进度 |
+| `debug_trace.log` | 仅 debug 模式产生 |
+
+翻译任务运行时会在 `cache/` 直接子目录创建**临时工作区** `pdf-reader-translation-*`，内含 `.pdf-reader-temp-workspace` 标记（`kind`/`job_id`/`pid`/`created_at`）。工作区只在后台 worker 确认退出后删除；join timeout、进程崩溃或强制退出留下的工作区会保留，供下次启动识别并安全处理。
+
+只读统计与手动清理入口（`python scripts/cache_manage.py`）：
+
+```powershell
+python scripts/cache_manage.py stats              # 只读统计：文档缓存组成 + 临时工作区数量/大小
+python scripts/cache_manage.py stats --json      # 机器可读输出
+python scripts/cache_manage.py orphans           # 列出可识别的临时工作区及其标记/PID/年龄
+python scripts/cache_manage.py clean             # dry-run：只预览，不删除
+python scripts/cache_manage.py clean --yes       # 真正删除
+```
+
+`clean` 的删除边界严格限定为：`cache_dir` 直接子目录 + 名称带固定前缀 + 含有效标记（`kind` 匹配且 `pid` 为正整数）+ 非符号链接/junction + PID 已不存活。未知、无标记、标记损坏、链接路径或可能仍在使用的目录一律保留；`right.pdf`、术语表、阅读进度和任何文档缓存目录永远不会作为清理目标。`--cache-dir PATH` 可覆盖默认缓存根（默认取配置解析后的 `cache_dir`）。
+
+启动时 `main` 会执行崩溃恢复：只清理上述可验证归属且 PID 已不存活的临时工作区，其余保守保留并记录日志。正常关闭时，`main` 先对 active job 做有界等待（默认 10 秒，协作式取消、不强制 kill），按“完成/超时/保留”记录日志，再调用 `AppState.close()` 幂等关闭并释放左右 PyMuPDF 文档句柄。
+
 ## 错误契约与安全
 
 - 所有 API 4xx/5xx 错误统一返回 JSON：`{"code": <稳定错误码>, "error": <安全消息>}`。`409` 保留既有 `translation_busy` 与 `active_job_id`；`404` 使用 `not_found`；`500` 使用固定 `internal_error` 与通用安全摘要。

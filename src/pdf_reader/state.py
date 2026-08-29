@@ -39,6 +39,7 @@ class AppState:
     def __init__(self, cache_dir: Path) -> None:
         self._lock = threading.Lock()
         self._cache_dir = cache_dir
+        self._closed = False
         self._left_doc: pymupdf.Document | None = None
         self._right_doc: pymupdf.Document | None = None
         self._right_pdf_path: str | None = None
@@ -169,6 +170,8 @@ class AppState:
 
     def open_pdf(self, pdf_path: str, sha256_func) -> dict:
         with self._lock:
+            if self._closed:
+                raise RuntimeError("AppState closed")
             self._close_docs()
             pdf_hash = sha256_func(pdf_path)
             cache_subdir = self._cache_dir / pdf_hash
@@ -356,6 +359,24 @@ class AppState:
 
     def is_doc_open(self) -> bool:
         return self._left_doc is not None
+
+    def is_closed(self) -> bool:
+        with self._lock:
+            return self._closed
+
+    def close(self) -> None:
+        """幂等关闭：释放左右 PyMuPDF 句柄并清空全部状态；关闭后不可再 open。"""
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._close_docs()
+            self._right_pdf_path = None
+            self._pdf_path = None
+            self._pdf_hash = None
+            self._page_count = 0
+            self._page_height = 0.0
+            self._page_width = 0.0
 
     def _close_docs(self) -> None:
         self._document_id = None

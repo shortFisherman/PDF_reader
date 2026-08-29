@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import shutil
 import tempfile
 import time
@@ -9,7 +10,7 @@ from pathlib import Path
 
 from pdf2zh_next import SettingsModel
 
-from pdf_reader import debug_trace, pdf_extraction
+from pdf_reader import cache_ops, debug_trace, pdf_extraction
 from pdf_reader.task_logging import (
     STATUS_CANCELLING,
     STATUS_CLEANED,
@@ -72,6 +73,8 @@ class GenerateContext:
     lang_in: str = "en"
     lang_out: str = "zh"
     debug: bool = False
+    register_stream: Callable[[str, object], None] | None = None
+    unregister_stream: Callable[[str], None] | None = None
 
 
 @dataclass
@@ -96,6 +99,8 @@ class GenerateBatchContext:
     lang_in: str = "en"
     lang_out: str = "zh"
     debug: bool = False
+    register_stream: Callable[[str, object], None] | None = None
+    unregister_stream: Callable[[str], None] | None = None
 
 
 def format_batch_info(from_page: int, to_page: int, total: int) -> str:
@@ -224,7 +229,8 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
         outcome = "failed"
         try:
             tmpdir = Path(tempfile.mkdtemp())
-            output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
+            output_dir = Path(tempfile.mkdtemp(prefix=cache_ops.TEMP_WORKSPACE_PREFIX, dir=str(ctx.cache_dir)))
+            cache_ops.write_temp_marker(output_dir, job_id=ctx.job_id, pid=os.getpid())
             ctx.settings.translation.output = str(output_dir)
             with debug_trace.debug_session(ctx.glossary_cache_path, ctx.page, ctx.job_id, debug=ctx.debug):
                 task_log(logger, logging.INFO, "submit translate", task=ctx.task_ctx)
@@ -241,6 +247,8 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                     flow_label=f"job={ctx.job_id}][page={ctx.page}",
                     task_ctx=ctx.task_ctx,
                 )
+                if ctx.register_stream is not None:
+                    ctx.register_stream(ctx.job_id, stream)
                 for evt in stream:
                     if not isinstance(evt, dict):
                         yield ""
@@ -336,6 +344,8 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
             yield format_sse_error("internal_error", "翻译失败，请查看服务端日志")
         finally:
             worker_finished = _shutdown_worker(stream, ctx.task_ctx)
+            if ctx.unregister_stream is not None:
+                ctx.unregister_stream(ctx.job_id)
             cleanup_ok = worker_finished
             if worker_finished:
                 if getattr(stream, "late_result_dropped", False):
@@ -374,7 +384,8 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
         outcome = "failed"
         try:
             tmpdir = Path(tempfile.mkdtemp())
-            output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
+            output_dir = Path(tempfile.mkdtemp(prefix=cache_ops.TEMP_WORKSPACE_PREFIX, dir=str(ctx.cache_dir)))
+            cache_ops.write_temp_marker(output_dir, job_id=ctx.job_id, pid=os.getpid())
             ctx.settings.translation.output = str(output_dir)
             with debug_trace.debug_session(ctx.glossary_cache_path, ctx.from_page, ctx.job_id, debug=ctx.debug):
                 task_log(logger, logging.INFO, "submit translate", task=ctx.task_ctx)
@@ -393,6 +404,8 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
                     flow_label=f"job={ctx.job_id}][batch={ctx.from_page}-{ctx.to_page}",
                     task_ctx=ctx.task_ctx,
                 )
+                if ctx.register_stream is not None:
+                    ctx.register_stream(ctx.job_id, stream)
                 for evt in stream:
                     if not isinstance(evt, dict):
                         yield ""
@@ -488,6 +501,8 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
             yield format_sse_error("internal_error", "翻译失败，请查看服务端日志")
         finally:
             worker_finished = _shutdown_worker(stream, ctx.task_ctx)
+            if ctx.unregister_stream is not None:
+                ctx.unregister_stream(ctx.job_id)
             cleanup_ok = worker_finished
             if worker_finished:
                 if getattr(stream, "late_result_dropped", False):

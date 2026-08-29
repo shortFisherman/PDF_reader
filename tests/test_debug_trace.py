@@ -56,15 +56,12 @@ def test_full_debug_trace_bytes_identical(tmp_path):
     debug_trace.trace_logger.setLevel(logging.DEBUG)
 
     try:
-        with patch("pdf_reader.debug_trace.config") as mock_config:
-            mock_config.DEBUG = True
-
-            with debug_trace.debug_session(glossary_path, page=1):
-                debug_trace.log_step("submit translate page %d", 1)
-                debug_trace.log_step("translate page %d done (%.2fs)", 1, 1.23)
-                debug_trace.log_token_usage({"main": {"total": 100}, "term": {"total": 50}})
-                debug_trace.log_step("merge glossary for page %d", 1)
-                debug_trace.log_step("merge glossary done (%.2fs)", 0.02)
+        with debug_trace.debug_session(glossary_path, page=1, debug=True):
+            debug_trace.log_step("submit translate page %d", 1)
+            debug_trace.log_step("translate page %d done (%.2fs)", 1, 1.23)
+            debug_trace.log_token_usage({"main": {"total": 100}, "term": {"total": 50}})
+            debug_trace.log_step("merge glossary for page %d", 1)
+            debug_trace.log_step("merge glossary done (%.2fs)", 0.02)
     finally:
         debug_trace.trace_logger.removeHandler(stream_handler)
         debug_trace.trace_logger.setLevel(logging.NOTSET)
@@ -102,12 +99,9 @@ def test_level_stratification_when_debug_false(tmp_path):
     debug_trace.trace_logger.setLevel(logging.INFO)
 
     try:
-        with patch("pdf_reader.debug_trace.config") as mock_config:
-            mock_config.DEBUG = False
-
-            with debug_trace.debug_session(glossary_path, page=1):
-                debug_trace.log_step("submit translate page %d", 1)
-                debug_trace.log_token_usage({"main": {"total": 100}})
+        with debug_trace.debug_session(glossary_path, page=1, debug=False):
+            debug_trace.log_step("submit translate page %d", 1)
+            debug_trace.log_token_usage({"main": {"total": 100}})
     finally:
         debug_trace.trace_logger.removeHandler(stream_handler)
         debug_trace.trace_logger.setLevel(logging.NOTSET)
@@ -127,16 +121,13 @@ def test_debug_session_creates_and_removes_file_handler(tmp_path):
     glossary_path = tmp_path / "glossary"
     glossary_path.mkdir()
 
-    with patch("pdf_reader.debug_trace.config") as mock_config:
-        mock_config.DEBUG = True
+    with debug_trace.debug_session(glossary_path, page=3, debug=True):
+        log_file = glossary_path / "debug_trace.log"
+        assert log_file.exists()
 
-        with debug_trace.debug_session(glossary_path, page=3):
-            log_file = glossary_path / "debug_trace.log"
-            assert log_file.exists()
-
-        assert debug_trace.trace_logger.handlers == [
-            h for h in debug_trace.trace_logger.handlers if not isinstance(h, logging.FileHandler)
-        ]
+    assert debug_trace.trace_logger.handlers == [
+        h for h in debug_trace.trace_logger.handlers if not isinstance(h, logging.FileHandler)
+    ]
 
 
 def test_debug_session_no_op_when_debug_false(tmp_path):
@@ -144,21 +135,15 @@ def test_debug_session_no_op_when_debug_false(tmp_path):
     glossary_path = tmp_path / "glossary"
     glossary_path.mkdir()
 
-    with patch("pdf_reader.debug_trace.config") as mock_config:
-        mock_config.DEBUG = False
-
-        with debug_trace.debug_session(glossary_path, page=3):
-            log_file = glossary_path / "debug_trace.log"
-            assert not log_file.exists()
+    with debug_trace.debug_session(glossary_path, page=3, debug=False):
+        log_file = glossary_path / "debug_trace.log"
+        assert not log_file.exists()
 
 
 def test_debug_session_no_op_when_glossary_path_none():
     """debug_session is a no-op when glossary_path is None."""
-    with patch("pdf_reader.debug_trace.config") as mock_config:
-        mock_config.DEBUG = True
-
-        with debug_trace.debug_session(None, page=3):
-            pass
+    with debug_trace.debug_session(None, page=3, debug=True):
+        pass
 
 
 def test_debug_session_rotates_existing_log(tmp_path):
@@ -171,16 +156,13 @@ def test_debug_session_rotates_existing_log(tmp_path):
     original_level = debug_trace.trace_logger.level
     debug_trace.trace_logger.setLevel(logging.DEBUG)
     try:
-        with patch("pdf_reader.debug_trace.config") as mock_config:
-            mock_config.DEBUG = True
+        with debug_trace.debug_session(glossary_path, page=1, debug=True):
+            new_content = (glossary_path / "debug_trace.log").read_text(encoding="utf-8")
+            assert "=== Debug session start: page 2 ===" in new_content
 
-            with debug_trace.debug_session(glossary_path, page=1):
-                new_content = (glossary_path / "debug_trace.log").read_text(encoding="utf-8")
-                assert "=== Debug session start: page 2 ===" in new_content
-
-            rotated_files = list(glossary_path.glob("debug_trace.*.log"))
-            assert len(rotated_files) == 1
-            assert rotated_files[0].read_text(encoding="utf-8") == "old content"
+        rotated_files = list(glossary_path.glob("debug_trace.*.log"))
+        assert len(rotated_files) == 1
+        assert rotated_files[0].read_text(encoding="utf-8") == "old content"
     finally:
         debug_trace.trace_logger.setLevel(original_level)
 
@@ -192,14 +174,11 @@ def test_debug_session_exception_safe(tmp_path):
 
     handlers_before = [h for h in debug_trace.trace_logger.handlers if isinstance(h, logging.FileHandler)]
 
-    with patch("pdf_reader.debug_trace.config") as mock_config:
-        mock_config.DEBUG = True
-
-        try:
-            with debug_trace.debug_session(glossary_path, page=5):
-                raise RuntimeError("simulated crash")
-        except RuntimeError:
-            pass
+    try:
+        with debug_trace.debug_session(glossary_path, page=5, debug=True):
+            raise RuntimeError("simulated crash")
+    except RuntimeError:
+        pass
 
     handlers_after = [h for h in debug_trace.trace_logger.handlers if isinstance(h, logging.FileHandler)]
     assert len(handlers_after) == len(handlers_before)

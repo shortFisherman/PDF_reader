@@ -4,11 +4,13 @@ import sys
 
 from flask import Flask
 
-from pdf_reader import config, logging_config, paths
+from pdf_reader import cache_ops, config, logging_config, paths
 from pdf_reader.state import AppState
 from pdf_reader.translation_coordinator import TranslationCoordinator
 
 logger = logging.getLogger("pdf_reader.app")
+
+SHUTDOWN_JOIN_TIMEOUT = 10.0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -72,6 +74,22 @@ def main(argv: list[str] | None = None) -> int:
     settings = config.build_app_settings(cli_debug=args.debug)
     app = create_app(settings)
     coordinator = app.config["translation_coordinator"]
+    recovered = cache_ops.recover_orphan_temp_workspaces(settings.cache_dir)
+    if recovered.removed:
+        logger.info(
+            "startup temp workspace recovery: removed=%d kept_unknown=%d kept_live_pid=%d errors=%d",
+            len(recovered.removed),
+            len(recovered.kept_unknown),
+            len(recovered.kept_live_pid),
+            len(recovered.errors),
+        )
+    elif recovered.kept_unknown or recovered.kept_live_pid or recovered.errors:
+        logger.warning(
+            "startup temp workspace recovery: nothing removed; kept_unknown=%d kept_live_pid=%d errors=%d",
+            len(recovered.kept_unknown),
+            len(recovered.kept_live_pid),
+            len(recovered.errors),
+        )
     logger.info(
         "Starting PDF Reader on http://%s:%d (debug=%s, reloader=%s)",
         run_cfg.host,
@@ -93,12 +111,22 @@ def main(argv: list[str] | None = None) -> int:
             use_reloader=run_cfg.use_reloader,
         )
     finally:
-        active_job = coordinator.active_job
-        if active_job is not None:
-            logger.warning(
-                "[job=%s] server shutting down with active translation job; worker may be orphaned",
-                active_job.job_id,
-            )
+        try:
+            report = coordinator.shutdown(timeout=SHUTDOWN_JOIN_TIMEOUT)
+            if report.outcome == "timeout":
+                logger.warning(
+                    "shutdown timed out: active job %s kept; its temp dirs are preserved for startup recovery",
+                    report.active_job_id,
+                )
+            elif report.outcome == "completed":
+                logger.info("shutdown completed: active job %s finished within timeout", report.active_job_id)
+            else:
+                logger.info("shutdown: no active translation job")
+            if not report.worker_joined:
+                logger.warning("shutdown: one or more workers still running after join timeout; temp dirs preserved")
+        finally:
+            app.config["app_state"].close()
+            logger.info("app state closed")
     return 0
 
 

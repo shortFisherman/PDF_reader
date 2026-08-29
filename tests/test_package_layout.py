@@ -18,6 +18,7 @@ SRC_PACKAGE = REPO_ROOT / "src" / "pdf_reader"
 
 PRODUCTION_MODULES = [
     "app",
+    "cache_ops",
     "config",
     "debug_trace",
     "engine_resolver",

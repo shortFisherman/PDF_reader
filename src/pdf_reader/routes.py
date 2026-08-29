@@ -19,7 +19,12 @@ from pdf_reader import config, glossary_service, sse_stream
 from pdf_reader.file_hash import sha256
 from pdf_reader.pdf_renderer import render_page
 from pdf_reader.task_logging import STATUS_STARTED, task_context_from_indices, task_log
-from pdf_reader.translation_coordinator import TranslationBusyError, TranslationCoordinator, TranslationJob
+from pdf_reader.translation_coordinator import (
+    CoordinatorShutdownError,
+    TranslationBusyError,
+    TranslationCoordinator,
+    TranslationJob,
+)
 from pdf_reader.translation_settings import build_settings
 
 logger = logging.getLogger("pdf_reader.routes")
@@ -181,6 +186,9 @@ def translate_page(page: int):
             ),
         )
         return translation_busy_response(exc.active_job)
+    except CoordinatorShutdownError:
+        logger.info("rejected translate request during coordinator shutdown")
+        return translation_busy_response(None)
     ctx = sse_stream.GenerateContext(
         settings=settings_model,
         job_id=job.job_id,
@@ -202,6 +210,8 @@ def translate_page(page: int):
         lang_in=app_settings.lang_in,
         lang_out=app_settings.lang_out,
         debug=app_settings.debug,
+        register_stream=coordinator.register_stream,
+        unregister_stream=coordinator.unregister_stream,
         task_ctx=task_context_from_indices(
             job.job_id,
             snapshot.document_id,
@@ -284,6 +294,9 @@ def translate_batch():
             ),
         )
         return translation_busy_response(exc.active_job)
+    except CoordinatorShutdownError:
+        logger.info("rejected batch request during coordinator shutdown")
+        return translation_busy_response(None)
     ctx = sse_stream.GenerateBatchContext(
         settings=settings_model,
         job_id=job.job_id,
@@ -307,6 +320,8 @@ def translate_batch():
         lang_in=app_settings.lang_in,
         lang_out=app_settings.lang_out,
         debug=app_settings.debug,
+        register_stream=coordinator.register_stream,
+        unregister_stream=coordinator.unregister_stream,
         task_ctx=task_context_from_indices(
             job.job_id,
             snapshot.document_id,
