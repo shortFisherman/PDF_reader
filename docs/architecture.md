@@ -103,7 +103,7 @@
 3. `generate()` 创建临时抽取目录与 cache 内输出目录，在 `debug_trace.debug_session` 内先 `extract_single_page()` 抽取单页 PDF。
 4. `run_translation()` 启动 daemon worker 线程运行上游异步翻译；`format_sse_event()` 把 `progress_start`/`progress_update`/`finish`/`error` 映射为 SSE；非 dict 心跳直接 yield 空串。
 5. 收到上游 `finish` 事件后保留 `translate_result` 与 token 用量，随后调用 `finish_translation()`：优先 `mono_pdf_path`，缺失时回退 `dual_pdf_path`，再调 `AppState.replace_page(..., expected_document_id)` 写入译文，并通过 `AppState.merge_glossary(..., expected_document_id)` 把自动术语并入累计文件。
-6. `replace_page()` 在锁内先比较预期身份，再执行：打开译文 PDF → 删除右文档对应页 → `insert_pdf` → 保存 `.tmp` → 关闭源/右文档 → `os.replace` 原子替换 → 重开右文档 → 标记已翻译页。`merge_glossary()` 同样在锁内完成身份比较与合并回调；失配时两条边界都抛出 `StaleDocumentError`、记录 `[stale-result]` 警告且不修改当前文档。
+6. `replace_page()` 在锁内先比较预期身份，再经 `_commit_replacement()` 事务提交：所有页修改在从磁盘已提交的 `right.pdf` 重开的工作副本上完成 → 保存 `.tmp` → 关闭译文/工作文档 → 关闭旧右文档句柄 → `os.replace` 原子替换 → 重开右文档 → 更新翻译页集合。磁盘提交成功前不替换内存句柄和 `_translated_pages`；任意失败（open/delete/insert/save/close/`os.replace`）都会清理 `.tmp`、关闭泄漏句柄、恢复或保留可渲染的文档句柄，旧 `right.pdf` 保持不变。`merge_glossary()` 同样在锁内完成身份比较与合并回调；失配时两条边界都抛出 `StaleDocumentError`、记录 `[stale-result]` 警告且不修改当前文档。
 7. 生成器最后发 `progress:100/finish` SSE；成功路径调用 `finish(job_id)`，上游错误、普通异常调用 `fail(job_id)`，消费者断开（GeneratorExit）调用 `cancel(job_id)`。所有退出路径都经 `finally`：先向 worker 请求协作式取消并 `join(timeout=30.0)`，只在 worker 确认退出后清理临时目录（join timeout 时保留目录并记 WARNING），再幂等释放任务；Response close 另有未开始迭代时的兜底释放。
 
 ## 范围与全文翻译链
@@ -111,7 +111,7 @@
 1. `POST /api/translate-batch` 接收一基闭区间 `from`/`to`，校验均为整数、≥1、不越界且 `from ≤ to`。
 2. 路由换算零基 `page_indices`，使用同一协调器原子占槽，再从冻结快照构造带 `job_id` 的 `GenerateBatchContext`（抽取、`replace_pages` 与术语合并闭包都捕获 `document_id`），`pages` 参数按页数设为 `"1"` 或 `"1-N"`。
 3. `generate_batch()` 先发 `batch_info`，再抽取多页 PDF 一次性送入 `run_translation()`，之后逐事件转发 SSE。
-4. 完成后选 `mono_pdf_path`（回退 `dual_pdf_path`）调 `AppState.replace_pages(..., expected_document_id)` 按序替换范围页，并只做一次受同一身份保护的 `merge_glossary_only()`。
+4. 完成后选 `mono_pdf_path`（回退 `dual_pdf_path`）调 `AppState.replace_pages(..., expected_document_id)` 经同一 `_commit_replacement()` 事务按序替换范围页，并只做一次受同一身份保护的 `merge_glossary_only()`。
 5. 全文翻译是浏览器行为：`onFullTranslateClick()` 调同一批处理端点提交 `1..pageCount`，不存在独立的全文章节端点。
 
 ## 状态、缓存与持久化
@@ -192,9 +192,8 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
 1. **单进程/全局状态。** 服务端只有一个全局 `AppState`，同一时刻只面向一个本地用户、一份打开的文档；没有多用户或并行文档隔离。
 2. **SSE 断开有协作式取消但无强制终止。** 消费者断开后，`generate`/`generate_batch` 请求协作式取消并等待 worker 退出（join timeout 30s），临时目录只在 worker 确认退出后删除；join timeout 时目录保留并记 WARNING。不响应取消的上游环节（含 BabelDOC 子进程）仍会运行到自然结束，其结果被丢弃，没有强制 kill 接口。
 3. **术语表写入尚非原子提交。** 单任务协调器已消除同进程并发合并，`document_id` 已阻止跨文档迟到合并，但累计 CSV 仍直接覆盖，写入失败时可能损坏最后有效版本。
-4. **替换失败无恢复事务。** `replace_page`/`replace_pages` 在原子替换前已关闭源/右文档；后续步骤失败时没有文档化的恢复事务。
-5. **PNG 无文本层。** 页面以图片显示，没有文本选择、搜索、复制、高亮、批注、目录、内部链接或 OCR 流程。
-6. **无队列/暂停/取消/重启续传。** 不存在持久任务队列、暂停、取消、重试队列、进度恢复或进程重启后的翻译续传。
+4. **PNG 无文本层。** 页面以图片显示，没有文本选择、搜索、复制、高亮、批注、目录、内部链接或 OCR 流程。
+5. **无队列/暂停/取消/重启续传。** 不存在持久任务队列、暂停、取消、重试队列、进度恢复或进程重启后的翻译续传。
 
 ## 上游与历史参考
 

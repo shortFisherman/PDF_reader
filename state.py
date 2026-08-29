@@ -226,16 +226,7 @@ class AppState:
         with self._lock:
             self._require_document_locked(expected_document_id)
             try:
-                src_doc = pymupdf.open(translated_pdf_path)
-                self._right_doc.delete_page(page_num)
-                self._right_doc.insert_pdf(src_doc, start_at=page_num)
-                tmp_save = self._right_pdf_path + ".tmp"
-                self._right_doc.save(tmp_save)
-                src_doc.close()
-                self._right_doc.close()
-                os.replace(tmp_save, self._right_pdf_path)
-                self._right_doc = pymupdf.open(self._right_pdf_path)
-                self._translated_pages.add(page_num)
+                self._commit_replacement(translated_pdf_path, [page_num])
                 logger.info("[page=%d] replace into %s", page_num, self._right_pdf_path)
             except Exception:
                 logger.error("[page=%d] replace failed", page_num, exc_info=True)
@@ -266,21 +257,70 @@ class AppState:
         with self._lock:
             self._require_document_locked(expected_document_id)
             try:
-                src_doc = pymupdf.open(translated_pdf_path)
-                for j, idx in enumerate(page_indices):
-                    self._right_doc.delete_page(idx)
-                    self._right_doc.insert_pdf(src_doc, start_at=idx, from_page=j, to_page=j)
-                tmp_save = self._right_pdf_path + ".tmp"
-                self._right_doc.save(tmp_save)
-                src_doc.close()
-                self._right_doc.close()
-                os.replace(tmp_save, self._right_pdf_path)
-                self._right_doc = pymupdf.open(self._right_pdf_path)
-                self._translated_pages.update(page_indices)
+                self._commit_replacement(translated_pdf_path, page_indices)
                 logger.info("[batch] replace pages %s into %s", page_indices, self._right_pdf_path)
             except Exception:
                 logger.error("[batch] replace pages failed", exc_info=True)
                 raise
+
+    def _commit_replacement(self, translated_pdf_path: str, page_indices: list[int]) -> None:
+        """Atomic page replacement. Caller must hold the state lock.
+
+        All page mutations happen on a work copy opened from the last
+        committed right.pdf; the temp file is fully closed before the atomic
+        rename. The live document handle and _translated_pages are swapped
+        only after the disk commit succeeds. On failure the previously
+        committed right.pdf stays in place, the memory handle is restored or
+        kept usable, the temp file is removed and every opened PyMuPDF
+        document is closed.
+        """
+        right_pdf_path = self._right_pdf_path
+        if right_pdf_path is None:
+            raise ValueError("no document opened")
+        src_doc: pymupdf.Document | None = None
+        work_doc: pymupdf.Document | None = None
+        old_doc: pymupdf.Document | None = None
+        tmp_save = right_pdf_path + ".tmp"
+        committed = False
+        try:
+            src_doc = pymupdf.open(translated_pdf_path)
+            work_doc = pymupdf.open(right_pdf_path)
+            for j, idx in enumerate(page_indices):
+                work_doc.delete_page(idx)
+                work_doc.insert_pdf(src_doc, start_at=idx, from_page=j, to_page=j)
+            work_doc.save(tmp_save)
+            src_doc.close()
+            src_doc = None
+            work_doc.close()
+            work_doc = None
+            old_doc = self._right_doc
+            self._right_doc = None
+            if old_doc is not None:
+                old_doc.close()
+            os.replace(tmp_save, right_pdf_path)
+            committed = True
+            self._right_doc = pymupdf.open(right_pdf_path)
+            self._translated_pages.update(page_indices)
+        except Exception:
+            if self._right_doc is None:
+                try:
+                    self._right_doc = pymupdf.open(right_pdf_path)
+                    if committed:
+                        self._translated_pages.update(page_indices)
+                except Exception:
+                    logger.error("[replace] reopen %s after failure failed", right_pdf_path, exc_info=True)
+            for doc in (src_doc, work_doc, old_doc):
+                if doc is not None and not doc.is_closed:
+                    try:
+                        doc.close()
+                    except Exception:
+                        pass
+            if os.path.exists(tmp_save):
+                try:
+                    os.unlink(tmp_save)
+                except OSError:
+                    pass
+            raise
 
     def merge_glossary(
         self,

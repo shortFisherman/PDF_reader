@@ -374,7 +374,7 @@ def test_replace_pages_ascending_preserves_other_indices(app_state, sample_pdf, 
     out.close()
 
 
-def test_replace_pages_holds_lock(app_state, sample_pdf, tmp_path):
+def test_replace_pages_holds_lock(app_state, sample_pdf, tmp_path, monkeypatch):
     from file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
@@ -388,15 +388,15 @@ def test_replace_pages_holds_lock(app_state, sample_pdf, tmp_path):
     lock_held = [False]
     started = threading.Event()
     can_finish = threading.Event()
-    original_delete = app_state._right_doc.delete_page  # noqa: ANN001
+    original_delete = pymupdf.Document.delete_page  # noqa: ANN001
 
-    def slow_delete(idx):  # noqa: ANN001, ANN202
+    def slow_delete(self, idx):  # noqa: ANN001, ANN202
         lock_held[0] = app_state._lock.locked()
         started.set()
         can_finish.wait(timeout=5)
-        original_delete(idx)
+        return original_delete(self, idx)
 
-    app_state._right_doc.delete_page = slow_delete  # type: ignore[method-assign]  # noqa: ANN001
+    monkeypatch.setattr(pymupdf.Document, "delete_page", slow_delete)
 
     def replacer():  # noqa: ANN202
         app_state.replace_pages(str(translated_pdf), [0], document_id)
