@@ -543,18 +543,18 @@ PDF_reader/
 
 ### P2-06 增加任务级日志上下文和可诊断性
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：目前有 page/batch 前缀，但没有稳定 job/document 关联，也无法从日志完整重建任务状态变化。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`a143340`
+- 验证证据：子代理实现验证：新增 `task_logging.py`（不可变 `TaskContext`、`__post_init__` 强制截断、`contextvars` 传播、统一前缀/1-based 页码、生命周期状态、`SafeFormatter` 脱敏）并接入 coordinator/routes/sse_stream/TranslationStream/lifecycle/state/glossary/pdf_extraction/debug_trace；单页与批量路由向 `coordinator.start` 传递 `snapshot.pdf_hash`，created/started 日志不再出现 `hash=-`；新增 `tests/test_task_logging.py` 与 `tests/test_translation_routes.py` 真实路由回归，更新 `test_flow_logging`/`test_pdf_extraction`/`test_debug_trace`/系统级 spy 签名；完整 `scripts/verify.ps1`（Python 3.12）：462 个 Python 测试与全部前端测试通过，logs/cache 前后零增长。父级独立验收通过：targeted 191 passed、完整 verify 462 Python + 全部前端、Ruff lint/format 通过、logs 2 文件/3,750,478 B 与 cache 3 文件/112,503,805 B 前后不变、`git diff --check` 通过。
+- 剩余问题：无（重复 `cleanup_deferred` 仅为日志噪音，不影响验收）。
 
 #### 目标与验收
 
-- [ ] 每个任务日志包含 `job_id`、截断后的 `document_id/hash`、页码范围和状态。
-- [ ] 记录 created、started、client_disconnected、cancelling、finished、failed、discarded、cleaned。
-- [ ] 不记录 API Key、完整提示词或不必要的用户文档内容。
-- [ ] join timeout、迟到结果丢弃和恢复事务都有 WARNING/ERROR 记录。
+- [x] 每个任务日志包含 `job_id`、截断后的 `document_id/hash`、页码范围和状态。
+- [x] 记录 created、started、client_disconnected、cancelling、finished、failed、discarded、cleaned。
+- [x] 不记录 API Key、完整提示词或不必要的用户文档内容。
+- [x] join timeout、迟到结果丢弃和恢复事务都有 WARNING/ERROR 记录。
 
 ### P2-07 统一项目根路径与测试文件隔离
 
@@ -767,3 +767,4 @@ PDF_reader/
 | 2026-08-29 | P0-02 | 已完成 | `50f3844` | 增加线程安全的单任务协调器、稳定 409 协议、全路径释放和 `job_id` 日志关联。 |
 | 2026-08-29 | P2-07 | 已完成 | `2218f79` | 统一项目根路径与测试文件隔离：新增 `paths.py` 集中解析 `PROJECT_ROOT`/`DATA_ROOT`（`config.example.toml` 标记定根，`PDF_READER_ROOT`/`PDF_READER_DATA_ROOT` 仅接受绝对路径，缺失 marker 快速失败）；config/glossary/相对缓存/日志与 Flask templates/static 全部接入同一策略，双 CWD 启动位置一致；pytest 经 conftest 将数据根重定向到临时目录并复位日志 handler，完整验证前后 logs/cache 零增长。新增 tests/test_paths.py（18 用例）等，父代理独立验收通过。 |
 | 2026-08-29 | P2-05 | 已完成 | `5402610` | 统一错误响应、脱敏与前端安全渲染：所有 API 4xx/5xx 返回 `{code, error}`（保留 409 `translation_busy`/`active_job_id`），新增 HTTPException 与 500 handler（完整异常只进日志）；SSE 统一 `format_sse_error(code, message)`，上游原始 error/TranslationError/普通异常/无结果均不发浏览器；`is_loopback_host` 识别 localhost/127/8/::1，非 loopback 启动 WARNING；前端 `showError()` 纯 textContent 渲染并移除 `insertAdjacentHTML`，translator 增加非 JSON/网络/缺字段固定 fallback；新增 run-error-safety-tests.mjs 纳入 npm test。完整验证 437 Python + 全部前端，logs/cache 零增长，父代理独立验收通过。 |
+| 2026-08-29 | P2-06 | 已完成 | `a143340` | 增加任务级日志上下文与可诊断性：新增 `task_logging.py`（不可变 `TaskContext`、`__post_init__` 强制截断、`contextvars` 传播、统一前缀/1-based 页码、生命周期状态、`SafeFormatter` 脱敏）并贯穿 coordinator/routes/SSE/worker/lifecycle/state/glossary/extraction/debug；`_safe_rmtree` 可验证清理与 `cleanup_deferred` 语义；单页/批量路由向 `coordinator.start` 传 `snapshot.pdf_hash`；新增 tests/test_task_logging.py 与真实路由回归。完整验证 462 Python + 全部前端，logs/cache 零增长，父级独立验收通过。 |
