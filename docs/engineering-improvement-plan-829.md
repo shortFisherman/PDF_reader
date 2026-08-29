@@ -510,20 +510,20 @@ PDF_reader/
 
 ### P2-04 整理依赖声明、开发依赖和验证环境
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：`requirements.txt`、`requirements.lock`、Python 开发工具和 Node 测试依赖的职责不够统一；验证脚本会静默回退到系统 Python。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`a65c2e6`
+- 验证证据：子代理实现验证：`pyproject.toml` 成为唯一直接依赖声明源（`project.dependencies` 运行依赖；`project.optional-dependencies.dev` 声明 pytest/Ruff/coverage/mypy/pip-tools，仅建立依赖边界，未启用 coverage/类型检查/JS lint）；删除 `requirements.txt` 与 `requirements-dev.txt`。`requirements.lock` 由 Python 3.12 + pip-tools 7.6.1 从 `pyproject.toml`（`--extra=dev`）重新生成，header 记录真实命令（用 `CUSTOM_COMPILE_COMMAND` 规避 pip-tools 7.6.1 在本环境写入多余 `--no-index` 的怪癖；两次同命令重生成 SHA256 一致）。安装契约统一为 `pip install -r requirements.lock` + `pip install -e . --no-deps`，CI/README/start.bat 一致，README 区分便捷安装与可复现安装。`scripts/verify.ps1` 输出最终 Python 绝对路径与版本；显式 `-PythonExecutable` 优先且无效时快速失败；未指定时优先仓库 venv；回退 PATH python 时输出醒目 WARNING。新增 `tests/test_dependency_contract.py` 与 `tests/test_verify_script.py`。完整 `scripts/verify.ps1`（Python 3.12）：485 个 Python 测试与全部前端测试通过，logs/cache 前后零增长；干净环境验收（lock 安装 + editable --no-deps、仓库外 import/smoke、独立 venv 完整 verify、canonical 重编译 SHA 一致、pip check、清理）通过。父级独立验收通过：targeted 27 passed（dependency_contract/verify_script/package_layout/start_bat）、当前环境与独立临时 venv 两次完整 verify 均为 485 Python + 全部前端 + Ruff 通过、输出解析 Python 路径与 3.12.8、canonical 重生成 SHA256 与仓库锁完全一致（`935DF2858583036B25F95212E4901883740D285E47E5EA3373EB9E29967108B9`）、pip check 无破损依赖、临时目录与 egg-info 清理成功、logs/cache 零增长、`git diff --check` 通过。
+- 剩余问题：无（coverage/类型检查的实际启用归 P2-03，不阻塞本项）。
 
 #### 目标与验收
 
-- [ ] 唯一文件声明直接运行依赖，锁文件负责可复现版本。
-- [ ] 测试、Ruff、coverage、类型检查属于明确的 dev 依赖组。
-- [ ] `scripts/verify.ps1` 输出实际 Python 路径和版本。
-- [ ] 缺少目标虚拟环境时，脚本明确提示当前正在使用系统 Python，而不是无声回退。
-- [ ] Node 只承担前端测试，并由 lockfile 锁定。
-- [ ] CI 与本地使用同一验证入口。
+- [x] 唯一文件声明直接运行依赖，锁文件负责可复现版本。
+- [x] 测试、Ruff、coverage、类型检查属于明确的 dev 依赖组。
+- [x] `scripts/verify.ps1` 输出实际 Python 路径和版本。
+- [x] 缺少目标虚拟环境时，脚本明确提示当前正在使用系统 Python，而不是无声回退。
+- [x] Node 只承担前端测试，并由 lockfile 锁定。
+- [x] CI 与本地使用同一验证入口。
 
 ### P2-05 统一错误响应、脱敏和前端安全渲染
 
@@ -769,3 +769,4 @@ PDF_reader/
 | 2026-08-29 | P2-05 | 已完成 | `5402610` | 统一错误响应、脱敏与前端安全渲染：所有 API 4xx/5xx 返回 `{code, error}`（保留 409 `translation_busy`/`active_job_id`），新增 HTTPException 与 500 handler（完整异常只进日志）；SSE 统一 `format_sse_error(code, message)`，上游原始 error/TranslationError/普通异常/无结果均不发浏览器；`is_loopback_host` 识别 localhost/127/8/::1，非 loopback 启动 WARNING；前端 `showError()` 纯 textContent 渲染并移除 `insertAdjacentHTML`，translator 增加非 JSON/网络/缺字段固定 fallback；新增 run-error-safety-tests.mjs 纳入 npm test。完整验证 437 Python + 全部前端，logs/cache 零增长，父代理独立验收通过。 |
 | 2026-08-29 | P2-06 | 已完成 | `a143340` | 增加任务级日志上下文与可诊断性：新增 `task_logging.py`（不可变 `TaskContext`、`__post_init__` 强制截断、`contextvars` 传播、统一前缀/1-based 页码、生命周期状态、`SafeFormatter` 脱敏）并贯穿 coordinator/routes/SSE/worker/lifecycle/state/glossary/extraction/debug；`_safe_rmtree` 可验证清理与 `cleanup_deferred` 语义；单页/批量路由向 `coordinator.start` 传 `snapshot.pdf_hash`；新增 tests/test_task_logging.py 与真实路由回归。完整验证 462 Python + 全部前端，logs/cache 零增长，父级独立验收通过。 |
 | 2026-08-29 | P2-01 | 已完成 | `55e4d8b` | 迁移为 `src/pdf_reader` 包布局：19 个生产模块经 `git mv` 迁入 `src/pdf_reader/`，新增 `pyproject.toml`/`__init__.py`/`__main__.py`，包内统一 `pdf_reader.*` 导入，`python -m pdf_reader` 入口与 argparse prog 对齐，测试 patch 全部 `pdf_reader.*`，无根模块 shim/sys.path hack；start.bat/README/CI/Ruff/architecture/当前 OpenSpec 同步；新增 tests/test_package_layout.py 与冒烟句柄释放回归。完整验证 471 Python + 全部前端，logs/cache 零增长，父级独立 clean-venv/outside-CWD/import/help/open-render-release smoke 通过。 |
+| 2026-08-29 | P2-04 | 已完成 | `a65c2e6` | 整理依赖声明、开发依赖与验证环境：`pyproject.toml` 成为唯一直接依赖声明源（dev extra：pytest/Ruff/coverage/mypy/pip-tools），删除 `requirements.txt`/`requirements-dev.txt`；`requirements.lock` 由 pip-tools 7.6.1 从 pyproject（含 dev extra）重生成且 header 记录真实命令；安装契约 `requirements.lock` + `pip install -e . --no-deps` 在 CI/README/start.bat 一致；verify.ps1 输出 Python 绝对路径/版本、显式优先、venv 优先、回退 WARNING、无效快速失败；新增 dependency_contract 与 verify_script 测试。两次 485 Python + 全部前端验证通过，canonical 重编译 SHA 与仓库锁一致，logs/cache 零增长，父级独立验收通过。 |
