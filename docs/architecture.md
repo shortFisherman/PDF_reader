@@ -49,14 +49,14 @@
 | `sse_stream.py` | SSE 格式化、`generate()` / `generate_batch()`、`STAGE_LABELS`、worker 退出确认后的临时目录清理 |
 | `translation_lifecycle.py` | `finish_translation()` / `merge_glossary_only()`：译文持久化与术语合并 |
 | `glossary_service.py` | 累积术语路径解析与合并入口 |
-| `glossary_merger.py` | 术语多数投票合并（BOM 安全读写） |
+| `glossary_merger.py` | 术语多数投票合并：模块级互斥锁 + 同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交（BOM 安全读写） |
 | `logging_config.py` | 根命名空间、控制台 + 轮转文件 handler、第三方降噪 |
 | `debug_trace.py` | 调试会话、步骤/Token/术语合并日志（`config.DEBUG` 关闭时零开销） |
 | `templates/index.html` | 唯一 HTML 页面：打开区、双栏、工具栏 |
 | `static/app.js` | 前端入口与共享状态 |
 | `static/modules/` | dom、lazy-loader、scroll-sync、alignment-controller、zoom、sse-client、stages、translator |
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
-| `tests/` | 18 个 pytest 文件（229 用例）与前端 `.mjs` 测试运行器 |
+| `tests/` | 18 个 pytest 文件（252 用例）与前端 `.mjs` 测试运行器 |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
 | `docs/`、`docs/archive/`、`docs/reports/` | 常青文档、历史归档与上游研究资料 |
@@ -65,6 +65,7 @@
 
 - 一个 Flask 进程持有唯一全局 `AppState`（`app.config["app_state"]`），同一时刻服务一个打开的文档。每次成功打开（包括再次打开同一路径）都会生成新的随机 `document_id`；关闭或切换文档立即使旧身份失效。
 - `AppState` 内部是 `threading.Lock`（非重入），打开/渲染/抽取/替换/术语合并/阅读进度写入全部在锁内执行；传给 state 的回调（渲染、抽取、术语合并）不得再次进入 `AppState`。`translation_snapshot()` 在锁内一次性返回冻结的 `document_id`、PDF 哈希、页数和术语缓存路径。
+- 术语合并的读—合并—写全过程另由 `glossary_merger` 的模块级互斥锁保护：即使绕过 `AppState` 直接调用 `merge_glossary_csvs`，两个并发合并也不会截断累计 CSV 或静默丢更新。
 - 全局 `TranslationCoordinator` 使用独立的 `threading.Lock` 保护单个 `active_job`。`start(document_id, page_indices)` 原子创建含 UUID `job_id`、文档身份、页码 tuple、UTC 创建时间和 active 状态的冻结任务；已有任务时抛 `TranslationBusyError`。`finish(job_id)` / `fail(job_id)` 只释放匹配任务，重复或迟到释放不会影响后续任务。
 - 每个翻译请求由 `TranslationStream`（`run_translation()` 工厂返回）启动一个 daemon worker 线程；该线程创建独立 asyncio 事件循环，`async for` 消费 `do_translate_async_stream(settings, pdf_path)`，把事件放入 `queue.Queue`。线程总是以入队内部 `_done` 标记结束，`cancel()` 在事件边界之间做协作式取消检查，`join(timeout)` 与 `is_alive` 暴露真实 worker 状态。
 - 同步 SSE 生成器从队列取事件并逐条 yield；队列空闲 1 秒时 yield 空串作为心跳，收到 `_done` 后 `__next__` 先 `join(timeout=30.0)` 确认线程退出（join timeout 记 WARNING），再结束迭代或抛 `TranslationError`。
@@ -119,7 +120,7 @@
 | 路径/数据 | 说明 |
 |---|---|
 | `cache/<hash>/right.pdf` | 每文档持久化的译文工作副本，首次打开复制源文件，翻译后原子替换 |
-| `cache/<hash>/cumulative_glossary.csv` | 每文档累积术语表，翻译后多数投票合并写回 |
+| `cache/<hash>/cumulative_glossary.csv` | 每文档累积术语表，读—合并—写受模块级互斥锁保护；同目录 `.tmp` 写入并 flush/fsync/close 后 `os.replace` 原子提交；读取失败或表头缺少 source/target 时中止合并保留旧文件，写入/replace 失败保留旧文件并清理临时文件 |
 | `cache/<hash>/reading_progress.json` | 零基阅读页码，`.tmp` + `os.replace` 原子写；损坏/越界时安全降级 |
 | `logs/pdf_reader.log` | `logging_config` 配置的轮转应用日志（5MB × 5，utf-8） |
 | `cache/<hash>/debug_trace.log` | 仅 debug 模式且存在缓存路径时，由 `debug_session` 创建并在会话开始前轮转 |
@@ -181,7 +182,7 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 `requirements.txt` 只声明直接运行依赖，`requirements-dev.txt` 在运行依赖之上声明 pytest 与 Ruff；`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从开发依赖入口生成。锁文件不包含 editable、本机路径或 `file:///` 来源。
 
-统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（229 个 Python 测试）→ `npm test`（四个前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
+统一入口 `scripts/verify.ps1`，顺序为：Ruff lint → Ruff format check → `pytest -q`（252 个 Python 测试）→ `npm test`（四个前端套件：`test:ui-copy`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python`。
 
 CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依赖（`requirements.lock`），执行 `import flask, pymupdf, pdf2zh_next` 冒烟检查，安装 Node 22 测试依赖（`npm ci`），再执行同一 `scripts/verify.ps1`。`tests/README.md` 说明正式测试与历史诊断脚本的区别。
 
@@ -191,7 +192,7 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
 
 1. **单进程/全局状态。** 服务端只有一个全局 `AppState`，同一时刻只面向一个本地用户、一份打开的文档；没有多用户或并行文档隔离。
 2. **SSE 断开有协作式取消但无强制终止。** 消费者断开后，`generate`/`generate_batch` 请求协作式取消并等待 worker 退出（join timeout 30s），临时目录只在 worker 确认退出后删除；join timeout 时目录保留并记 WARNING。不响应取消的上游环节（含 BabelDOC 子进程）仍会运行到自然结束，其结果被丢弃，没有强制 kill 接口。
-3. **术语表写入尚非原子提交。** 单任务协调器已消除同进程并发合并，`document_id` 已阻止跨文档迟到合并，但累计 CSV 仍直接覆盖，写入失败时可能损坏最后有效版本。
+3. **术语表写入为进程内原子事务。** 读—合并—写受模块级互斥锁保护，新内容经同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交；累计文件损坏或表头缺少 source/target 时中止合并保留旧文件，写入/`os.replace` 失败保留旧文件并清理临时文件；单任务协调器与 `document_id` 阻止跨文档迟到合并。
 4. **PNG 无文本层。** 页面以图片显示，没有文本选择、搜索、复制、高亮、批注、目录、内部链接或 OCR 流程。
 5. **无队列/暂停/取消/重启续传。** 不存在持久任务队列、暂停、取消、重试队列、进度恢复或进程重启后的翻译续传。
 

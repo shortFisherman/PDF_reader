@@ -351,3 +351,29 @@ def test_matching_glossary_merge_invokes_callback(app_state, sample_pdf, tmp_pat
     assert len(merge_calls) == 1
     assert ("alpha", "阿尔法") in _read_csv(glossary)
     assert ("beta", "贝塔") in _read_csv(glossary)
+
+
+def test_stale_glossary_merge_with_real_merger_keeps_current_glossary(app_state, sample_pdf, tmp_path):
+    """The final AppState boundary must stop a stale merge before the real merger runs."""
+
+    from glossary_service import merge_after_translate
+
+    _, StaleDocumentError = _identity_api()
+    pdf_b = _make_pdf(tmp_path / "b.pdf", label="B")
+    extracted_glossary = tmp_path / "a_auto_glossary.csv"
+    _write_csv(extracted_glossary, [("beta", "贝塔")])
+
+    app_state.open_pdf(str(sample_pdf), sha256)
+    snapshot_a = app_state.translation_snapshot()
+
+    app_state.open_pdf(str(pdf_b), sha256)
+    b_glossary = app_state.glossary_cache_path / "cumulative_glossary.csv"
+    _write_csv(b_glossary, [("alpha", "阿尔法")])
+    glossary_bytes_before = b_glossary.read_bytes()
+
+    with pytest.raises(StaleDocumentError):
+        app_state.merge_glossary(str(extracted_glossary), snapshot_a.document_id, merge_after_translate)
+
+    assert b_glossary.read_bytes() == glossary_bytes_before
+    assert _read_csv(b_glossary) == [("alpha", "阿尔法")]
+    assert not list(app_state.glossary_cache_path.glob("*.tmp"))

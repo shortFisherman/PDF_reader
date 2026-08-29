@@ -1,7 +1,12 @@
 import csv
+import os
 import tempfile
+import threading
 from pathlib import Path
 
+import pytest
+
+import glossary_merger
 from glossary_merger import merge_glossary_csvs
 
 
@@ -125,3 +130,231 @@ def test_bom_encoded_auto_glossary_is_merged():
         import shutil
 
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_successful_merge_commits_via_same_dir_tmp_and_os_replace(tmp_path, monkeypatch):
+    cumulative_path = tmp_path / "cumulative.csv"
+    auto_path = tmp_path / "auto.csv"
+    write_csv(cumulative_path, [("alpha", "阿尔法")])
+    write_csv(auto_path, [("beta", "贝塔")])
+
+    replace_calls: list[tuple[str, Path]] = []
+    original_replace = os.replace
+
+    def tracking_replace(src, dst):  # noqa: ANN001, ANN202
+        replace_calls.append((Path(src).name, Path(dst)))
+        return original_replace(src, dst)
+
+    monkeypatch.setattr(glossary_merger.os, "replace", tracking_replace)
+
+    merge_glossary_csvs(cumulative_path, auto_path)
+
+    assert replace_calls == [("cumulative.csv.tmp", cumulative_path)]
+    rows = read_csv(cumulative_path)
+    assert dict(rows) == {"alpha": "阿尔法", "beta": "贝塔"}
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_os_replace_failure_keeps_old_csv_and_cleans_tmp(tmp_path, monkeypatch):
+    cumulative_path = tmp_path / "cumulative.csv"
+    auto_path = tmp_path / "auto.csv"
+    write_csv(cumulative_path, [("alpha", "阿尔法")])
+    write_csv(auto_path, [("beta", "贝塔")])
+    old_bytes = cumulative_path.read_bytes()
+
+    def failing_replace(src, dst):  # noqa: ANN001, ANN202
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(glossary_merger.os, "replace", failing_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        merge_glossary_csvs(cumulative_path, auto_path)
+
+    assert cumulative_path.read_bytes() == old_bytes
+    assert read_csv(cumulative_path) == [("alpha", "阿尔法")]
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_write_open_failure_keeps_old_csv_and_cleans_tmp(tmp_path, monkeypatch):
+    cumulative_path = tmp_path / "cumulative.csv"
+    auto_path = tmp_path / "auto.csv"
+    write_csv(cumulative_path, [("alpha", "阿尔法")])
+    write_csv(auto_path, [("beta", "贝塔")])
+    old_bytes = cumulative_path.read_bytes()
+    tmp_path_file = cumulative_path.with_name(cumulative_path.name + ".tmp")
+
+    real_open = open
+
+    def failing_open(path, *args, **kwargs) -> object:  # noqa: ANN001, ANN002, ANN003
+        if Path(path) == tmp_path_file:
+            raise OSError("write failed")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", failing_open)
+
+    with pytest.raises(OSError, match="write failed"):
+        merge_glossary_csvs(cumulative_path, auto_path)
+
+    assert cumulative_path.read_bytes() == old_bytes
+    assert read_csv(cumulative_path) == [("alpha", "阿尔法")]
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_merge_holds_process_lock_until_commit(tmp_path):
+    cumulative_path = tmp_path / "cumulative.csv"
+    auto_path = tmp_path / "auto.csv"
+    write_csv(auto_path, [("beta", "贝塔")])
+
+    started = threading.Event()
+    finished = threading.Event()
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        started.set()
+        try:
+            merge_glossary_csvs(cumulative_path, auto_path)
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    glossary_merger._merge_lock.acquire()
+    try:
+        thread = threading.Thread(target=worker)
+        thread.start()
+        assert started.wait(timeout=5)
+        thread.join(timeout=0.2)
+        assert thread.is_alive(), "merge must hold the lock through the whole read-merge-write"
+        assert not finished.is_set()
+        assert not cumulative_path.exists(), "no commit may happen while the lock is held"
+    finally:
+        glossary_merger._merge_lock.release()
+
+    assert finished.wait(timeout=5)
+    thread.join(timeout=5)
+    assert errors == []
+    assert read_csv(cumulative_path) == [("beta", "贝塔")]
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_concurrent_merges_do_not_lose_updates(tmp_path):
+    cumulative_path = tmp_path / "cumulative.csv"
+    write_csv(cumulative_path, [("seed", "种子")])
+    thread_count = 8
+    terms_per_thread = 4
+    barrier = threading.Barrier(thread_count)
+    errors: list[BaseException] = []
+    auto_paths: list[Path] = []
+
+    for t in range(thread_count):
+        auto = tmp_path / f"auto_{t}.csv"
+        rows = [(f"term_{t}_{i}", f"译{t}{i}") for i in range(terms_per_thread)]
+        write_csv(auto, rows)
+        auto_paths.append(auto)
+
+    def worker(auto: Path) -> None:
+        try:
+            barrier.wait(timeout=5)
+            merge_glossary_csvs(cumulative_path, auto)
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(path,)) for path in auto_paths]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+
+    assert errors == []
+    source_to_target = dict(read_csv(cumulative_path))
+    assert source_to_target["seed"] == "种子"
+    for t in range(thread_count):
+        for i in range(terms_per_thread):
+            assert source_to_target[f"term_{t}_{i}"] == f"译{t}{i}"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_corrupt_cumulative_is_preserved_and_merge_aborted(tmp_path):
+    cumulative_path = tmp_path / "cumulative.csv"
+    auto_path = tmp_path / "auto.csv"
+    write_csv(auto_path, [("beta", "贝塔")])
+    corrupt = b"\xff\xfe\x00 not utf-8 \x80"
+    cumulative_path.write_bytes(corrupt)
+
+    merge_glossary_csvs(cumulative_path, auto_path)
+
+    assert cumulative_path.read_bytes() == corrupt
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_bad_header_cumulative_is_preserved_and_merge_aborted(tmp_path):
+    cumulative_path = tmp_path / "cumulative.csv"
+    auto_path = tmp_path / "auto.csv"
+    write_csv(auto_path, [("beta", "贝塔")])
+    with open(cumulative_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["foo", "bar"])
+        writer.writerow(["x", "y"])
+
+    merge_glossary_csvs(cumulative_path, auto_path)
+
+    content = cumulative_path.read_text(encoding="utf-8")
+    assert "foo" in content
+    assert "beta" not in content
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_bad_header_auto_is_skipped_and_cumulative_unchanged(tmp_path):
+    cumulative_path = tmp_path / "cumulative.csv"
+    auto_path = tmp_path / "auto.csv"
+    write_csv(cumulative_path, [("alpha", "阿尔法")])
+    with open(auto_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["foo", "bar"])
+        writer.writerow(["beta", "贝塔"])
+
+    merge_glossary_csvs(cumulative_path, auto_path)
+
+    assert read_csv(cumulative_path) == [("alpha", "阿尔法")]
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_empty_cumulative_file_is_treated_as_empty(tmp_path):
+    cumulative_path = tmp_path / "cumulative.csv"
+    auto_path = tmp_path / "auto.csv"
+    cumulative_path.write_bytes(b"")
+    write_csv(auto_path, [("beta", "贝塔")])
+
+    merge_glossary_csvs(cumulative_path, auto_path)
+
+    assert read_csv(cumulative_path) == [("beta", "贝塔")]
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_empty_auto_file_leaves_cumulative_unchanged(tmp_path):
+    cumulative_path = tmp_path / "cumulative.csv"
+    auto_path = tmp_path / "auto.csv"
+    write_csv(cumulative_path, [("alpha", "阿尔法")])
+    auto_path.write_bytes(b"")
+
+    merge_glossary_csvs(cumulative_path, auto_path)
+
+    assert read_csv(cumulative_path) == [("alpha", "阿尔法")]
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_bom_cumulative_is_read_and_merged(tmp_path):
+    cumulative_path = tmp_path / "cumulative.csv"
+    auto_path = tmp_path / "auto.csv"
+    with open(cumulative_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(["source", "target"])
+        writer.writerow(["alpha", "阿尔法"])
+    write_csv(auto_path, [("beta", "贝塔")])
+
+    merge_glossary_csvs(cumulative_path, auto_path)
+
+    rows = read_csv(cumulative_path)
+    assert ("alpha", "阿尔法") in rows
+    assert ("beta", "贝塔") in rows
+    assert not list(tmp_path.glob("*.tmp"))
