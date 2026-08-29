@@ -76,7 +76,7 @@
 | P0-02 | P0 | 服务端单任务互斥与任务身份 | `已完成` | P0-01 可并行设计 |
 | P0-03 | P0 | 修复依赖锁与干净环境安装 | `已完成` | 无 |
 | P1-01 | P1 | 明确 SSE 断开和后台任务所有权 | `已完成` | P0-02 |
-| P1-02 | P1 | PDF 替换失败恢复与事务边界 | `待处理` | P0-01 |
+| P1-02 | P1 | PDF 替换失败恢复与事务边界 | `已完成` | P0-01 |
 | P1-03 | P1 | 术语表原子写入与任务隔离 | `待处理` | P0-02 |
 | P1-04 | P1 | 建立系统级并发和故障回归测试 | `待处理` | P0/P1 对应设计 |
 | P1-05 | P1 | 修复启动脚本误杀进程风险 | `待处理` | 无 |
@@ -253,11 +253,15 @@ TranslationCoordinator
 
 ### P1-02 PDF 替换失败恢复与事务边界
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：当前在保存临时文件前已修改内存 `_right_doc`；异常后没有统一恢复旧文档状态。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 完成提交：`1b8c36f`
+- 验证证据：`tests/test_pdf_replace_transaction.py` 覆盖单页/批量分别注入 open（源与工作副本）、delete、insert、save、close（源文档与旧右文档）、`os.replace` 与提交后重开失败，验证旧 `right.pdf` 哈希与页数不变、无 `.tmp` 残留、无泄漏的 PyMuPDF 句柄、失败后渲染与再次替换可用；`tests/test_state.py` 的锁保持测试改为在工作副本的 `delete_page` 上验证锁语义。执行 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"`，240 个 Python 测试与全部前端测试通过。
+- 剩余问题：无。提交成功但最终重开失败（注入的极端场景）时，恢复逻辑从磁盘重开并同步 `_translated_pages`，磁盘为最终事实。
+
+#### 当前问题
+
+`replace_page`/`replace_pages` 直接在内存 `_right_doc` 上执行 `delete_page`/`insert_pdf` 后再保存临时文件；异常路径没有统一恢复旧文档状态：`save` 失败时内存已修改而磁盘未变，`os.replace` 失败时右文档句柄已被关闭且 `.tmp` 残留，`src_doc` 在失败路径泄漏，最终重开失败时 `_right_doc` 为空。
 
 #### 目标状态
 
@@ -269,10 +273,10 @@ TranslationCoordinator
 
 #### 验收标准
 
-- [ ] 分别注入 open、delete、insert、save、close、`os.replace` 失败并验证恢复。
-- [ ] 失败后旧 PDF 哈希或内容保持不变。
-- [ ] 失败后再次渲染和再次翻译可继续工作。
-- [ ] 单页和批量替换采用同一事务原则。
+- [x] 分别注入 open、delete、insert、save、close、`os.replace` 失败并验证恢复。
+- [x] 失败后旧 PDF 哈希或内容保持不变。
+- [x] 失败后再次渲染和再次翻译可继续工作。
+- [x] 单页和批量替换采用同一事务原则。
 
 ### P1-03 术语表原子写入与任务隔离
 
@@ -741,6 +745,7 @@ PDF_reader/
 
 | 日期 | 编号 | 状态 | 提交 | 说明 |
 |---|---|---|---|---|
+| 2026-08-29 | P1-02 | 已完成 | `1b8c36f` | `replace_page`/`replace_pages` 改为共享 `_commit_replacement()` 事务：页修改在工作副本上完成，临时文件关闭后再 `os.replace`，磁盘提交成功后才替换内存句柄与 `_translated_pages`；失败路径清理 `.tmp`、关闭全部泄漏句柄并恢复可渲染句柄。新增 11 个故障注入回归测试。 |
 | 2026-08-29 | P1-01 | 已完成 | `10f1676` | 引入 `TranslationStream` 明确 worker 生命周期：SSE 断开触发协作式取消并 join 确认退出后才清理临时目录，join timeout 保留目录；断开结果丢弃并释放为 cancelled；关闭时记录 active job。 |
 | 2026-08-29 | P0-03 | 已完成 | `59d8545` | 移除不可移植依赖锁内容，明确运行/开发依赖，并通过干净 Python 3.12 环境安装与验证。 |
 | 2026-08-29 | P0-01 | 已完成 | `97b94e9` | 以不可变 `document_id` 约束抽取、PDF 提交和术语合并，拒绝迟到任务写入新文档。 |
