@@ -80,7 +80,7 @@
 | P1-03 | P1 | 术语表原子写入与任务隔离 | `已完成` | P0-02 |
 | P1-04 | P1 | 建立系统级并发和故障回归测试 | `已完成` | P0/P1 对应设计 |
 | P1-05 | P1 | 修复启动脚本误杀进程风险 | `已完成` | 无 |
-| P1-06 | P1 | 统一 debug、启动和配置语义 | `待处理` | 无 |
+| P1-06 | P1 | 统一 debug、启动和配置语义 | `已完成` | 无 |
 | P2-01 | P2 | 迁移为 `src/pdf_reader` 包布局 | `待处理` | P0/P1 稳定后 |
 | P2-02 | P2 | 拆分前端页面协调与翻译 UI 状态 | `待处理` | P0-02 的任务语义稳定后 |
 | P2-03 | P2 | 改进测试覆盖率、类型检查和 JS 静态检查 | `待处理` | P2-01 可前可后 |
@@ -340,19 +340,29 @@ TranslationCoordinator
 
 ### P1-06 统一 debug、启动和配置语义
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：`config.DEBUG` 缺省为 `False`，但 `app.py` 启动 Flask 时的 server debug 缺省为 `True`，日志模式与服务器模式可能不一致。
+- 状态：`已完成`
+- 完成日期：2026-08-29
+- 实现/测试提交：`8ae9d7f`（feat: unify debug, startup, and config semantics (P1-06)，含 README、`config.example.toml`、`docs/architecture.md` 同步）
+- 完成记录提交：`docs: record P1-06 completion`
+- 验证证据：
+  - RED：删除 `tests/test_app.py` 中复制 argparse 的假测试，先写 89 个针对性用例（重写 `test_app.py` 调用真实 `app.main(argv)`、新增 `tests/test_server_config.py`、`test_config_deferred.py` 增加 `MODEL_API_KEY` 环境覆盖用例）；实现前运行得到 `AttributeError: module 'app' has no attribute 'main'` 等失败。另确认旧实现会把 `--no-debug` 与非法 `PDF_READER_DEBUG` 当作未知输入直接启动服务器，因此两条真实入口子进程用例带超时保护。
+  - 针对性：`pytest tests/test_app.py tests/test_server_config.py tests/test_config_deferred.py -q` → 89 passed；配置/应用/日志相关 `pytest tests/test_app.py tests/test_server_config.py tests/test_config_deferred.py tests/test_logging_config.py tests/test_debug_trace.py tests/test_start_bat.py -q` → 127 passed。
+  - 完整：`pytest -q` → 356 passed（基线 273，净增 83）；`powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"` → Ruff lint/format check、356 个 Python 测试与四个前端套件（UI copy、translator 40、zoom 31、alignment 20）全部通过。
+  - 测试直接断言 `app.run` 收到的 `host/port/debug/use_reloader`；真实入口 `python app.py --debug --no-debug` 与 `PDF_READER_DEBUG=banana python app.py` 均以退出码 2 结束且不启动服务器。
+- 剩余问题：
+  - `use_reloader` 与 debug 绑定（`use_reloader == debug`），没有独立 reloader 开关或配置键；这是 P1-06 明确的简化语义，未来如需独立控制应另立配置名。
+  - `PDF_READER_DEBUG` 非法值 fail-fast：即使 CLI 显式覆盖也会先报错退出（已在 README/architecture 文档化）。
+  - TOML 语法错误在 `config` 导入时被捕获为 `_CONFIG_LOAD_ERROR`，首次调用 `resolve_server_config`（即 `main`）时以 `ERROR:` 退出；`config` 模块自身导入不失败。
+  - 未新增 `--host`/`--port` CLI；host/port 仍来自 `[server]` 或默认值，不在 P1-06 范围。
+  - 旧 `[debug].enabled` 键被静默忽略（不再参与解析），不输出迁移警告。
 
 #### 目标与验收
 
-- [ ] debug 只有一个明确来源和优先级：CLI、环境变量、配置文件、默认值。
-- [ ] 默认关闭 Flask debugger/reloader。
-- [ ] 日志 debug 与 Flask server debug 的关系有明确说明；如需分离，应使用不同配置名。
-- [ ] 缺失配置、错误类型和非法值在启动时给出清晰错误。
-- [ ] `config.example.toml`、README、测试与代码一致。
+- [x] debug 只有一个明确来源和优先级：CLI、环境变量、配置文件、默认值。（`--debug`/`--no-debug` > `PDF_READER_DEBUG` > `[server].debug` > 默认 `false`；`[debug].enabled` 第二来源已停止使用，仅保留 `[server].debug`）
+- [x] 默认关闭 Flask debugger/reloader。（默认 `debug=False, use_reloader=False`，`app.run` 显式传参并由测试直接断言）
+- [x] 日志 debug 与 Flask server debug 的关系有明确说明；如需分离，应使用不同配置名。（同一 `ServerConfig.debug` 同时传给 `setup_logging` 与 `app.run`，`use_reloader` 派生且语义在 README/architecture 文档化）
+- [x] 缺失配置、错误类型和非法值在启动时给出清晰错误。（缺失 `config.toml` 安全空加载；启动前必填模型校验；`[server]` 类型/范围、`PDF_READER_DEBUG` 非法值、TOML 语法错误均输出 `ERROR:` 并以退出码 2 结束，不启动服务器、不泄漏 API Key）
+- [x] `config.example.toml`、README、测试与代码一致。（example 只展示 `[server].debug = false`；README 含优先级表、环境变量、CLI、默认安全值与错误示例；architecture 同步当前事实）
 
 ---
 
