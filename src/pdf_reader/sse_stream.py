@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pdf2zh_next import SettingsModel
 
-from pdf_reader import config, debug_trace, pdf_extraction
+from pdf_reader import debug_trace, pdf_extraction
 from pdf_reader.task_logging import (
     STATUS_CANCELLING,
     STATUS_CLEANED,
@@ -67,6 +67,11 @@ class GenerateContext:
     cache_dir: Path
     extract_page: Callable[[int, Path, Callable], Path]
     task_ctx: TaskContext | None = None
+    provider: str = ""
+    model: str = ""
+    lang_in: str = "en"
+    lang_out: str = "zh"
+    debug: bool = False
 
 
 @dataclass
@@ -86,6 +91,11 @@ class GenerateBatchContext:
     cache_dir: Path
     extract_pages: Callable[[list[int], Path, Callable], Path]
     task_ctx: TaskContext | None = None
+    provider: str = ""
+    model: str = ""
+    lang_in: str = "en"
+    lang_out: str = "zh"
+    debug: bool = False
 
 
 def format_batch_info(from_page: int, to_page: int, total: int) -> str:
@@ -216,7 +226,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
             tmpdir = Path(tempfile.mkdtemp())
             output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
             ctx.settings.translation.output = str(output_dir)
-            with debug_trace.debug_session(ctx.glossary_cache_path, ctx.page, ctx.job_id):
+            with debug_trace.debug_session(ctx.glossary_cache_path, ctx.page, ctx.job_id, debug=ctx.debug):
                 task_log(logger, logging.INFO, "submit translate", task=ctx.task_ctx)
 
                 translate_start = time.time()
@@ -315,10 +325,10 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                 logger,
                 logging.ERROR,
                 "translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s",
-                config.MODEL_PROVIDER,
-                config.MODEL,
-                config.TRANSLATION_LANG_IN,
-                config.TRANSLATION_LANG_OUT,
+                ctx.provider,
+                ctx.model,
+                ctx.lang_in,
+                ctx.lang_out,
                 str(tmpdir),
                 task=with_status(ctx.task_ctx, STATUS_FAILED),
                 exc_info=True,
@@ -366,7 +376,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
             tmpdir = Path(tempfile.mkdtemp())
             output_dir = Path(tempfile.mkdtemp(dir=str(ctx.cache_dir)))
             ctx.settings.translation.output = str(output_dir)
-            with debug_trace.debug_session(ctx.glossary_cache_path, ctx.from_page, ctx.job_id):
+            with debug_trace.debug_session(ctx.glossary_cache_path, ctx.from_page, ctx.job_id, debug=ctx.debug):
                 task_log(logger, logging.INFO, "submit translate", task=ctx.task_ctx)
 
                 translate_start = time.time()
@@ -467,10 +477,10 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
                 logger,
                 logging.ERROR,
                 "translate failed: provider=%s model=%s lang=%s->%s tmpdir=%s",
-                config.MODEL_PROVIDER,
-                config.MODEL,
-                config.TRANSLATION_LANG_IN,
-                config.TRANSLATION_LANG_OUT,
+                ctx.provider,
+                ctx.model,
+                ctx.lang_in,
+                ctx.lang_out,
                 str(tmpdir),
                 task=with_status(ctx.task_ctx, STATUS_FAILED),
                 exc_info=True,

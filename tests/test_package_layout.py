@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pymupdf
 
+from pdf_reader import config
 from pdf_reader.app import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -120,7 +121,7 @@ import json
 from pdf_reader import config, paths
 from pdf_reader.app import create_app
 
-app = create_app()
+app = create_app(config.build_app_settings())
 print(json.dumps({
     "project_root": str(paths.get_project_root()),
     "config_path": str(config.CONFIG_PATH),
@@ -163,7 +164,7 @@ def test_minimal_open_pdf_smoke_via_flask_client(tmp_path):
     doc.save(str(pdf_path))
     doc.close()
 
-    app = create_app()
+    app = create_app(config.build_app_settings())
     app.config["TESTING"] = True
     try:
         with app.test_client() as client:

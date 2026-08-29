@@ -4,15 +4,20 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from pdf_reader import config
 from pdf_reader.task_logging import SafeFormatter, task_log
 
 logger = logging.getLogger("pdf_reader.debug_trace")
 
 
 @contextmanager
-def debug_session(glossary_path: Path | None, page: int, job_id: str | None = None):
-    if not config.DEBUG or glossary_path is None:
+def debug_session(
+    glossary_path: Path | None,
+    page: int,
+    job_id: str | None = None,
+    *,
+    debug: bool = False,
+):
+    if not debug or glossary_path is None:
         yield
         return
 

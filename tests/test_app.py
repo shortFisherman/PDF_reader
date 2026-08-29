@@ -23,6 +23,19 @@ def _valid_config(server: dict | None = None) -> dict:
     return cfg
 
 
+def _settings(debug: bool = False) -> config.AppSettings:
+    return config.AppSettings(
+        debug=debug,
+        cache_dir=Path("cache"),
+        dpi=200,
+        glossary_path=Path("docs/glossary.csv"),
+        model_provider="deepseek",
+        model="deepseek-chat",
+        lang_in="en",
+        lang_out="zh",
+    )
+
+
 @pytest.fixture
 def valid_model_config(monkeypatch):
     """让 main() 通过必填模型校验；CI 无 config.toml 时也稳定。"""
@@ -34,7 +47,12 @@ def valid_model_config(monkeypatch):
 def main_entry(monkeypatch, valid_model_config):
     """用 mock create_app/app.run 调用真实 main(argv) 入口，不启动服务器。"""
     mock_app = MagicMock()
-    monkeypatch.setattr(app_module, "create_app", lambda run_cfg=None: mock_app)
+
+    def _fake_create(settings) -> MagicMock:
+        mock_app.settings = settings
+        return mock_app
+
+    monkeypatch.setattr(app_module, "create_app", _fake_create)
     monkeypatch.setattr(config, "DEBUG", False)
     return mock_app, lambda argv=None: app_module.main(argv)
 
@@ -48,7 +66,8 @@ class TestMainDebugPriority:
         assert run([]) == 0
 
         mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
-        assert config.DEBUG is False
+        assert mock_app.settings.debug is False
+        assert config.DEBUG is False  # main 不再改写模块全局
 
     def test_cli_debug_overrides_env_and_config(self, monkeypatch, main_entry):
         monkeypatch.setenv("PDF_READER_DEBUG", "false")
@@ -58,7 +77,7 @@ class TestMainDebugPriority:
         assert run(["--debug"]) == 0
 
         mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=True, use_reloader=True)
-        assert config.DEBUG is True
+        assert mock_app.settings.debug is True
 
     def test_cli_no_debug_overrides_env_and_config(self, monkeypatch, main_entry):
         monkeypatch.setenv("PDF_READER_DEBUG", "true")
@@ -248,17 +267,27 @@ class TestImportHasNoCliSideEffects:
 
 
 class TestCreateAppLogging:
-    def test_create_app_uses_resolved_debug(self, monkeypatch):
+    def test_create_app_uses_explicit_settings_debug(self, monkeypatch):
         monkeypatch.setattr(config, "DEBUG", False)
         with patch("pdf_reader.app.logging_config.setup_logging") as mock_setup:
-            app_module.create_app(config.ServerConfig(host="127.0.0.1", port=5000, debug=True))
+            app_module.create_app(_settings(debug=True))
             mock_setup.assert_called_once_with(True)
 
-    def test_create_app_default_uses_config_debug(self, monkeypatch):
+    def test_create_app_ignores_mutable_config_debug(self, monkeypatch):
         monkeypatch.setattr(config, "DEBUG", True)
         with patch("pdf_reader.app.logging_config.setup_logging") as mock_setup:
-            app_module.create_app()
-            mock_setup.assert_called_once_with(True)
+            app_module.create_app(_settings(debug=False))
+            mock_setup.assert_called_once_with(False)
+
+    def test_create_app_stores_immutable_settings_explicitly(self, tmp_path):
+        settings = _settings(debug=True)
+        with patch("pdf_reader.app.logging_config.setup_logging"):
+            app = app_module.create_app(settings)
+        assert app.config["app_settings"] is settings
+        assert app.config["app_state"]._cache_dir == Path("cache")
+
+        with pytest.raises(Exception):
+            settings.debug = False  # type: ignore[misc]
 
     def test_main_logging_and_run_share_one_debug(self, monkeypatch):
         """真实 create_app：setup_logging 与 app.run 收到同一个解析后的 debug。"""
@@ -275,7 +304,7 @@ class TestCreateAppLogging:
 
         mock_setup.assert_called_once_with(True)
         mock_run.assert_called_once_with(host="127.0.0.1", port=5000, debug=True, use_reloader=True)
-        assert config.DEBUG is True
+        assert config.DEBUG is False  # main 不再把解析结果写回模块全局
 
     def test_main_default_logging_and_run_share_false(self, monkeypatch):
         from flask import Flask

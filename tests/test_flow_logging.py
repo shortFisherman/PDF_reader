@@ -267,6 +267,7 @@ def test_generate_logging_info_messages(caplog, tmp_path):
         page=1,
         status="started",
     )
+
     ctx = GenerateContext(
         settings=MagicMock(),
         job_id="test-job",
@@ -391,6 +392,10 @@ def test_generate_error_logging_context(caplog, tmp_path, mock_config):
         cache_dir=cache_dir,
         extract_page=MagicMock(side_effect=RuntimeError("extract crashed")),
         task_ctx=task_ctx,
+        provider="deepseek",
+        model="deepseek-v4-flash",
+        lang_in="en",
+        lang_out="zh",
     )
 
     list(generate(ctx))
@@ -425,6 +430,7 @@ def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
         to_page=9,
         status="started",
     )
+
     ctx = GenerateBatchContext(
         settings=MagicMock(),
         job_id="test-job",
@@ -441,6 +447,10 @@ def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
         cache_dir=cache_dir,
         extract_pages=MagicMock(side_effect=RuntimeError("batch extract crashed")),
         task_ctx=task_ctx,
+        provider="deepseek",
+        model="deepseek-v4-flash",
+        lang_in="en",
+        lang_out="zh",
     )
 
     list(generate_batch(ctx))

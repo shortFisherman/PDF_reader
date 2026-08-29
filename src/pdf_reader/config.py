@@ -57,6 +57,24 @@ class ServerConfig:
         return self.debug
 
 
+@dataclass(frozen=True)
+class AppSettings:
+    """``create_app`` 的显式、不可变应用设置（P3-02）。
+
+    只包含 ``create_app``/路由直接消费的关键运行值；翻译引擎的其余配置仍由
+    ``translation_settings.build_settings`` 从配置模块读取，避免过度重构。
+    """
+
+    debug: bool
+    cache_dir: Path
+    dpi: int
+    glossary_path: Path
+    model_provider: str
+    model: str
+    lang_in: str
+    lang_out: str
+
+
 _DEBUG_TRUE_VALUES = frozenset({"true", "1", "on", "yes"})
 _DEBUG_FALSE_VALUES = frozenset({"false", "0", "off", "no"})
 
@@ -370,6 +388,30 @@ def resolve_server_config(config_data: dict | None = None, cli_debug: bool | Non
         debug = cli_debug
 
     return ServerConfig(host=host.strip(), port=port, debug=debug)
+
+
+def build_app_settings(
+    config_data: dict | None = None,
+    *,
+    cli_debug: bool | None = None,
+) -> AppSettings:
+    """从配置快照构建冻结的 ``AppSettings``（供 ``main``/测试显式传给 ``create_app``）。"""
+    data = CONFIG if config_data is None else config_data
+    run_cfg = resolve_server_config(data, cli_debug=cli_debug)
+    pdf_reader = _section(data, "pdf_reader")
+    translation = _section(data, "translation")
+    model = _section(data, "model")
+    dpi = pdf_reader.get("dpi", 200)
+    return AppSettings(
+        debug=run_cfg.debug,
+        cache_dir=paths.resolve_cache_dir(_string(pdf_reader.get("cache_dir"), "cache")),
+        dpi=dpi if isinstance(dpi, int) and not isinstance(dpi, bool) else 200,
+        glossary_path=paths.get_glossary_path(),
+        model_provider=_string(model.get("provider"), "openai_compatible"),
+        model=_string(model.get("model"), ""),
+        lang_in=_string(translation.get("lang_in"), "en"),
+        lang_out=_string(translation.get("lang_out"), "zh"),
+    )
 
 
 DEBUG: bool = _resolve_file_debug(CONFIG)

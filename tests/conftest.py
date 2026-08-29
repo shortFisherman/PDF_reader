@@ -48,7 +48,7 @@ def app_state(tmp_path):
 @pytest.fixture
 def test_client():
     """Flask test client"""
-    app = create_app()
+    app = create_app(config.build_app_settings())
     app.config["TESTING"] = True
     with app.test_client() as client:
         yield client

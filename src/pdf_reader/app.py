@@ -30,19 +30,19 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def create_app(run_cfg: config.ServerConfig | None = None) -> Flask:
-    debug = config.DEBUG if run_cfg is None else run_cfg.debug
-    logging_config.setup_logging(debug)
+def create_app(settings: config.AppSettings) -> Flask:
+    """用显式、不可变的 ``AppSettings`` 装配 Flask 应用（不读可变模块全局）。"""
+    logging_config.setup_logging(settings.debug)
 
     logger.info(
         "Starting PDF Reader provider=%s model=%s lang=%s->%s cache_dir=%s dpi=%d debug=%s",
-        config.MODEL_PROVIDER,
-        config.MODEL,
-        config.TRANSLATION_LANG_IN,
-        config.TRANSLATION_LANG_OUT,
-        config.CACHE_DIR,
-        config.DPI,
-        debug,
+        settings.model_provider,
+        settings.model,
+        settings.lang_in,
+        settings.lang_out,
+        settings.cache_dir,
+        settings.dpi,
+        settings.debug,
     )
 
     app = Flask(
@@ -50,7 +50,8 @@ def create_app(run_cfg: config.ServerConfig | None = None) -> Flask:
         template_folder=str(paths.get_resource_root() / "templates"),
         static_folder=str(paths.get_resource_root() / "static"),
     )
-    app.config["app_state"] = AppState(config.CACHE_DIR)
+    app.config["app_settings"] = settings
+    app.config["app_state"] = AppState(settings.cache_dir)
     app.config["translation_coordinator"] = TranslationCoordinator()
     from pdf_reader.routes import register_routes
 
@@ -63,19 +64,19 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
         run_cfg = config.resolve_server_config(cli_debug=args.debug)
-        config.DEBUG = run_cfg.debug
         config.validate_startup_requirements()
     except config.ConfigError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    app = create_app(run_cfg)
+    settings = config.build_app_settings(cli_debug=args.debug)
+    app = create_app(settings)
     coordinator = app.config["translation_coordinator"]
     logger.info(
         "Starting PDF Reader on http://%s:%d (debug=%s, reloader=%s)",
         run_cfg.host,
         run_cfg.port,
-        run_cfg.debug,
+        settings.debug,
         run_cfg.use_reloader,
     )
     if not config.is_loopback_host(run_cfg.host):
@@ -88,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         app.run(
             host=run_cfg.host,
             port=run_cfg.port,
-            debug=run_cfg.debug,
+            debug=settings.debug,
             use_reloader=run_cfg.use_reloader,
         )
     finally:

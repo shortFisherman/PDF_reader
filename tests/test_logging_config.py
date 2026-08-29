@@ -200,7 +200,7 @@ class TestApiKeyNeverLogged:
 
         from pdf_reader import app as app_module
 
-        app_module.create_app()
+        app_module.create_app(config.build_app_settings())
 
         records = [r for r in caplog.records if r.name == "pdf_reader.app"]
         assert len(records) >= 1, "expected at least one startup log"
@@ -228,7 +228,7 @@ class TestApiKeyNeverLogged:
 
         from pdf_reader import app as app_module
 
-        app_module.create_app()
+        app_module.create_app(config.build_app_settings())
 
         for record in caplog.records:
             assert "sk-secret-test-123" not in record.message, f"API key leaked in {record.name}: {record.message}"

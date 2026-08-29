@@ -35,6 +35,10 @@ def _get_state():
     return current_app.config["app_state"]
 
 
+def _get_settings() -> config.AppSettings:
+    return cast(config.AppSettings, current_app.config["app_settings"])
+
+
 def _get_coordinator() -> TranslationCoordinator:
     return cast(TranslationCoordinator, current_app.config["translation_coordinator"])
 
@@ -110,8 +114,9 @@ def get_page(side: str, page: int):
         return error_response("invalid side", 400, "invalid_side")
 
     state = _get_state()
+    settings = _get_settings()
     try:
-        png_data = state.render_page(side, page, render_page, config.DPI)
+        png_data = state.render_page(side, page, render_page, settings.dpi)
     except ValueError:
         return error_response("page out of range", 404, "page_out_of_range")
 
@@ -152,8 +157,9 @@ def translate_page(page: int):
     data = request.get_json(silent=True) or {}
     user_prompt = (data.get("prompt") or "").strip() or None
 
+    app_settings = _get_settings()
     glossary_paths = glossary_service.resolve_glossary_paths(snapshot.glossary_cache_path)
-    settings = build_settings(
+    settings_model = build_settings(
         "",
         user_prompt,
         glossary_paths=glossary_paths,
@@ -176,7 +182,7 @@ def translate_page(page: int):
         )
         return translation_busy_response(exc.active_job)
     ctx = sse_stream.GenerateContext(
-        settings=settings,
+        settings=settings_model,
         job_id=job.job_id,
         finish_job=coordinator.finish,
         fail_job=coordinator.fail,
@@ -190,7 +196,12 @@ def translate_page(page: int):
         glossary_cache_path=snapshot.glossary_cache_path,
         page=page,
         glossary_paths=glossary_paths,
-        cache_dir=config.CACHE_DIR,
+        cache_dir=app_settings.cache_dir,
+        provider=app_settings.model_provider,
+        model=app_settings.model,
+        lang_in=app_settings.lang_in,
+        lang_out=app_settings.lang_out,
+        debug=app_settings.debug,
         task_ctx=task_context_from_indices(
             job.job_id,
             snapshot.document_id,
@@ -248,8 +259,9 @@ def translate_batch():
     k = len(page_indices)
     pages_str = f"1-{k}" if k > 1 else "1"
 
+    app_settings = _get_settings()
     glossary_paths = glossary_service.resolve_glossary_paths(snapshot.glossary_cache_path)
-    settings = build_settings(
+    settings_model = build_settings(
         "",
         user_prompt,
         glossary_paths=glossary_paths,
@@ -273,7 +285,7 @@ def translate_batch():
         )
         return translation_busy_response(exc.active_job)
     ctx = sse_stream.GenerateBatchContext(
-        settings=settings,
+        settings=settings_model,
         job_id=job.job_id,
         finish_job=coordinator.finish,
         fail_job=coordinator.fail,
@@ -289,7 +301,12 @@ def translate_batch():
         ),
         glossary_cache_path=snapshot.glossary_cache_path,
         glossary_paths=glossary_paths,
-        cache_dir=config.CACHE_DIR,
+        cache_dir=app_settings.cache_dir,
+        provider=app_settings.model_provider,
+        model=app_settings.model,
+        lang_in=app_settings.lang_in,
+        lang_out=app_settings.lang_out,
+        debug=app_settings.debug,
         task_ctx=task_context_from_indices(
             job.job_id,
             snapshot.document_id,
@@ -354,5 +371,6 @@ def internal_error(exc: Exception):
 
 
 def register_routes(app):
+    app.config.setdefault("app_settings", config.build_app_settings())
     app.config.setdefault("translation_coordinator", TranslationCoordinator())
     app.register_blueprint(bp)

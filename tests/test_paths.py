@@ -36,7 +36,7 @@ from pdf_reader import paths
 from pdf_reader import config
 from pdf_reader.app import create_app
 
-app = create_app()
+app = create_app(config.build_app_settings())
 print(json.dumps({
     "project_root": str(paths.get_project_root()),
     "config_path": str(paths.get_config_path()),
@@ -255,11 +255,11 @@ def test_two_cwds_in_process_without_syspath_changes(monkeypatch, tmp_path):
     elsewhere.mkdir()
 
     monkeypatch.chdir(REPO_ROOT)
-    app_first = create_app()
+    app_first = create_app(config.build_app_settings())
     logging_config.reset_logging()
 
     monkeypatch.chdir(elsewhere)
-    app_second = create_app()
+    app_second = create_app(config.build_app_settings())
     logging_config.reset_logging()
 
     expected = _app_location(app_first)
@@ -277,7 +277,7 @@ def test_two_cwds_in_process_without_syspath_changes(monkeypatch, tmp_path):
 
 def test_create_app_uses_unified_resource_folders():
     """Flask templates/static 显式锚定资源根。"""
-    app = create_app()
+    app = create_app(config.build_app_settings())
     assert app.template_folder == str(paths.get_resource_root() / "templates")
     assert app.static_folder == str(paths.get_resource_root() / "static")
 
