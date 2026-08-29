@@ -1,22 +1,26 @@
 import { JSDOM } from 'jsdom';
 import { ReadableStream } from 'node:stream/web';
 import { TextDecoder, TextEncoder } from 'node:util';
-import { readFileSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const testsDir = fileURLToPath(new URL('.', import.meta.url));
+const rootDir = resolve(testsDir, '..');
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'http://localhost',
     runScripts: 'outside-only',
 });
-const { window: jsdomWindow } = dom;
-globalThis.window = jsdomWindow;
-globalThis.document = jsdomWindow.document;
+globalThis.window = dom.window;
+globalThis.document = dom.window.document;
 globalThis.ReadableStream = ReadableStream;
 globalThis.TextDecoder = TextDecoder;
 globalThis.TextEncoder = TextEncoder;
+
+const { readSSEStream } = await import(pathToFileURL(resolve(rootDir, 'static', 'modules', 'sse-client.js')));
+const { translateCurrentPage, translateBatch } = await import(
+    pathToFileURL(resolve(rootDir, 'static', 'modules', 'translator.js')),
+);
 
 let passed = 0;
 let failed = 0;
@@ -50,32 +54,10 @@ function createMockResponse(opts = {}) {
     };
 }
 
-function stripExports(code) {
-    return code
-        .replace(/^import\s+.*$/gm, '')
-        .replace(/^export\s+async\s+function\b/gm, 'async function')
-        .replace(/^export\s+function\b/gm, 'function')
-        .replace(/^export\s+const\b/gm, 'const')
-        .replace(/^export\s+let\b/gm, 'let')
-        .replace(/^export\s+var\b/gm, 'var')
-        .replace(/^export\s+/gm, '');
-}
-
-const allCode = [
-    stripExports(readFileSync(resolve(__dirname, '..', 'static', 'modules', 'stages.js'), 'utf-8')),
-    stripExports(readFileSync(resolve(__dirname, '..', 'static', 'modules', 'sse-client.js'), 'utf-8')),
-    stripExports(readFileSync(resolve(__dirname, '..', 'static', 'modules', 'translator.js'), 'utf-8')),
-].join('\n');
-
-const wrappedCode = `\n${allCode}\nreturn { readSSEStream, translateCurrentPage, translateBatch };\n`;
-
-const { readSSEStream, translateCurrentPage, translateBatch } = (new Function(wrappedCode))();
-
 // ============================================================
 // sse-client Tests
 // ============================================================
 
-// Test 2.1: single chunk, multiple events
 console.log('--- Test 2.1: single chunk, multiple events ---');
 {
     const events = [];
@@ -87,7 +69,6 @@ console.log('--- Test 2.1: single chunk, multiple events ---');
     assert(events[1].type === 'finish', 'Test 2.1.3: second event is {type:"finish"}');
 }
 
-// Test 2.2: event split across chunks
 console.log('--- Test 2.2: event split across chunks ---');
 {
     const events = [];
@@ -106,8 +87,7 @@ console.log('--- Test 2.2: event split across chunks ---');
     assert(events[0].p === 1, 'Test 2.2.3: p is 1');
 }
 
-// Test 2.3: malformed JSON skipped, next valid event still parsed
-console.log('--- Test 2.3: malformed JSON skipped ---');
+console.log('--- Test 2.3: malformed JSON skipped, next valid event still parsed ---');
 {
     const events = [];
     const stream = makeSSEStream('data: {not valid}\n\ndata: {"ok":true}\n\n');
@@ -117,8 +97,7 @@ console.log('--- Test 2.3: malformed JSON skipped ---');
     assert(events[0].ok === true, 'Test 2.3.2: valid event is {ok:true}');
 }
 
-// Test 2.4: empty stream terminates without events
-console.log('--- Test 2.4: empty stream terminates ---');
+console.log('--- Test 2.4: empty stream terminates without events ---');
 {
     const events = [];
     const stream = new ReadableStream({
@@ -135,8 +114,7 @@ console.log('--- Test 2.4: empty stream terminates ---');
 // translator Tests
 // ============================================================
 
-// Test 3.1: progress -> finish callback order with stage_current/stage_total
-console.log('--- Test 3.1: progress -> finish callback order ---');
+console.log('--- Test 3.1: progress -> finish callback order with stage_current/stage_total ---');
 {
     const record = [];
     const sseBody = [
@@ -171,7 +149,6 @@ console.log('--- Test 3.1: progress -> finish callback order ---');
     assert(!record.some(r => r.type === 'error'), 'Test 3.1.8: onError not called');
 }
 
-// Test 3.2: stage_current/stage_total absent -> no page suffix
 console.log('--- Test 3.2: no stage_current/stage_total -> no suffix ---');
 {
     const record = [];
@@ -201,8 +178,7 @@ console.log('--- Test 3.2: no stage_current/stage_total -> no suffix ---');
     assert(!stageRecord.label.includes('第'), 'Test 3.2.3: label has no stage suffix');
 }
 
-// Test 3.3: SSE error event -> onError, onFinish not called
-console.log('--- Test 3.3: SSE error event -> onError ---');
+console.log('--- Test 3.3: SSE error event -> onError, onFinish not called ---');
 {
     const record = [];
     const stream = makeSSEStream('data: {"type":"error","error":"SSE stream error"}\n\n');
@@ -225,8 +201,7 @@ console.log('--- Test 3.3: SSE error event -> onError ---');
     assert(!record.includes('finish'), 'Test 3.3.4: onFinish not called');
 }
 
-// Test 3.4: HTTP !ok -> onError with server error message
-console.log('--- Test 3.4: HTTP not ok -> onError ---');
+console.log('--- Test 3.4: HTTP !ok -> onError with server error message ---');
 {
     const record = [];
     const mockFetchResp = createMockResponse({
@@ -254,7 +229,6 @@ console.log('--- Test 3.4: HTTP not ok -> onError ---');
     assert(!record.includes('finish'), 'Test 3.4.4: onFinish not called');
 }
 
-// Test 3.5: prompt forwarding in fetch body
 console.log('--- Test 3.5: prompt forwarding ---');
 {
     let capturedBody = null;
@@ -266,7 +240,6 @@ console.log('--- Test 3.5: prompt forwarding ---');
         return mockFetchResp;
     };
 
-    // With prompt
     await translateCurrentPage(1, {
         onStageChange: () => {},
         onProgress: () => {},
@@ -276,7 +249,6 @@ console.log('--- Test 3.5: prompt forwarding ---');
     });
     assert(capturedBody === '{"prompt":"请用正式语气翻译"}', `Test 3.5.1: prompt in body, got "${capturedBody}"`);
 
-    // Without prompt
     capturedBody = null;
     await translateCurrentPage(1, {
         onStageChange: () => {},
@@ -287,7 +259,6 @@ console.log('--- Test 3.5: prompt forwarding ---');
     assert(capturedBody === '{"prompt":null}', `Test 3.5.2: null prompt in body, got "${capturedBody}"`);
 }
 
-// Test 3.6: SSE error event missing error field -> fixed fallback
 console.log('--- Test 3.6: SSE error event missing error -> fallback ---');
 {
     const record = [];
@@ -304,8 +275,7 @@ console.log('--- Test 3.6: SSE error event missing error -> fallback ---');
     assert(record[0] === '翻译失败', `Test 3.6.2: fallback message, got "${record[0]}"`);
 }
 
-// Test 3.7: HTTP !ok with non-JSON body -> fixed fallback
-console.log('--- Test 3.7: HTTP !ok non-JSON -> fallback ---');
+console.log('--- Test 3.7: HTTP !ok with non-JSON body -> fixed fallback ---');
 {
     const record = [];
     const mockFetchResp = {
@@ -324,8 +294,7 @@ console.log('--- Test 3.7: HTTP !ok non-JSON -> fallback ---');
     assert(record[0] === '翻译请求失败', `Test 3.7.2: fallback message, got "${record[0]}"`);
 }
 
-// Test 3.8: fetch network rejection -> fixed fallback
-console.log('--- Test 3.8: network rejection -> fallback ---');
+console.log('--- Test 3.8: fetch network rejection -> fixed fallback ---');
 {
     const record = [];
     globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
@@ -340,10 +309,9 @@ console.log('--- Test 3.8: network rejection -> fallback ---');
 }
 
 // ============================================================
-// translator translateBatch Tests
+// translateBatch Tests
 // ============================================================
 
-// Test 4.1: translateBatch emits batch_info -> progress -> finish
 console.log('--- Test 4.1: translateBatch batch_info/progress/finish ---');
 {
     const record = [];
@@ -380,8 +348,7 @@ console.log('--- Test 4.1: translateBatch batch_info/progress/finish ---');
     assert(!record.some(r => r.type === 'error'), 'Test 4.1.6: no onError');
 }
 
-// Test 4.2: translateBatch HTTP !ok -> onError
-console.log('--- Test 4.2: translateBatch HTTP not ok -> onError ---');
+console.log('--- Test 4.2: translateBatch HTTP !ok -> onError ---');
 {
     const record = [];
     const mockFetchResp = createMockResponse({ ok: false, jsonData: { error: 'page out of range' } });
@@ -399,7 +366,6 @@ console.log('--- Test 4.2: translateBatch HTTP not ok -> onError ---');
     assert(!record.includes('finish'), 'Test 4.2.3: no onFinish');
 }
 
-// Test 4.3: translateBatch prompt forwarded in body
 console.log('--- Test 4.3: translateBatch prompt forwarding ---');
 {
     let capturedBody = null;
@@ -414,7 +380,6 @@ console.log('--- Test 4.3: translateBatch prompt forwarding ---');
     assert(capturedBody === '{"from":1,"to":1,"prompt":"正式语气"}', `Test 4.3.1: body has from/to/prompt`);
 }
 
-// Test 4.4: translateBatch HTTP !ok with non-JSON body -> fixed fallback
 console.log('--- Test 4.4: batch HTTP !ok non-JSON -> fallback ---');
 {
     const record = [];
@@ -434,9 +399,6 @@ console.log('--- Test 4.4: batch HTTP !ok non-JSON -> fallback ---');
     assert(record[0] === '翻译请求失败', `Test 4.4.2: fallback message, got "${record[0]}"`);
 }
 
-// ============================================================
-// Summary
-// ============================================================
 console.log('');
 console.log(`Results: ${passed} passed, ${failed} failed`);
 if (failed > 0) {

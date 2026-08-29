@@ -1,61 +1,226 @@
 import { JSDOM } from 'jsdom';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const modulePath = resolve(__dirname, '..', 'static', 'modules', 'zoom.js');
-let code = readFileSync(modulePath, 'utf-8');
+import { resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'http://localhost',
     runScripts: 'outside-only',
 });
-
 const { window: jsdomWindow } = dom;
 
 globalThis.window = jsdomWindow;
 globalThis.document = jsdomWindow.document;
 globalThis.setTimeout = setTimeout;
-globalThis.globalThis = globalThis;
 
-const logs = [];
-const errors = [];
+const { setupZoom } = await import(
+    pathToFileURL(resolve(fileURLToPath(new URL('.', import.meta.url)), '..', 'static', 'modules', 'zoom.js')),
+);
 
-const mockConsole = {
-    log: (...args) => logs.push(args.join(' ')),
-    error: (...args) => errors.push(args.join(' ')),
-};
+let passCount = 0;
+let failCount = 0;
 
-jsdomWindow.__TEST_ZOOM__ = true;
-
-code = code.replace(/^export\s+function\b/gm, 'function');
-code = code.replace(/^export\s+const\b/gm, 'const');
-code = code.replace(/^export\s+let\b/gm, 'let');
-code = code.replace(/^export\s+var\b/gm, 'var');
-code = code.replace(/^export\s+/gm, '');
-
-try {
-    const fn = new Function('window', 'document', 'globalThis', 'setTimeout', 'console', code);
-    fn(jsdomWindow, jsdomWindow.document, globalThis, setTimeout, mockConsole);
-} catch (e) {
-    errors.push('Execution error: ' + e.message + '\n' + e.stack);
+function assert(cond, msg) {
+    if (cond) {
+        passCount++;
+    } else {
+        failCount++;
+        console.error('FAIL: ' + msg);
+    }
 }
 
-console.log('=== Test Output ===');
-for (const log of logs) console.log(log);
-for (const err of errors) console.error(err);
+try {
+    const appEl = document.createElement('div');
+    const col = document.createElement('div');
+    let wheelHandler = null;
+    let preventDefaultCalls = 0;
 
-if (globalThis.__ZOOM_TESTS_DONE__) {
-    const allText = [...logs, ...errors].join('\n');
-    if (allText.includes('FAILED') || allText.includes('FAIL:')) {
-        console.log('\nFAIL');
-        process.exit(1);
-    } else {
-        console.log('\nPASS');
-        process.exit(0);
+    col.addEventListener = function (type, handler) {
+        if (type === 'wheel') wheelHandler = handler;
+    };
+    col.removeEventListener = function (type) {
+        if (type === 'wheel') wheelHandler = null;
+    };
+    col.getBoundingClientRect = function () {
+        return { left: 0, top: 0, width: 400, height: 600, right: 400, bottom: 600 };
+    };
+
+    const zoomChanges = [];
+    function onZoomChange(z) { zoomChanges.push(z); }
+
+    function fireCtrlWheel(deltaY, opts) {
+        if (!wheelHandler) return;
+        const e = {
+            ctrlKey: true,
+            deltaY: deltaY,
+            preventDefault: function () { preventDefaultCalls++; },
+            clientX: (opts && opts.clientX != null) ? opts.clientX : 100,
+            clientY: (opts && opts.clientY != null) ? opts.clientY : 100,
+            currentTarget: col,
+        };
+        wheelHandler(e);
     }
+
+    function firePlainWheel(deltaY) {
+        if (!wheelHandler) return;
+        const e = {
+            ctrlKey: false,
+            deltaY: deltaY,
+            preventDefault: function () { preventDefaultCalls++; },
+            clientX: 100,
+            clientY: 100,
+            currentTarget: col,
+        };
+        wheelHandler(e);
+    }
+
+    const instance = setupZoom({ columns: [col], appEl, onZoomChange });
+
+    assert(typeof instance.resetZoom === 'function', 'Test 1a: returns resetZoom');
+    assert(typeof instance.getZoom === 'function', 'Test 1b: returns getZoom');
+    assert(typeof instance.dispose === 'function', 'Test 1c: returns dispose');
+    assert(instance.getZoom() === 1, 'Test 1d: initial zoom = 1');
+    assert(zoomChanges.length === 0, 'Test 1e: no onZoomChange calls initially');
+
+    fireCtrlWheel(100);
+    assert(instance.getZoom() < 1, 'Test 2a: zoom decreased after Ctrl+wheel down');
+    assert(zoomChanges.length === 1, 'Test 2b: onZoomChange called once');
+    assert(preventDefaultCalls === 1, 'Test 2c: preventDefault called on Ctrl+wheel');
+
+    const beforeIn = instance.getZoom();
+    fireCtrlWheel(-100);
+    assert(instance.getZoom() > beforeIn, 'Test 3a: zoom increased after Ctrl+wheel up');
+    assert(zoomChanges.length === 2, 'Test 3b: onZoomChange called again');
+
+    const beforePlain = instance.getZoom();
+    const pdCallsBefore = preventDefaultCalls;
+    firePlainWheel(100);
+    assert(instance.getZoom() === beforePlain, 'Test 4a: zoom unchanged on non-Ctrl wheel');
+    assert(preventDefaultCalls === pdCallsBefore, 'Test 4b: preventDefault NOT called on non-Ctrl');
+    assert(zoomChanges.length === 2, 'Test 4c: onZoomChange NOT called on non-Ctrl');
+
+    instance.resetZoom();
+    for (let i = 0; i < 20; i++) fireCtrlWheel(100);
+    assert(instance.getZoom() === 0.25, 'Test 5a: zoom clamped to MIN 0.25');
+    fireCtrlWheel(100);
+    assert(instance.getZoom() === 0.25, 'Test 5b: zoom stays at MIN');
+
+    instance.resetZoom();
+    for (let i = 0; i < 50; i++) fireCtrlWheel(-100);
+    assert(instance.getZoom() === 2.2, 'Test 6a: zoom clamped to MAX 2.2');
+    fireCtrlWheel(-100);
+    assert(instance.getZoom() === 2.2, 'Test 6b: zoom stays at MAX');
+
+    instance.resetZoom();
+    assert(instance.getZoom() === 1, 'Test 7a: resetZoom returns zoom to 1');
+    assert(appEl.style.getPropertyValue('--zoom') === '1', 'Test 7b: resetZoom sets --zoom to 1');
+
+    const lastChange = zoomChanges[zoomChanges.length - 1];
+    assert(lastChange === 1, 'Test 8: onZoomChange received 1 on reset');
+
+    instance.resetZoom();
+    fireCtrlWheel(-100);
+    const cssZoom = appEl.style.getPropertyValue('--zoom');
+    assert(cssZoom !== '' && cssZoom !== '1', 'Test 9: --zoom CSS property set on Ctrl+wheel');
+
+    // Anchor formula test: verify scrollTop/scrollLeft recalculation
+    instance.resetZoom();
+    col.scrollTop = 200;
+    col.scrollLeft = 100;
+    col.getBoundingClientRect = function () {
+        return { left: 10, top: 10, width: 800, height: 600, right: 810, bottom: 610 };
+    };
+    // clientX=400, clientY=400, rect left=10/top=10 → cx=390, cy=390, r=1.1
+    // scrollTop = (200 + 390) * 1.1 - 390 = 259
+    // scrollLeft = (100 + 390) * 1.1 - 390 = 149
+    fireCtrlWheel(-100, { clientX: 400, clientY: 400 });
+    assert(instance.getZoom() > 1, 'Test 10a: zoom increased in formula test');
+    assert(Math.abs(col.scrollTop - 259) < 0.01, 'Test 10b: scrollTop anchor formula (got ' + col.scrollTop + ', expected ~259)');
+    assert(Math.abs(col.scrollLeft - 149) < 0.01, 'Test 10c: scrollLeft anchor formula (got ' + col.scrollLeft + ', expected ~149)');
+
+    // Dispose test: verify dispose actually removes listener
+    instance.resetZoom();
+    fireCtrlWheel(-100);
+    const zoomBeforeDispose = instance.getZoom();
+    const changesBeforeDispose = zoomChanges.length;
+    const lastZoomBeforeDispose = zoomChanges[zoomChanges.length - 1];
+
+    instance.dispose();
+
+    fireCtrlWheel(100);
+    assert(instance.getZoom() === zoomBeforeDispose, 'Test 11a: zoom unchanged after dispose (wheel down)');
+    fireCtrlWheel(-100);
+    assert(instance.getZoom() === zoomBeforeDispose, 'Test 11b: zoom unchanged after dispose (wheel up)');
+    assert(zoomChanges.length === changesBeforeDispose, 'Test 11c: onZoomChange NOT called after dispose');
+    assert(zoomChanges[zoomChanges.length - 1] === lastZoomBeforeDispose, 'Test 11d: lastZoom unchanged after dispose');
+
+    // Test 12: alignmentController.onZoomChange integration
+    instance.resetZoom();
+    const acCol = document.createElement('div');
+    acCol.getBoundingClientRect = function () {
+        return { left: 0, top: 0, width: 400, height: 600, right: 400, bottom: 600 };
+    };
+    let acCalls = [];
+    const alignmentController = {
+        onZoomChange: function (newZ, oldZ) {
+            acCalls.push({ newZoom: newZ, oldZoom: oldZ });
+        }
+    };
+    const acInst = setupZoom({
+        columns: [acCol],
+        appEl: document.createElement('div'),
+        onZoomChange: function () {},
+        alignmentController: alignmentController,
+    });
+    acCol.addEventListener = function (type, handler) {
+        if (type === 'wheel') {
+            const e = {
+                ctrlKey: true,
+                deltaY: -100,
+                preventDefault: function () {},
+                clientX: 200,
+                clientY: 300,
+                currentTarget: acCol,
+            };
+            handler(e);
+        }
+    };
+    acInst.dispose();
+    const acInst2 = setupZoom({
+        columns: [acCol],
+        appEl: document.createElement('div'),
+        onZoomChange: function () {},
+        alignmentController: alignmentController,
+    });
+    acCol.addEventListener = function (type, handler) {
+        if (type === 'wheel') {
+            const e = {
+                ctrlKey: true,
+                deltaY: -100,
+                preventDefault: function () {},
+                clientX: 200,
+                clientY: 300,
+                currentTarget: acCol,
+            };
+            handler(e);
+        }
+    };
+    assert(acCalls.length >= 1,
+        'Test 12a: alignmentController.onZoomChange should be called (got ' + acCalls.length + ' calls)');
+    if (acCalls.length > 0) {
+        assert(acCalls[0].newZoom > 1,
+            'Test 12b: newZoom should be > 1 after zoom in (got ' + acCalls[0].newZoom + ')');
+        assert(acCalls[0].oldZoom === 1,
+            'Test 12c: oldZoom should be 1 (got ' + acCalls[0].oldZoom + ')');
+    }
+    acInst2.dispose();
+} catch (e) {
+    assert(false, 'Exception: ' + e.message + '\n' + e.stack);
+}
+
+if (failCount === 0) {
+    console.log('All ' + passCount + ' zoom tests PASSED');
+    process.exit(0);
 } else {
-    console.log('\nINCOMPLETE (__ZOOM_TESTS_DONE__ not set)');
+    console.log(passCount + ' passed, ' + failCount + ' FAILED');
     process.exit(1);
 }

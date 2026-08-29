@@ -15,13 +15,8 @@ export default [
             'cache/**',
             'docs/**',
             'openspec/**',
-            // 历史 fixture：仅被历史 run-alignment-repro runner 读取，不在正式 npm test 中；P3-03 统一结构。
-            'static/modules/__tests__/**',
-            // 历史诊断 runner：不在 npm test 中；P3-03 统一测试夹具结构。
-            'tests/run-alignment-repro-tests.mjs',
-            'tests/run-lazy-loader-tests.mjs',
-            'tests/run-task-4.4-tests.mjs',
-            'tests/run-task-4.5-tests.mjs',
+            // 历史诊断 runner/fixture：P3-03 起归档在 tests/history/，不进入正式测试与 lint。
+            'tests/history/**',
         ],
     },
     js.configs.recommended,

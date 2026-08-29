@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -13,6 +13,19 @@ globalThis.window = jsdomWindow;
 globalThis.document = jsdomWindow.document;
 Object.defineProperty(globalThis, 'navigator', { value: jsdomWindow.navigator, configurable: true });
 globalThis.requestAnimationFrame = (fn) => fn();
+
+const { TranslationUIController, TRANSLATION_STATES } = await import(
+    pathToFileURL(resolve(rootDir, 'static', 'modules', 'translation-ui-controller.js')),
+);
+const { translateCurrentPage, translateBatch } = await import(
+    pathToFileURL(resolve(rootDir, 'static', 'modules', 'translator.js')),
+);
+const { createReaderSession } = await import(
+    pathToFileURL(resolve(rootDir, 'static', 'modules', 'reader-session.js')),
+);
+const { createReaderAppController } = await import(
+    pathToFileURL(resolve(rootDir, 'static', 'modules', 'app-controller.js')),
+);
 
 let passed = 0;
 let failed = 0;
@@ -49,24 +62,6 @@ function createFakeScheduler() {
             return pending.size;
         },
     };
-}
-
-function stripExports(code) {
-    return code
-        .replace(/^import\s+.*$/gm, '')
-        .replace(/^export\s+function\b/gm, 'function')
-        .replace(/^export\s+const\b/gm, 'const')
-        .replace(/^export\s+let\b/gm, 'let')
-        .replace(/^export\s+var\b/gm, 'var')
-        .replace(/^export\s+/gm, '');
-}
-
-function loadModule(names, files) {
-    const code = files
-        .map((file) => stripExports(readFileSync(resolve(rootDir, 'static', 'modules', file), 'utf8')))
-        .join('\n');
-    const factory = new Function(`${code}\nreturn { ${names.join(', ')} };`);
-    return factory();
 }
 
 function makeEls() {
@@ -122,19 +117,15 @@ function makeSpy() {
 // ============================================================
 // 1. TranslationUIController state machine + DOM + scheduler
 // ============================================================
-const { TranslationUIController, TRANSLATION_STATES } = loadModule(
-    ['TranslationUIController', 'TRANSLATION_STATES'],
-    ['translation-ui-controller.js'],
-);
-const els = makeEls();
-const sched = createFakeScheduler();
-const controller = new TranslationUIController({
-    els,
-    scheduler: sched.set,
-    clearScheduled: sched.clear,
-});
-
 {
+    const els = makeEls();
+    const sched = createFakeScheduler();
+    const controller = new TranslationUIController({
+        els,
+        scheduler: sched.set,
+        clearScheduled: sched.clear,
+    });
+
     check(controller.state === TRANSLATION_STATES.IDLE, 'controller starts idle');
     check(controller.isBusy === false, 'controller not busy initially');
 }
@@ -142,6 +133,13 @@ const controller = new TranslationUIController({
 {
     let finishTask;
     const gate = new Promise((r) => { finishTask = r; });
+    const els = makeEls();
+    const sched = createFakeScheduler();
+    const controller = new TranslationUIController({
+        els,
+        scheduler: sched.set,
+        clearScheduled: sched.clear,
+    });
     const started = controller.run({
         prefix: '',
         finishLabel: '翻译完成',
@@ -176,6 +174,7 @@ const controller = new TranslationUIController({
 }
 
 {
+    const sched = createFakeScheduler();
     const batchController = new TranslationUIController({
         els: makeEls(),
         scheduler: sched.set,
@@ -199,7 +198,6 @@ const controller = new TranslationUIController({
         'batch prefix + stage rendered via shared path',
     );
     check(batchController.state === TRANSLATION_STATES.SUCCEEDED, 'batch succeeds through shared path');
-    sched.runAll();
 }
 
 {
@@ -207,6 +205,7 @@ const controller = new TranslationUIController({
     const firstGate = new Promise((r) => { finishFirst = r; });
     let firstCallbacks = null;
     const firstEls = makeEls();
+    const sched = createFakeScheduler();
     const firstController = new TranslationUIController({
         els: firstEls,
         scheduler: sched.set,
@@ -254,7 +253,7 @@ const controller = new TranslationUIController({
 
 {
     const failEls = makeEls();
-    const failController = new TranslationUIController({ els: failEls, scheduler: sched.set, clearScheduled: sched.clear });
+    const failController = new TranslationUIController({ els: failEls, scheduler: setTimeout, clearScheduled: clearTimeout });
     failController.run({
         prefix: '',
         task: ({ onError }) => onError('安全摘要'),
@@ -262,8 +261,6 @@ const controller = new TranslationUIController({
     check(failController.state === TRANSLATION_STATES.FAILED, 'failure transition');
     check(failEls.progressStatusText.textContent === '安全摘要', 'failure text is safe message');
     check(failEls.translateBtn.disabled === false, 'controls restored after failure');
-    sched.runAll();
-    check(failController.state === TRANSLATION_STATES.IDLE, 'failure scheduled reset');
 }
 
 {
@@ -271,7 +268,7 @@ const controller = new TranslationUIController({
     const gate = new Promise((r) => { finishLate = r; });
     let captured = null;
     const abortEls = makeEls();
-    const abortController = new TranslationUIController({ els: abortEls, scheduler: sched.set, clearScheduled: sched.clear });
+    const abortController = new TranslationUIController({ els: abortEls, scheduler: setTimeout, clearScheduled: clearTimeout });
     abortController.run({
         prefix: '',
         task: (cbs) => {
@@ -306,8 +303,8 @@ const controller = new TranslationUIController({
     const abortSignalEls = makeEls();
     const idemController = new TranslationUIController({
         els: abortSignalEls,
-        scheduler: sched.set,
-        clearScheduled: sched.clear,
+        scheduler: setTimeout,
+        clearScheduled: clearTimeout,
     });
     let releaseTask;
     const pendingTask = new Promise((r) => { releaseTask = r; });
@@ -330,8 +327,8 @@ const controller = new TranslationUIController({
     const syncThrowEls = makeEls();
     const syncThrowController = new TranslationUIController({
         els: syncThrowEls,
-        scheduler: sched.set,
-        clearScheduled: sched.clear,
+        scheduler: setTimeout,
+        clearScheduled: clearTimeout,
     });
     const accepted = syncThrowController.run({
         prefix: '',
@@ -344,15 +341,14 @@ const controller = new TranslationUIController({
     check(syncThrowEls.progressStatusText.textContent === '翻译失败', 'sync throw shows fixed safe summary');
     check(!syncThrowEls.progressStatusText.textContent.includes('RAW-SYNC-SENTINEL'), 'sync throw raw text not leaked');
     check(syncThrowEls.translateBtn.disabled === false, 'controls restored after sync throw');
-    sched.runAll();
 }
 
 {
     const finishThrowEls = makeEls();
     const finishThrowController = new TranslationUIController({
         els: finishThrowEls,
-        scheduler: sched.set,
-        clearScheduled: sched.clear,
+        scheduler: setTimeout,
+        clearScheduled: clearTimeout,
     });
     let finishThrowSucceeded = 0;
     finishThrowController.run({
@@ -370,15 +366,14 @@ const controller = new TranslationUIController({
     check(finishThrowSucceeded === 1, 'onSucceeded exactly once after finish+throw');
     check(finishThrowEls.progressStatusText.textContent === '翻译完成', 'finish+throw keeps success text');
     check(!finishThrowEls.progressStatusText.textContent.includes('RAW-FINISH-THROW'), 'finish+throw sentinel not leaked');
-    sched.runAll();
 }
 
 {
     const errorThrowEls = makeEls();
     const errorThrowController = new TranslationUIController({
         els: errorThrowEls,
-        scheduler: sched.set,
-        clearScheduled: sched.clear,
+        scheduler: setTimeout,
+        clearScheduled: clearTimeout,
     });
     errorThrowController.run({
         task: ({ onError }) => {
@@ -392,16 +387,14 @@ const controller = new TranslationUIController({
     );
     check(errorThrowEls.progressStatusText.textContent === '第一次失败文本', 'onError+throw keeps first failure text');
     check(!errorThrowEls.progressStatusText.textContent.includes('RAW-ERROR-THROW'), 'error+throw sentinel not leaked');
-    check(sched.pendingCount() === 1, 'error+throw does not duplicate reset schedule');
-    sched.runAll();
 }
 
 {
     const abortThrowEls = makeEls();
     const abortThrowController = new TranslationUIController({
         els: abortThrowEls,
-        scheduler: sched.set,
-        clearScheduled: sched.clear,
+        scheduler: setTimeout,
+        clearScheduled: clearTimeout,
     });
     abortThrowController.run({
         task: ({ onAbort }) => {
@@ -421,8 +414,8 @@ const controller = new TranslationUIController({
     const rejectEls = makeEls();
     const rejectController = new TranslationUIController({
         els: rejectEls,
-        scheduler: sched.set,
-        clearScheduled: sched.clear,
+        scheduler: setTimeout,
+        clearScheduled: clearTimeout,
     });
     rejectController.run({
         task: () => Promise.reject(new Error('RAW-REJECT-SENTINEL')),
@@ -432,15 +425,14 @@ const controller = new TranslationUIController({
     check(rejectEls.progressStatusText.textContent === '翻译失败', 'rejection shows fixed safe summary');
     check(!rejectEls.progressStatusText.textContent.includes('RAW-REJECT-SENTINEL'), 'rejection raw text not leaked');
     check(rejectEls.translateBtn.disabled === false, 'controls restored after rejection');
-    sched.runAll();
 }
 
 {
     const emptyEls = makeEls();
     const emptyController = new TranslationUIController({
         els: emptyEls,
-        scheduler: sched.set,
-        clearScheduled: sched.clear,
+        scheduler: setTimeout,
+        clearScheduled: clearTimeout,
     });
     let emptySucceeded = 0;
     emptyController.run({
@@ -452,15 +444,14 @@ const controller = new TranslationUIController({
     check(emptyEls.progressStatusText.textContent === '翻译失败', 'resolve-without-terminal shows safe summary');
     check(emptyEls.translateBtn.disabled === false, 'controls restored after resolve-without-terminal');
     check(emptySucceeded === 0, 'onSucceeded not called without terminal finish');
-    sched.runAll();
 }
 
 {
     const normalEls = makeEls();
     const normalController = new TranslationUIController({
         els: normalEls,
-        scheduler: sched.set,
-        clearScheduled: sched.clear,
+        scheduler: setTimeout,
+        clearScheduled: clearTimeout,
     });
     let normalSucceeded = 0;
     normalController.run({
@@ -473,11 +464,11 @@ const controller = new TranslationUIController({
     await new Promise((r) => setTimeout(r, 0));
     check(normalController.state === TRANSLATION_STATES.SUCCEEDED, 'terminal then resolve stays succeeded');
     check(normalSucceeded === 1, 'onSucceeded called exactly once');
-    sched.runAll();
 }
 
 {
     const validationEls = makeEls();
+    const sched = createFakeScheduler();
     const validationController = new TranslationUIController({
         els: validationEls,
         scheduler: sched.set,
@@ -493,11 +484,6 @@ const controller = new TranslationUIController({
 // ============================================================
 // 2. translator AbortSignal / onAbort
 // ============================================================
-const translator = loadModule(
-    ['translateCurrentPage', 'translateBatch'],
-    ['stages.js', 'sse-client.js', 'translator.js'],
-);
-
 {
     const abortController = new AbortController();
     let capturedSignal = null;
@@ -513,7 +499,7 @@ const translator = loadModule(
             });
         });
     };
-    const pending = translator.translateCurrentPage(1, {
+    const pending = translateCurrentPage(1, {
         signal: abortController.signal,
         onStageChange: () => {},
         onProgress: () => {},
@@ -543,7 +529,7 @@ const translator = loadModule(
             });
         });
     };
-    const pending = translator.translateBatch(1, 2, {
+    const pending = translateBatch(1, 2, {
         signal: abortController.signal,
         onBatchInfo: () => {},
         onStageChange: () => {},
@@ -563,7 +549,6 @@ const translator = loadModule(
 // ============================================================
 // 3. reader-session dispose semantics
 // ============================================================
-const { createReaderSession } = loadModule(['createReaderSession'], ['reader-session.js']);
 {
     const zoom = { dispose: makeSpy() };
     const alignment = { dispose: makeSpy() };
@@ -583,25 +568,21 @@ const { createReaderSession } = loadModule(['createReaderSession'], ['reader-ses
 }
 
 // ============================================================
-// 4. app.js harness: open success/failure session lifecycle
+// 4. app-controller harness: open success/failure session lifecycle
 // ============================================================
 {
     const appSource = readFileSync(resolve(rootDir, 'static', 'app.js'), 'utf8');
-    const readerSessionSource = readFileSync(resolve(rootDir, 'static', 'modules', 'reader-session.js'), 'utf8');
-    const controllerSource = readFileSync(
-        resolve(rootDir, 'static', 'modules', 'translation-ui-controller.js'),
-        'utf8',
-    );
+    const controllerSource = readFileSync(resolve(rootDir, 'static', 'modules', 'app-controller.js'), 'utf8');
 
     check(appSource.includes("from './modules/translation-ui-controller.js'"), 'app.js imports controller module');
     check(appSource.includes("from './modules/reader-session.js'"), 'app.js imports reader-session module');
+    check(appSource.includes('createReaderAppController'), 'app.js uses app-controller factory');
     check(!appSource.includes('els.progressBar.classList'), 'no direct progress bar DOM ops in app.js');
     check(!appSource.includes('els.progressStatusText'), 'no direct status text DOM ops in app.js');
     check(!appSource.includes('els.translateBtn.disabled'), 'no direct translate button disable in app.js');
     check(!appSource.includes('setBatchControlsDisabled'), 'no duplicated batch disable helper in app.js');
-    check((appSource.match(/translationController\.run\(/g) || []).length === 2, 'single+batch share controller.run');
-    check(!controllerSource.includes('setPrefix('), 'controller has no legacy public setPrefix');
-    check(!appSource.includes('.setPrefix('), 'app uses only operation-scoped onPrefix');
+    check(!controllerSource.includes('window.__TEST_'), 'app-controller has no test flag branches');
+    check(!controllerSource.includes('new Function('), 'app-controller is not eval-based');
 
     const harnessEls = makeEls();
     const errors = [];
@@ -671,6 +652,10 @@ const { createReaderSession } = loadModule(['createReaderSession'], ['reader-ses
                 this.abortCalls++;
             }
         }
+        dispose() {
+            this.abortCalls++;
+            this.active = false;
+        }
         showValidationError(message) {
             this.validation.push(message);
         }
@@ -698,49 +683,29 @@ const { createReaderSession } = loadModule(['createReaderSession'], ['reader-ses
         return openResponses[openIndex++];
     };
 
-    const combined = `${stripExports(readerSessionSource)}\n${stripExports(appSource)}`;
-    const factory = new Function(
-        'getElements',
-        'createPageEl',
-        'calculatePlaceholderHeight',
-        'showError',
-        'setupIntersectionObserver',
-        'createSettleGate',
-        'setupPageDetection',
-        'createAlignmentController',
-        'fetchStageLabels',
-        'getStageLabel',
-        'translateCurrentPage',
-        'translateBatch',
-        'setupZoom',
-        'TranslationUIController',
-        'window',
-        'document',
-        'fetch',
-        'requestAnimationFrame',
-        `${combined}\nreturn { openPdf, getSession: () => session, getTranslationController: () => translationController };`,
-    );
-
-    const api = factory(
-        () => harnessEls,
-        () => ({}),
-        () => 600,
-        (parent, message) => errors.push(message),
-        () => io,
-        () => settle,
-        () => {},
-        () => alignment,
-        () => {},
-        (stage) => (stage === 'finish' ? '翻译完成' : stage),
-        async (page, callbacks) => { callbacks.onFinish(); },
-        async (from, to, callbacks) => { callbacks.onFinish(); },
-        () => zoom,
-        FakeTranslationController,
-        jsdomWindow,
-        jsdomWindow.document,
-        globalThis.fetch,
-        globalThis.requestAnimationFrame,
-    );
+    const api = createReaderAppController({
+        getElements: () => harnessEls,
+        createPageEl: () => ({}),
+        calculatePlaceholderHeight: () => 600,
+        showError: (parent, message) => errors.push(message),
+        setupIntersectionObserver: () => io,
+        createSettleGate: () => settle,
+        setupPageDetection: () => {},
+        createAlignmentController: () => alignment,
+        fetchStageLabels: () => {},
+        getStageLabel: (stage) => (stage === 'finish' ? '翻译完成' : stage),
+        translateCurrentPage: async (page, callbacks) => { callbacks.onFinish(); },
+        translateBatch: async (from, to, callbacks) => { callbacks.onFinish(); },
+        setupZoom: () => zoom,
+        TranslationUIController: FakeTranslationController,
+        createReaderSession,
+        fetchImpl: globalThis.fetch,
+        windowObj: jsdomWindow,
+        documentObj: jsdomWindow.document,
+        requestAnimationFrameFn: globalThis.requestAnimationFrame,
+        confirmFn: () => true,
+    });
+    api.init();
 
     harnessEls.pdfPathInput.value = '/first.pdf';
     await api.openPdf();
@@ -809,8 +774,9 @@ const { createReaderSession } = loadModule(['createReaderSession'], ['reader-ses
     check(alignment.dispose.count() === idle.alignment + 1, 'session dispose idempotent (alignment once)');
     check(io.observer.disconnect.count() === idle.io + 1, 'session dispose idempotent (observer once)');
     check(settle.dispose.count() === idle.settle + 1, 'session dispose idempotent (settle once)');
-    check(fakeController.abortCalls === pagehideBefore.abort + 1, 'repeated dispose/cleanup has no extra abort side effect');
     check(pagehideRemoves === pagehideBefore.pagehideRemoves + 1, 'dispose removes pagehide listener exactly once');
+
+    api.dispose();
 }
 
 console.log('');

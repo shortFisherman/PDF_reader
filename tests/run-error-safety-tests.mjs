@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 const testsDir = fileURLToPath(new URL('.', import.meta.url));
@@ -15,17 +15,7 @@ const { window: jsdomWindow } = dom;
 globalThis.window = jsdomWindow;
 globalThis.document = jsdomWindow.document;
 
-function stripExports(code) {
-    return code
-        .replace(/^export\s+function\b/gm, 'function')
-        .replace(/^export\s+const\b/gm, 'const')
-        .replace(/^export\s+let\b/gm, 'let')
-        .replace(/^export\s+var\b/gm, 'var')
-        .replace(/^export\s+/gm, '');
-}
-
-const domCode = stripExports(readFileSync(resolve(rootDir, 'static', 'modules', 'dom.js'), 'utf-8'));
-const { showError } = (new Function(`${domCode}\nreturn { showError };`))();
+const { showError } = await import(pathToFileURL(resolve(rootDir, 'static', 'modules', 'dom.js')));
 
 // 1. Malicious sentinel is rendered as text only, never as an element.
 const SENTINEL = '<img src=x onerror="window.__pwned = true">C:\\Users\\secret\\file.txt sk-secret-123';

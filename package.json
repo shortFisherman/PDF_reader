@@ -2,7 +2,6 @@
   "name": "pdf_reader",
   "version": "1.0.0",
   "description": "用于阅读英文教材和论文的本地双语 PDF 翻译阅读器。",
-  "main": "index.js",
   "directories": {
     "doc": "docs",
     "test": "tests"
@@ -23,7 +22,7 @@
   "engines": {
     "node": ">=22"
   },
-  "type": "commonjs",
+  "type": "module",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.9.1",
