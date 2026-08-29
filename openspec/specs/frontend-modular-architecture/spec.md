@@ -5,7 +5,9 @@ TBD - created by archiving change modularize-frontend. Update Purpose after arch
 ## Requirements
 ### Requirement: Frontend modular architecture
 
-The system's frontend JavaScript SHALL be organized into separately importable ES Module files by responsibility, with `app.js` as the entry point that composes the modules. Modules SHALL cover: DOM manipulation, SSE stream reading, scroll synchronization, lazy loading, translation orchestration with progress UI, and stage label resolution.
+The system's frontend JavaScript SHALL be organized into separately importable ES Module files by responsibility, with `app.js` as the entry point that composes the modules. Modules SHALL cover: DOM manipulation, SSE stream reading, scroll synchronization, lazy loading, translation orchestration, translation UI state (busy/progress/stage/error/abort/reset via `translation-ui-controller`), document session/dispose boundaries (`reader-session`), and stage label resolution.
+
+`app.js` SHALL remain a thin page-level assembler: single/batch translation SHALL run through the shared `translation-ui-controller` state machine with operation descriptors, and browser `AbortController` SHALL be used only to terminate client fetch/SSE consumption (not as a reliable server-cancel confirmation).
 
 #### Scenario: app.js is a thin entry point
 
@@ -81,4 +83,3 @@ The `translator` and `sse-client` frontend modules SHALL be covered by automated
 
 - **WHEN** `translateCurrentPage` is called with a `prompt` in the callbacks object
 - **THEN** the POST request body SHALL contain `{ prompt: <value> }`, and SHALL contain `{ prompt: null }` when no prompt is provided
-

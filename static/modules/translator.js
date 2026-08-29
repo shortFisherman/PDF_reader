@@ -10,7 +10,7 @@ function safeMessage(value, fallback) {
 }
 
 export async function translateCurrentPage(page, callbacks) {
-    const { onStageChange, onProgress, onFinish, onError } = callbacks;
+    const { onStageChange, onProgress, onFinish, onError, onAbort, signal } = callbacks;
 
     let resp;
     try {
@@ -18,9 +18,14 @@ export async function translateCurrentPage(page, callbacks) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt: callbacks.prompt || null }),
+            signal,
         });
     } catch (e) {
-        onError(NETWORK_ERROR_MESSAGE);
+        if (e && e.name === 'AbortError') {
+            if (onAbort) onAbort();
+        } else {
+            onError(NETWORK_ERROR_MESSAGE);
+        }
         return;
     }
 
@@ -52,12 +57,16 @@ export async function translateCurrentPage(page, callbacks) {
             }
         });
     } catch (e) {
-        onError(NETWORK_ERROR_MESSAGE);
+        if (e && e.name === 'AbortError') {
+            if (onAbort) onAbort();
+        } else {
+            onError(NETWORK_ERROR_MESSAGE);
+        }
     }
 }
 
 export async function translateBatch(from, to, callbacks) {
-    const { onBatchInfo, onStageChange, onProgress, onFinish, onError } = callbacks;
+    const { onBatchInfo, onStageChange, onProgress, onFinish, onError, onAbort, signal } = callbacks;
 
     let resp;
     try {
@@ -65,9 +74,14 @@ export async function translateBatch(from, to, callbacks) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ from, to, prompt: callbacks.prompt || null }),
+            signal,
         });
     } catch (e) {
-        onError(NETWORK_ERROR_MESSAGE);
+        if (e && e.name === 'AbortError') {
+            if (onAbort) onAbort();
+        } else {
+            onError(NETWORK_ERROR_MESSAGE);
+        }
         return;
     }
 
@@ -101,6 +115,10 @@ export async function translateBatch(from, to, callbacks) {
             }
         });
     } catch (e) {
-        onError(NETWORK_ERROR_MESSAGE);
+        if (e && e.name === 'AbortError') {
+            if (onAbort) onAbort();
+        } else {
+            onError(NETWORK_ERROR_MESSAGE);
+        }
     }
 }

@@ -6,7 +6,7 @@ Enable on-demand, per-page translation of PDF content using pdf2zh-next with Dee
 ## Requirements
 ### Requirement: Manual per-page translation trigger
 
-The system SHALL allow the user to trigger translation of the currently visible page via a button in the floating toolbar. Translation orchestration and progress UI SHALL reside in dedicated `translator` and `sse-client` frontend modules; behavior SHALL remain identical to the pre-refactor implementation. Stage labels SHALL be fetched from the backend single source of truth rather than hardcoded.
+The system SHALL allow the user to trigger translation of the currently visible page via a button in the floating toolbar. Translation orchestration and progress UI SHALL reside in dedicated `translator`, `sse-client` and `translation-ui-controller` frontend modules; behavior SHALL remain identical to the pre-refactor implementation. Stage labels SHALL be fetched from the backend single source of truth rather than hardcoded. Browser `AbortController` SHALL terminate client fetch/SSE consumption only; server-side task lifecycle SHALL remain governed by SSE disconnect and backend mechanisms.
 
 #### Scenario: Translate untranslated page
 

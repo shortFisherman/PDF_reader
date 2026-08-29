@@ -12,6 +12,7 @@ The supported suite contains:
 
 - `run-ui-copy-tests.mjs` — startup and toolbar copy integrity.
 - `run-error-safety-tests.mjs` — DOM `textContent` error rendering safety and `app.js` no-`insertAdjacentHTML` guard.
+- `run-translation-ui-tests.mjs` — translation UI state machine, abort/signal, session dispose and `app.js` assembly contract.
 - `run-translator-tests.mjs` — SSE parsing and translation callbacks.
 - `run-zoom-tests.mjs` — zoom behavior.
 - `run-alignment-controller-tests.mjs` — dual-column alignment behavior and write exclusivity.

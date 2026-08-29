@@ -5,25 +5,25 @@ import { createAlignmentController } from './modules/alignment-controller.js';
 import { fetchStageLabels, getStageLabel } from './modules/stages.js';
 import { translateCurrentPage, translateBatch } from './modules/translator.js';
 import { setupZoom } from './modules/zoom.js';
+import { TranslationUIController } from './modules/translation-ui-controller.js';
+import { createReaderSession } from './modules/reader-session.js';
 
 const API = '/api';
 let pageCount = 0;
 let pageHeight = 0;
 let pageWidth = 0;
 let currentPage = 0;
-let isTranslating = false;
 let promptVisible = false;
-let statusTimer = null;
 
 let els;
-let io = null;
-let settle = null;
-let zoomInst = null;
+let session = null;
+let translationController = null;
 let alignController = null;
-let progressCleanup = null;
+let zoomInst = null;
 
 function init() {
     els = getElements();
+    translationController = new TranslationUIController({ els });
 
     els.openBtn.addEventListener('click', openPdf);
     els.pdfPathInput.addEventListener('keydown', e => {
@@ -50,94 +50,118 @@ function init() {
     fetchStageLabels();
 }
 
-async function openPdf() {
-    if (zoomInst) { zoomInst.dispose(); zoomInst = null; }
-    if (alignController) { alignController.dispose(); alignController = null; }
-    if (io) { io.observer.disconnect(); io = null; }
-    if (settle) { settle.dispose(); settle = null; }
-    if (progressCleanup) { progressCleanup(); progressCleanup = null; }
+function createProgressCleanup() {
+    function onPageHide() {
+        saveProgress();
+        translationController.abortCurrent();
+    }
+    function onVisibility() {
+        if (document.hidden) saveProgress();
+    }
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+        window.removeEventListener('pagehide', onPageHide);
+        document.removeEventListener('visibilitychange', onVisibility);
+        // 页面卸载/文档释放时 abort 浏览器请求；服务端任务生命周期仍由 SSE 断开与后端机制决定。
+        translationController.abortCurrent();
+    };
+}
 
+async function openPdf() {
     const path = els.pdfPathInput.value.trim();
     if (!path) return;
 
+    let resp;
     try {
-        const resp = await fetch(`${API}/open`, {
+        resp = await fetch(`${API}/open`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path }),
         });
-
-        if (!resp.ok) {
-            const errText = await resp.text();
-            let errMsg = 'Failed to open PDF';
-            try {
-                const errData = JSON.parse(errText);
-                errMsg = (errData && typeof errData.error === 'string' && errData.error.trim()) ? errData.error : errMsg;
-            } catch (e) {}
-            showError(els.fileArea, errMsg);
-            return;
-        }
-
-        const data = await resp.json();
-        pageCount = data.page_count;
-        pageHeight = data.page_height;
-        pageWidth = data.page_width;
-
-        els.leftCol.innerHTML = '';
-        els.rightCol.innerHTML = '';
-
-        for (let i = 0; i < pageCount; i++) {
-            els.leftCol.appendChild(createPageEl(i, 'left', pageWidth, pageHeight));
-            els.rightCol.appendChild(createPageEl(i, 'right', pageWidth, pageHeight));
-        }
-
-        els.fileArea.classList.add('hidden');
-        els.appView.classList.remove('hidden');
-        els.toolbar.classList.remove('hidden');
-
-        settle = createSettleGate(els.leftCol, els.rightCol);
-
-        io = setupIntersectionObserver({
-            load: loadPageImage,
-            unload: unloadPageImage,
-            settle,
-        });
-        setupPageDetection({ container: els.leftCol, settle }, onPageChange);
-
-        alignController = createAlignmentController({ leftEl: els.leftCol, rightEl: els.rightCol });
-        alignController.installScrollListeners();
-
-        zoomInst = setupZoom({
-            columns: [els.leftCol, els.rightCol],
-            appEl: els.appView,
-            onZoomChange: z => { els.zoomLevel.textContent = Math.round(z * 100) + '%'; },
-            alignmentController: alignController,
-        });
-        els.zoomLevel.textContent = '100%';
-        loadTranslatedState();
-
-        const saved = Number.isInteger(data.saved_page) ? data.saved_page : null;
-        if (saved !== null && saved > 0 && saved < pageCount) {
-            requestAnimationFrame(() => scrollToPage(saved));
-        }
-
-        // 卸载期上报：pagehide（主）+ visibilitychange hidden（兜底）
-        function onPageHide() { saveProgress(); }
-        function onVisibility() { if (document.hidden) saveProgress(); }
-        window.addEventListener('pagehide', onPageHide);
-        document.addEventListener('visibilitychange', onVisibility);
-        progressCleanup = () => {
-            window.removeEventListener('pagehide', onPageHide);
-            document.removeEventListener('visibilitychange', onVisibility);
-        };
-
     } catch (e) {
         showError(els.fileArea, '网络错误，请稍后重试');
+        return;
+    }
+
+    if (!resp.ok) {
+        const errText = await resp.text();
+        let errMsg = 'Failed to open PDF';
+        try {
+            const errData = JSON.parse(errText);
+            errMsg = (errData && typeof errData.error === 'string' && errData.error.trim())
+                ? errData.error
+                : errMsg;
+        } catch (e) {}
+        showError(els.fileArea, errMsg);
+        return; // 失败打开保留旧 session（与 409 语义一致）
+    }
+
+    const data = await resp.json();
+
+    // 仅在新文档 open 成功、准备替换 DOM 时才释放旧 session，失败打开不销毁旧文档。
+    if (session) {
+        session.dispose();
+    }
+    alignController = null;
+    zoomInst = null;
+
+    pageCount = data.page_count;
+    pageHeight = data.page_height;
+    pageWidth = data.page_width;
+
+    els.leftCol.innerHTML = '';
+    els.rightCol.innerHTML = '';
+
+    for (let i = 0; i < pageCount; i++) {
+        els.leftCol.appendChild(createPageEl(i, 'left', pageWidth, pageHeight));
+        els.rightCol.appendChild(createPageEl(i, 'right', pageWidth, pageHeight));
+    }
+
+    els.fileArea.classList.add('hidden');
+    els.appView.classList.remove('hidden');
+    els.toolbar.classList.remove('hidden');
+
+    const settle = createSettleGate(els.leftCol, els.rightCol);
+    const io = setupIntersectionObserver({
+        load: loadPageImage,
+        unload: unloadPageImage,
+        settle,
+    });
+    setupPageDetection({ container: els.leftCol, settle }, onPageChange);
+
+    const newAlignController = createAlignmentController({ leftEl: els.leftCol, rightEl: els.rightCol });
+    newAlignController.installScrollListeners();
+
+    const newZoom = setupZoom({
+        columns: [els.leftCol, els.rightCol],
+        appEl: els.appView,
+        onZoomChange: z => { els.zoomLevel.textContent = Math.round(z * 100) + '%'; },
+        alignmentController: newAlignController,
+    });
+    els.zoomLevel.textContent = '100%';
+    zoomInst = newZoom;
+
+    const progressCleanup = createProgressCleanup();
+    session = createReaderSession({
+        zoom: zoomInst,
+        alignment: newAlignController,
+        io,
+        settle,
+        progressCleanup,
+    });
+    alignController = newAlignController;
+
+    loadTranslatedState();
+
+    const saved = Number.isInteger(data.saved_page) ? data.saved_page : null;
+    if (saved !== null && saved > 0 && saved < pageCount) {
+        requestAnimationFrame(() => scrollToPage(saved));
     }
 }
 
 function loadPageImage(container, onLoadCallback) {
-    const page = parseInt(container.dataset.page);
+    const page = parseInt(container.dataset.page, 10);
     const side = container.dataset.side;
 
     if (container.dataset.loaded === 'true') return;
@@ -173,7 +197,7 @@ function unloadPageImage(container) {
     placeholder.className = 'page-placeholder';
     const ph = calculatePlaceholderHeight(pageWidth, pageHeight);
     placeholder.style.setProperty('--page-ratio', `${ph}%`);
-    placeholder.textContent = `Page ${parseInt(container.dataset.page) + 1}`;
+    placeholder.textContent = `Page ${parseInt(container.dataset.page, 10) + 1}`;
 
     img.replaceWith(placeholder);
     container.dataset.loaded = 'false';
@@ -230,105 +254,69 @@ function onPageChange(pageNum) {
     }
 }
 
-async function onTranslateClick() {
-    if (isTranslating) return;
+function refreshSinglePage(targetPage) {
+    const rightEl = els.rightCol.querySelector(`.page-container[data-page="${targetPage}"]`);
+    if (rightEl) {
+        if (rightEl.dataset.loaded === 'true') {
+            unloadPageImage(rightEl);
+            loadPageImage(rightEl, function () {
+                if (alignController) alignController.onImageLoaded('right', targetPage);
+            });
+        }
+        rightEl.classList.add('translated');
+    }
+    loadTranslatedState();
+}
+
+function refreshBatchRange(from, to) {
+    for (let p = from - 1; p <= to - 1; p++) {
+        const rightEl = els.rightCol.querySelector(`.page-container[data-page="${p}"]`);
+        if (rightEl) {
+            if (rightEl.dataset.loaded === 'true') {
+                unloadPageImage(rightEl);
+                loadPageImage(rightEl, function () {
+                    if (alignController) alignController.onImageLoaded('right', p);
+                });
+            }
+            rightEl.classList.add('translated');
+        }
+    }
+    loadTranslatedState();
+}
+
+function onTranslateClick() {
     const targetPage = currentPage;
-    isTranslating = true;
-    setBatchControlsDisabled(true);
-    els.translateBtn.disabled = true;
-    els.translateBtn.textContent = 'Translating...';
-    els.progressBar.classList.add('active');
-    els.progressFill.style.width = '0%';
-    els.progressStatusText.textContent = '';
-    els.progressStatusText.classList.remove('error', 'done');
-    if (statusTimer) {
-        clearTimeout(statusTimer);
-        statusTimer = null;
-    }
-
-    try {
-        await translateCurrentPage(targetPage, {
-            prompt: els.promptInput.value.trim() || null,
-            onStageChange(stage, labelText) {
-                els.progressStatusText.textContent = labelText;
-                if (stage === 'finish') {
-                    els.progressStatusText.classList.add('done');
-                    els.progressStatusText.classList.remove('error');
-                } else {
-                    els.progressStatusText.classList.remove('done', 'error');
-                }
-            },
-            onProgress(percent) {
-                els.progressFill.style.width = `${percent}%`;
-            },
-            onFinish() {
-                els.progressFill.style.width = '100%';
-                els.progressStatusText.textContent = getStageLabel('finish');
-                els.progressStatusText.classList.add('done');
-                els.progressStatusText.classList.remove('error');
-                statusTimer = setTimeout(() => {
-                    els.progressBar.classList.remove('active');
-                    els.progressStatusText.textContent = '';
-                    els.progressStatusText.classList.remove('done', 'error');
-                }, 2000);
-
-                const rightEl = els.rightCol.querySelector(`.page-container[data-page="${targetPage}"]`);
-                if (rightEl) {
-                    if (rightEl.dataset.loaded === 'true') {
-                        unloadPageImage(rightEl);
-                        loadPageImage(rightEl, function () {
-                            if (alignController) alignController.onImageLoaded('right', targetPage);
-                        });
-                    }
-                    rightEl.classList.add('translated');
-                }
-                loadTranslatedState();
-            },
-            onError(message) {
-                els.progressBar.classList.remove('active');
-                els.progressStatusText.textContent = message;
-                els.progressStatusText.classList.add('error');
-                els.progressStatusText.classList.remove('done');
-                statusTimer = setTimeout(() => {
-                    els.progressStatusText.textContent = '';
-                    els.progressStatusText.classList.remove('error', 'done');
-                }, 3000);
-            },
-        });
-    } finally {
-        isTranslating = false;
-        els.translateBtn.disabled = false;
-        setBatchControlsDisabled(false);
-        els.translateBtn.textContent = 'Translate';
-    }
+    translationController.run({
+        prefix: '',
+        finishLabel: getStageLabel('finish'),
+        task: ({ signal, onStage, onProgress, onFinish, onError, onAbort }) =>
+            translateCurrentPage(targetPage, {
+                prompt: els.promptInput.value.trim() || null,
+                signal,
+                onStageChange: onStage,
+                onProgress,
+                onFinish,
+                onError,
+                onAbort,
+            }),
+        onSucceeded: () => refreshSinglePage(targetPage),
+    });
 }
 
 const BATCH_CONFIRM_THRESHOLD = 10;
 
-function setBatchControlsDisabled(disabled) {
-    els.rangeTranslateBtn.disabled = disabled;
-    els.fullTranslateBtn.disabled = disabled;
-    els.fromPage.disabled = disabled;
-    els.toPage.disabled = disabled;
-}
-
-async function runBatchTranslate(from, to) {
-    if (isTranslating) return;
-
+function runBatchTranslate(from, to) {
     const pageCnt = pageCount;
     if (!Number.isInteger(from) || !Number.isInteger(to)) {
-        els.progressStatusText.textContent = '请输入有效页码';
-        els.progressStatusText.classList.add('error');
+        translationController.showValidationError('请输入有效页码');
         return;
     }
     if (from < 1 || to < 1 || from > pageCnt || to > pageCnt) {
-        els.progressStatusText.textContent = '页码超出范围';
-        els.progressStatusText.classList.add('error');
+        translationController.showValidationError('页码超出范围');
         return;
     }
     if (from > to) {
-        els.progressStatusText.textContent = '起页不能大于止页';
-        els.progressStatusText.classList.add('error');
+        translationController.showValidationError('起页不能大于止页');
         return;
     }
 
@@ -337,88 +325,33 @@ async function runBatchTranslate(from, to) {
         if (!window.confirm(`翻译 ${rangeCount} 页，预计花费较长时间，确认翻译？`)) return;
     }
 
-    isTranslating = true;
-    setBatchControlsDisabled(true);
-    els.translateBtn.disabled = true;
-    els.translateBtn.textContent = 'Translating...';
-    els.progressBar.classList.add('active');
-    els.progressFill.style.width = '0%';
-    els.progressStatusText.textContent = `翻译第 ${from}-${to} 页（共 ${rangeCount} 页）· `;
-    els.progressStatusText.classList.remove('error', 'done');
-    if (statusTimer) { clearTimeout(statusTimer); statusTimer = null; }
-
-    try {
-        await translateBatch(from, to, {
-            prompt: els.promptInput.value.trim() || null,
-            onBatchInfo(f, t, total) {
-                els.progressStatusText.textContent = `翻译第 ${f}-${t} 页（共 ${total} 页）· `;
-            },
-            onStageChange(stage, labelText) {
-                const base = `翻译第 ${from}-${to} 页（共 ${rangeCount} 页）· `;
-                els.progressStatusText.textContent = base + labelText;
-                if (stage === 'finish') {
-                    els.progressStatusText.classList.add('done');
-                    els.progressStatusText.classList.remove('error');
-                } else {
-                    els.progressStatusText.classList.remove('done', 'error');
-                }
-            },
-            onProgress(percent) {
-                els.progressFill.style.width = `${percent}%`;
-            },
-            onFinish() {
-                els.progressFill.style.width = '100%';
-                els.progressStatusText.textContent = getStageLabel('finish');
-                els.progressStatusText.classList.add('done');
-                els.progressStatusText.classList.remove('error');
-                statusTimer = setTimeout(() => {
-                    els.progressBar.classList.remove('active');
-                    els.progressStatusText.textContent = '';
-                    els.progressStatusText.classList.remove('done', 'error');
-                }, 2000);
-
-                // Batch refresh right-column translated images in range
-                for (let p = from - 1; p <= to - 1; p++) {
-                    const rightEl = els.rightCol.querySelector(`.page-container[data-page="${p}"]`);
-                    if (rightEl) {
-                        if (rightEl.dataset.loaded === 'true') {
-                            unloadPageImage(rightEl);
-                            loadPageImage(rightEl, function () {
-                                if (alignController) alignController.onImageLoaded('right', p);
-                            });
-                        }
-                        rightEl.classList.add('translated');
-                    }
-                }
-                loadTranslatedState();
-            },
-            onError(message) {
-                els.progressBar.classList.remove('active');
-                els.progressStatusText.textContent = message;
-                els.progressStatusText.classList.add('error');
-                els.progressStatusText.classList.remove('done');
-                statusTimer = setTimeout(() => {
-                    els.progressStatusText.textContent = '';
-                    els.progressStatusText.classList.remove('error', 'done');
-                }, 3000);
-            },
-        });
-    } finally {
-        isTranslating = false;
-        setBatchControlsDisabled(false);
-        els.translateBtn.disabled = false;
-        els.translateBtn.textContent = 'Translate';
-    }
+    translationController.run({
+        prefix: `翻译第 ${from}-${to} 页（共 ${rangeCount} 页）· `,
+        finishLabel: getStageLabel('finish'),
+        task: ({ signal, onStage, onProgress, onFinish, onError, onAbort, onPrefix }) =>
+            translateBatch(from, to, {
+                prompt: els.promptInput.value.trim() || null,
+                signal,
+                onBatchInfo: (f, t, total) =>
+                    onPrefix(`翻译第 ${f}-${t} 页（共 ${total} 页）· `),
+                onStageChange: onStage,
+                onProgress,
+                onFinish,
+                onError,
+                onAbort,
+            }),
+        onSucceeded: () => refreshBatchRange(from, to),
+    });
 }
 
-async function onBatchTranslateClick() {
+function onBatchTranslateClick() {
     const from = parseInt(els.fromPage.value, 10);
     const to = parseInt(els.toPage.value, 10);
-    await runBatchTranslate(from, to);
+    runBatchTranslate(from, to);
 }
 
-async function onFullTranslateClick() {
-    await runBatchTranslate(1, pageCount);
+function onFullTranslateClick() {
+    runBatchTranslate(1, pageCount);
 }
 
 init();

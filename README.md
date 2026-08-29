@@ -103,6 +103,7 @@ $env:MODEL_API_KEY = 'your-api-key'
 - 服务端日志保留完整异常与 traceback；客户端永远不会收到异常类名、内部文件路径、API Key、提示词或上游原始响应。
 - SSE 错误事件统一为 `{"type": "error", "code": <稳定错误码>, "error": <安全消息>}`；上游 `error` 事件、`TranslationError`、普通异常与“无翻译结果”均只发送安全摘要。
 - 前端错误文本一律经 DOM 节点 `textContent` 呈现，不拼接未转义 HTML。
+- 前端翻译请求使用 `AbortController` 终止浏览器 fetch/SSE 消费；浏览器 abort 不是服务端取消确认，服务端任务生命周期仍由 SSE 断开与后端机制决定。
 - 服务默认绑定 `127.0.0.1`。若配置为 `localhost`/`127.0.0.0/8`/`::1` 之外的地址，启动日志会输出醒目的安全 WARNING（服务无认证，可能暴露本地 PDF 与 API 配置），但不会阻止启动。
 
 ## 任务日志上下文
@@ -239,7 +240,9 @@ src/pdf_reader/translation_lifecycle.py     译文持久化与资源清理
 src/pdf_reader/translation_settings.py      pdf2zh-next 参数组装
 pyproject.toml                  可安装包元数据
 static/app.js                  阅读器前端入口
-static/modules/                对齐、懒加载、缩放和翻译模块
+static/modules/translation-ui-controller.js  翻译 UI 状态机（busy/progress/stage/error/abort/reset）
+static/modules/reader-session.js             文档级资源 session/dispose 边界
+static/modules/                对齐、懒加载、缩放、SSE、翻译与状态机模块
 tests/                         Python 与前端测试
 ```
 
