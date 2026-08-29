@@ -306,7 +306,7 @@ TranslationCoordinator
 - 完成日期：2026-08-29
 - 完成提交：`b2df768`
 - 验证证据：新增 `tests/test_system_concurrency_failure.py`（16 个系统级用例，覆盖下方九项）；执行 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"`，269 个 Python 测试与全部前端测试通过。
-- 剩余问题：无新增剩余问题。系统级用例仍以受控 fake 替代真实 pdf2zh-next 网络翻译，真实上游事件契约由既有模块级测试覆盖；join timeout 后保留的孤儿临时目录自动回收仍属 P3-05 范围。
+- 剩余问题：无新增剩余问题。系统级用例仍以受控 fake 替代真实 pdf2zh-next 网络翻译，真实上游事件契约由既有模块级测试覆盖；join timeout 后保留的孤儿临时目录自动回收仍属 P3-05 范围。join-timeout 用例由测试自身显式释放 fake upstream 并 join 真实 worker（断言 `is_alive` 为 False），测试进程内不残留后台线程；保留的目录只由 pytest 临时目录清理。
 
 #### 必须覆盖的场景
 

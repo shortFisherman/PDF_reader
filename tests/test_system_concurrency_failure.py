@@ -20,7 +20,8 @@ Test matrix (each row maps to one or more tests below):
 4. (d) SSE disconnected and the worker eventually fails; the failure is
    contained, dirs removed after exit, job released, document untouched.
 5. (e) Worker ignores cancellation past the join timeout: dirs are kept for
-   recovery, job slot is still released as cancelled.
+   recovery, job slot is still released as cancelled, and the test releases
+   the worker afterwards and joins it so no daemon thread leaks past the case.
 6. (f) temp-dir creation, output-dir creation and PDF save failures each
    produce an SSE error, clean up, release the job and allow a retry.
 7. (g) Single-page and batch commit failures leave right.pdf/translated_pages
@@ -34,7 +35,6 @@ Test matrix (each row maps to one or more tests below):
    document_id, coordinator state, worker state and temp-dir cleanup.
 """
 
-import asyncio
 import csv
 import os
 import tempfile
@@ -88,6 +88,7 @@ class ControlledUpstream:
         self.release = threading.Event()
         self.started = threading.Event()
         self.progress_yielded = threading.Event()
+        self.stuck_blocked = threading.Event()
         self.finish_yielded = threading.Event()
         self.raised = threading.Event()
         self.result = result
@@ -105,7 +106,11 @@ class ControlledUpstream:
         }
         self.progress_yielded.set()
         if self._stuck:
-            await asyncio.sleep(3600)
+            self.stuck_blocked.set()
+            # Block until the test releases us.  A threading-Event wait cannot
+            # observe TranslationStream.cancel(), so the worker stays alive
+            # through the join-timeout assertion without a long sleep.
+            self.release.wait(timeout=30)
             return
         self.release.wait(timeout=60)
         if self._fail_error is not None:
@@ -436,6 +441,7 @@ def test_sse_disconnect_join_timeout_keeps_dirs_and_releases_task(system_app, sy
     resp = system_client.post("/api/translate/0", json={}, buffered=False)
     assert resp.status_code == 200
     assert source.progress_yielded.wait(timeout=5)
+    assert source.stuck_blocked.wait(timeout=5), "worker must be blocked before disconnect"
     assert streams[0].is_alive is True
 
     resp.close()
@@ -445,6 +451,13 @@ def test_sse_disconnect_join_timeout_keeps_dirs_and_releases_task(system_app, sy
     assert len(created) == 2
     assert all(p.exists() for p in created), "dirs must be kept for recovery"
     _assert_marker(state, marker)
+
+    # Test-controlled teardown: release the fake upstream, then explicitly
+    # join the real worker so no daemon thread outlives this test case.
+    source.release.set()
+    streams[0].join(timeout=5)
+    assert streams[0].is_alive is False, "worker must be joined before the case ends"
+    assert all(p.exists() for p in created), "retained dirs must not be deleted by production logic"
 
 
 # --- (f) temp/output dir and PDF save failures -------------------------
