@@ -2,13 +2,15 @@ import os
 import sys
 from unittest.mock import patch
 
+import pdf_reader
+
 
 def test_import_config_without_config_toml():
     with patch.dict(sys.modules):
-        if "config" in sys.modules:
-            del sys.modules["config"]
+        sys.modules.pop("pdf_reader.config", None)
+        pdf_reader.__dict__.pop("config", None)
         with patch("builtins.open", side_effect=FileNotFoundError):
-            import config
+            from pdf_reader import config
 
             assert config.CONFIG == {}
             assert config.MODEL == ""
@@ -17,7 +19,7 @@ def test_import_config_without_config_toml():
 
 
 def test_validate_passes_when_api_key_from_env(monkeypatch):
-    import config
+    from pdf_reader import config
 
     monkeypatch.setattr(config, "MODEL_API_KEY", "sk-from-env")
     monkeypatch.setattr(config, "MODEL", "some-model")
@@ -27,9 +29,9 @@ def test_validate_passes_when_api_key_from_env(monkeypatch):
 
 def test_env_model_api_key_overrides_file_value():
     with patch.dict(sys.modules):
-        if "config" in sys.modules:
-            del sys.modules["config"]
+        sys.modules.pop("pdf_reader.config", None)
+        pdf_reader.__dict__.pop("config", None)
         with patch.dict(os.environ, {"MODEL_API_KEY": "sk-env-key"}):
-            import config
+            from pdf_reader import config
 
             assert config.MODEL_API_KEY == "sk-env-key"

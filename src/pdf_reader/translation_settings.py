@@ -5,8 +5,8 @@ from pdf2zh_next.config.model import BasicSettings
 from pdf2zh_next.config.model import PDFSettings as Pdf2zhPDFSettings
 from pdf2zh_next.config.model import TranslationSettings as Pdf2zhTranslationSettings
 
-import config
-from engine_resolver import build_engine_kwargs, resolve_engine
+from pdf_reader import config
+from pdf_reader.engine_resolver import build_engine_kwargs, resolve_engine
 
 logger = logging.getLogger("pdf_reader.engine")
 

@@ -49,7 +49,7 @@ def test_translated_pages_no_doc(test_client):
 def test_debug_trace_logger_exists():
     import logging
 
-    from debug_trace import trace_logger
+    from pdf_reader.debug_trace import trace_logger
 
     assert isinstance(trace_logger, logging.Logger)
     assert trace_logger.name == "pdf_reader.debug_trace"
@@ -58,7 +58,7 @@ def test_debug_trace_logger_exists():
 
 def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, monkeypatch):
     """build_settings receives cumulative glossary path; merge happens after translation."""
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     # 1. Open PDF, create cumulative glossary
     app_state.open_pdf(str(sample_pdf), sha256_func)
@@ -108,15 +108,15 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     def fake_merge(cumulative, auto):  # noqa: ANN202
         merge_calls.append((str(cumulative), str(auto)))
 
-    monkeypatch.setattr("routes.build_settings", fake_build_settings)
-    monkeypatch.setattr("translation_orchestrator.do_translate_async_stream", fake_translate_stream)
-    monkeypatch.setattr("glossary_service.merge_glossary_csvs", fake_merge)
+    monkeypatch.setattr("pdf_reader.routes.build_settings", fake_build_settings)
+    monkeypatch.setattr("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_translate_stream)
+    monkeypatch.setattr("pdf_reader.glossary_service.merge_glossary_csvs", fake_merge)
 
     # 5. Create Flask app with our state
     app = Flask(__name__)
     app.config["app_state"] = app_state
     app.config["TESTING"] = True
-    from routes import register_routes
+    from pdf_reader.routes import register_routes
 
     register_routes(app)
 
@@ -137,13 +137,13 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
 
 
 def test_translate_page_out_of_range(app_state, sample_pdf):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
     from flask import Flask
 
-    from routes import register_routes
+    from pdf_reader.routes import register_routes
 
     app = Flask(__name__)
     app.config["app_state"] = app_state
@@ -184,8 +184,8 @@ def test_get_stages(test_client):
 def test_translate_batch_validation_errors(app_state, sample_pdf):
     from flask import Flask
 
-    from file_hash import sha256 as sha256_func
-    from routes import register_routes
+    from pdf_reader.file_hash import sha256 as sha256_func
+    from pdf_reader.routes import register_routes
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     app = Flask(__name__)
@@ -214,12 +214,12 @@ def test_translate_batch_no_doc(test_client):
 
 
 def test_open_response_includes_saved_page_key(app_state, sample_pdf):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     from flask import Flask
 
-    from routes import register_routes
+    from pdf_reader.routes import register_routes
 
     app = Flask(__name__)
     app.config["app_state"] = app_state
@@ -235,12 +235,12 @@ def test_open_response_includes_saved_page_key(app_state, sample_pdf):
 
 
 def test_save_reading_progress_route_success(app_state, sample_pdf, tmp_path):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     from flask import Flask
 
-    from routes import register_routes
+    from pdf_reader.routes import register_routes
 
     app = Flask(__name__)
     app.config["app_state"] = app_state
@@ -261,8 +261,8 @@ def test_save_reading_progress_route_success(app_state, sample_pdf, tmp_path):
 def test_save_reading_progress_route_no_doc():
     from flask import Flask
 
-    from routes import register_routes
-    from state import AppState
+    from pdf_reader.routes import register_routes
+    from pdf_reader.state import AppState
 
     app = Flask(__name__)
     app.config["app_state"] = AppState(Path("/tmp/cache_no_doc_routes"))
@@ -276,13 +276,13 @@ def test_save_reading_progress_route_no_doc():
 
 
 def test_save_reading_progress_route_out_of_range(app_state, sample_pdf):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     page_count = app_state.page_count
     from flask import Flask
 
-    from routes import register_routes
+    from pdf_reader.routes import register_routes
 
     app = Flask(__name__)
     app.config["app_state"] = app_state
@@ -299,12 +299,12 @@ def test_save_reading_progress_route_out_of_range(app_state, sample_pdf):
 
 
 def test_save_reading_progress_route_non_integer(app_state, sample_pdf):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     from flask import Flask
 
-    from routes import register_routes
+    from pdf_reader.routes import register_routes
 
     app = Flask(__name__)
     app.config["app_state"] = app_state
@@ -326,8 +326,8 @@ def test_translate_batch_emits_batch_info_and_finish(app_state, sample_pdf, monk
 
     from flask import Flask
 
-    from file_hash import sha256 as sha256_func
-    from routes import register_routes
+    from pdf_reader.file_hash import sha256 as sha256_func
+    from pdf_reader.routes import register_routes
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     page_count = app_state.page_count
@@ -349,9 +349,9 @@ def test_translate_batch_emits_batch_info_and_finish(app_state, sample_pdf, monk
         mock_result.auto_extracted_glossary_path = None
         yield {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}}
 
-    monkeypatch.setattr("routes.build_settings", fake_build_settings)
-    monkeypatch.setattr("translation_orchestrator.do_translate_async_stream", fake_translate_stream)
-    monkeypatch.setattr("glossary_service.merge_glossary_csvs", lambda c, a: None)
+    monkeypatch.setattr("pdf_reader.routes.build_settings", fake_build_settings)
+    monkeypatch.setattr("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_translate_stream)
+    monkeypatch.setattr("pdf_reader.glossary_service.merge_glossary_csvs", lambda c, a: None)
 
     app = Flask(__name__)
     app.config["app_state"] = app_state
@@ -388,8 +388,8 @@ def test_api_error_contract_400_and_404_branches(test_client):
 
 
 def test_api_error_contract_with_open_document(app_state, sample_pdf):
-    from file_hash import sha256 as sha256_func
-    from routes import register_routes
+    from pdf_reader.file_hash import sha256 as sha256_func
+    from pdf_reader.routes import register_routes
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     app = Flask(__name__)
@@ -437,9 +437,9 @@ def test_method_not_allowed_returns_json_error(test_client):
 def test_internal_error_sanitizes_response_and_keeps_log(caplog, monkeypatch, tmp_path):
     import logging
 
-    from routes import register_routes
-    from state import AppState
-    from translation_coordinator import TranslationCoordinator
+    from pdf_reader.routes import register_routes
+    from pdf_reader.state import AppState
+    from pdf_reader.translation_coordinator import TranslationCoordinator
 
     state = AppState(tmp_path / "cache")
     app = Flask(__name__)

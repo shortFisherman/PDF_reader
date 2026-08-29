@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pymupdf
 
-from pdf_extraction import extract_pages, extract_single_page
+from pdf_reader.pdf_extraction import extract_pages, extract_single_page
 
 
 def test_extract_single_page_produces_one_page_pdf():

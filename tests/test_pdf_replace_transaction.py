@@ -15,8 +15,8 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from file_hash import sha256
-from pdf_renderer import render_page
+from pdf_reader.file_hash import sha256
+from pdf_reader.pdf_renderer import render_page
 
 
 def _make_translated_pdf(path: Path, pages: int = 1, label: str = "TRANS") -> Path:
@@ -132,7 +132,7 @@ def _assert_followup_replace_works(app_state, tmp_path, document_id) -> None:
 
 
 def test_single_replace_open_failure_keeps_committed_state(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -148,7 +148,7 @@ def test_single_replace_open_failure_keeps_committed_state(app_state, sample_pdf
 
 
 def test_single_replace_workcopy_open_failure_keeps_committed_state(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -164,7 +164,7 @@ def test_single_replace_workcopy_open_failure_keeps_committed_state(app_state, s
 
 
 def test_single_replace_delete_failure_keeps_committed_state(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -181,7 +181,7 @@ def test_single_replace_delete_failure_keeps_committed_state(app_state, sample_p
 
 
 def test_single_replace_insert_failure_keeps_committed_state(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -198,7 +198,7 @@ def test_single_replace_insert_failure_keeps_committed_state(app_state, sample_p
 
 
 def test_single_replace_save_failure_keeps_committed_state(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -215,7 +215,7 @@ def test_single_replace_save_failure_keeps_committed_state(app_state, sample_pdf
 
 
 def test_single_replace_src_close_failure_keeps_committed_state(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -232,7 +232,7 @@ def test_single_replace_src_close_failure_keeps_committed_state(app_state, sampl
 
 
 def test_single_replace_old_doc_close_failure_recovers_handle(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -249,7 +249,7 @@ def test_single_replace_old_doc_close_failure_recovers_handle(app_state, sample_
 
 
 def test_single_replace_os_replace_failure_keeps_committed_state(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -266,7 +266,7 @@ def test_single_replace_os_replace_failure_keeps_committed_state(app_state, samp
 
 
 def test_single_replace_final_reopen_failure_recovers_from_disk(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -287,7 +287,7 @@ def test_single_replace_final_reopen_failure_recovers_from_disk(app_state, sampl
 
 
 def test_batch_replace_save_failure_keeps_committed_state(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -313,7 +313,7 @@ def test_batch_replace_save_failure_keeps_committed_state(app_state, sample_pdf,
 
 
 def test_batch_replace_os_replace_failure_keeps_committed_state(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id

@@ -6,7 +6,8 @@ from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from sse_stream import (
+from pdf_reader.glossary_service import merge_after_translate
+from pdf_reader.sse_stream import (
     GenerateBatchContext,
     GenerateContext,
     format_batch_info,
@@ -234,8 +235,8 @@ def test_generate_full_flow_byte_level_compatible(tmp_path):
         cache_dir=cache_dir,
     )
 
-    with patch("sse_stream.run_translation", return_value=iter(events)):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             result = list(generate(ctx))
 
     expected = [
@@ -263,8 +264,8 @@ def test_generate_error_event_stops_stream(tmp_path):
         cache_dir=cache_dir,
     )
 
-    with patch("sse_stream.run_translation", return_value=iter(events)):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             result = list(generate(ctx))
 
     assert len(result) == 2
@@ -273,7 +274,7 @@ def test_generate_error_event_stops_stream(tmp_path):
 
 
 def test_generate_translation_error_yields_error_event(tmp_path, caplog):
-    from translation_orchestrator import TranslationError
+    from pdf_reader.translation_orchestrator import TranslationError
 
     events = [{"type": "progress_start", "stage": "layout_analysis"}]
 
@@ -289,8 +290,8 @@ def test_generate_translation_error_yields_error_event(tmp_path, caplog):
         yield from events
         raise TranslationError("thread crashed")
 
-    with patch("sse_stream.run_translation", return_value=error_iter()):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation", return_value=error_iter()):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             with caplog.at_level("WARNING", logger="pdf_reader.translate"):
                 result = list(generate(ctx))
 
@@ -339,16 +340,13 @@ def test_generate_merges_glossary_with_str_auto_path(tmp_path):
     ctx = _make_ctx(
         settings=MagicMock(),
         replace_page=replace_page,
-        merge_glossary=lambda auto_path: __import__("glossary_service").merge_after_translate(
-            cumulative_file,
-            auto_path,
-        ),
+        merge_glossary=lambda auto_path: merge_after_translate(cumulative_file, auto_path),
         glossary_cache_path=glossary_cache,
         cache_dir=work_dir,
     )
 
-    with patch("sse_stream.run_translation", return_value=iter(events)):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             list(generate(ctx))
 
     with open(cumulative_file, newline="", encoding="utf-8") as f:
@@ -378,8 +376,8 @@ def test_generate_passes_through_keepalive_empty_string(tmp_path):
         cache_dir=cache_dir,
     )
 
-    with patch("sse_stream.run_translation", return_value=iter(events)):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             result = list(generate(ctx))
 
     assert result[0] == ""
@@ -401,9 +399,9 @@ def test_generate_cleans_up_on_error_event(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
-        with patch("sse_stream.run_translation", return_value=iter(events)):
-            with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+            with patch("pdf_reader.sse_stream.debug_trace"):
                 list(generate(ctx))
 
     assert not tmpdir.exists()
@@ -423,9 +421,9 @@ def test_generate_cleans_up_on_no_translate_result(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
-        with patch("sse_stream.run_translation", return_value=iter(events)):
-            with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+            with patch("pdf_reader.sse_stream.debug_trace"):
                 list(generate(ctx))
 
     assert not tmpdir.exists()
@@ -460,9 +458,9 @@ def test_generate_cleans_up_on_generator_close(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
-        with patch("sse_stream.run_translation", return_value=iter(events)):
-            with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+            with patch("pdf_reader.sse_stream.debug_trace"):
                 gen = generate(ctx)
                 next(gen)
                 gen.close()
@@ -491,9 +489,9 @@ def test_generate_cleans_up_on_success(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
-        with patch("sse_stream.run_translation", return_value=iter(events)):
-            with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+            with patch("pdf_reader.sse_stream.debug_trace"):
                 list(generate(ctx))
 
     assert not tmpdir.exists()
@@ -511,9 +509,9 @@ def test_generate_cleans_up_on_exception(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
-        with patch("sse_stream.run_translation", side_effect=RuntimeError("boom")):
-            with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("pdf_reader.sse_stream.run_translation", side_effect=RuntimeError("boom")):
+            with patch("pdf_reader.sse_stream.debug_trace"):
                 list(generate(ctx))
 
     assert not tmpdir.exists()
@@ -606,9 +604,9 @@ def test_generate_batch_emits_batch_info_then_progress_then_finish(tmp_path):
     cache_dir.mkdir()
     ctx = _make_batch_ctx(replace_pages=replace_pages, cache_dir=cache_dir)
 
-    with patch("sse_stream.run_translation", return_value=iter(events)):
-        with patch("sse_stream.debug_trace"):
-            with patch("sse_stream.merge_glossary_only") as mg:
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
+            with patch("pdf_reader.sse_stream.merge_glossary_only") as mg:
                 result = list(generate_batch(ctx))
 
     # batch_info present at head
@@ -646,13 +644,13 @@ def test_generate_batch_includes_already_translated_pages(tmp_path):
     )
 
     with patch(
-        "sse_stream.run_translation",
+        "pdf_reader.sse_stream.run_translation",
         return_value=iter(
             [{"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}}]
         ),
     ):
-        with patch("sse_stream.debug_trace"):
-            with patch("sse_stream.merge_glossary_only"):
+        with patch("pdf_reader.sse_stream.debug_trace"):
+            with patch("pdf_reader.sse_stream.merge_glossary_only"):
                 list(generate_batch(ctx))
 
     assert captured_indices == [[0, 1, 2]]
@@ -663,8 +661,8 @@ def test_generate_batch_error_event_stops_stream(tmp_path):
     cache_dir = tmp_path / "c"
     cache_dir.mkdir()
     ctx = _make_batch_ctx(cache_dir=cache_dir)
-    with patch("sse_stream.run_translation", return_value=iter(events)):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             result = list(generate_batch(ctx))
     assert any('"type": "error"' in r for r in result)
     # no finish tail when error
@@ -688,7 +686,7 @@ def test_generate_success_finishes_active_job(tmp_path):
     )
 
     with patch(
-        "sse_stream.run_translation",
+        "pdf_reader.sse_stream.run_translation",
         return_value=iter([{"type": "finish", "translate_result": mock_result}]),
     ):
         list(generate(ctx))
@@ -709,7 +707,7 @@ def test_generate_error_event_fails_active_job(tmp_path):
         cache_dir=cache_dir,
     )
 
-    with patch("sse_stream.run_translation", return_value=iter([{"type": "error", "error": "boom"}])):
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter([{"type": "error", "error": "boom"}])):
         list(generate(ctx))
 
     fail_job.assert_called_once_with("job-error")
@@ -728,7 +726,7 @@ def test_generate_setup_exception_fails_active_job(tmp_path):
         cache_dir=cache_dir,
     )
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=OSError("no temp space")):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=OSError("no temp space")):
         result = list(generate(ctx))
 
     assert any('"type": "error"' in item for item in result)
@@ -774,9 +772,9 @@ def test_generate_disconnect_cancels_worker_and_discards_late_result(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
-        with patch("translation_orchestrator.do_translate_async_stream", slow_completing_source):
-            with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", slow_completing_source):
+            with patch("pdf_reader.sse_stream.debug_trace"):
                 gen = generate(ctx)
                 next(gen)
                 gen.close()
@@ -814,10 +812,10 @@ def test_generate_keeps_dirs_when_worker_survives_join_timeout(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
-        with patch("translation_orchestrator.do_translate_async_stream", stuck_source):
-            with patch("sse_stream.WORKER_JOIN_TIMEOUT", 0.2):
-                with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_source):
+            with patch("pdf_reader.sse_stream.WORKER_JOIN_TIMEOUT", 0.2):
+                with patch("pdf_reader.sse_stream.debug_trace"):
                     gen = generate(ctx)
                     next(gen)
                     gen.close()
@@ -857,9 +855,9 @@ def test_generate_batch_disconnect_cancels_worker(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
-        with patch("translation_orchestrator.do_translate_async_stream", slow_completing_source):
-            with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", slow_completing_source):
+            with patch("pdf_reader.sse_stream.debug_trace"):
                 gen = generate_batch(ctx)
                 next(gen)
                 gen.close()
@@ -881,8 +879,8 @@ def test_generate_upstream_error_event_not_leaked(tmp_path, caplog):
     cache_dir.mkdir()
     ctx = _make_ctx(cache_dir=cache_dir)
 
-    with patch("sse_stream.run_translation", return_value=iter(events)):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             with caplog.at_level("WARNING", logger="pdf_reader.translate"):
                 result = list(generate(ctx))
 
@@ -904,8 +902,8 @@ def test_generate_generic_exception_not_leaked(tmp_path, caplog):
         extract_page=MagicMock(side_effect=RuntimeError(sentinel)),
     )
 
-    with patch("sse_stream.run_translation"):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation"):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             with caplog.at_level("ERROR", logger="pdf_reader.translate"):
                 result = list(generate(ctx))
 
@@ -924,8 +922,8 @@ def test_generate_no_translate_result_sanitized(tmp_path, caplog):
     cache_dir.mkdir()
     ctx = _make_ctx(cache_dir=cache_dir)
 
-    with patch("sse_stream.run_translation", return_value=iter(events)):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             with caplog.at_level("WARNING", logger="pdf_reader.translate"):
                 result = list(generate(ctx))
 
@@ -943,8 +941,8 @@ def test_generate_batch_error_event_not_leaked(tmp_path, caplog):
     cache_dir.mkdir()
     ctx = _make_batch_ctx(cache_dir=cache_dir)
 
-    with patch("sse_stream.run_translation", return_value=iter(events)):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             with caplog.at_level("WARNING", logger="pdf_reader.translate"):
                 result = list(generate_batch(ctx))
 
@@ -957,7 +955,7 @@ def test_generate_batch_error_event_not_leaked(tmp_path, caplog):
 
 def test_generate_batch_translation_error_not_leaked(tmp_path, caplog):
     """批量 TranslationError：客户端固定 translation_error 安全摘要，原始错误只进日志。"""
-    from translation_orchestrator import TranslationError
+    from pdf_reader.translation_orchestrator import TranslationError
 
     sentinel = (
         "BATCH-TRANSLATION sk-secret-555 C:\\Users\\priv\\file /home/user/private/file <img src=x onerror=alert(1)>"
@@ -976,8 +974,8 @@ def test_generate_batch_translation_error_not_leaked(tmp_path, caplog):
         yield {"type": "progress_start", "stage": "layout_analysis"}
         raise TranslationError(sentinel)
 
-    with patch("sse_stream.run_translation", return_value=error_iter()):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation", return_value=error_iter()):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             with caplog.at_level("WARNING", logger="pdf_reader.translate"):
                 result = list(generate_batch(ctx))
 
@@ -1011,9 +1009,9 @@ def test_generate_batch_generic_exception_not_leaked_and_cleans_up(tmp_path, cap
     output_dir = tmp_path / "output"
     output_dir.mkdir()
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
-        with patch("sse_stream.run_translation"):
-            with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch("pdf_reader.sse_stream.run_translation"):
+            with patch("pdf_reader.sse_stream.debug_trace"):
                 with caplog.at_level("ERROR", logger="pdf_reader.translate"):
                     result = list(generate_batch(ctx))
 

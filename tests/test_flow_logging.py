@@ -6,17 +6,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import debug_trace
-from logging_config import setup_logging
-from sse_stream import (
+from pdf_reader import debug_trace
+from pdf_reader.logging_config import setup_logging
+from pdf_reader.pdf_renderer import render_page
+from pdf_reader.sse_stream import (
     GenerateBatchContext,
     GenerateContext,
     generate,
     generate_batch,
 )
-from state import AppState
-from task_logging import TaskContext
-from translation_orchestrator import TranslationError, run_translation
+from pdf_reader.state import AppState
+from pdf_reader.task_logging import TaskContext
+from pdf_reader.translation_orchestrator import TranslationError, run_translation
 
 
 def test_open_pdf_logs_info_with_hash_and_pages(sample_pdf, tmp_path, caplog):
@@ -24,7 +25,7 @@ def test_open_pdf_logs_info_with_hash_and_pages(sample_pdf, tmp_path, caplog):
     setup_logging(False)
     caplog.set_level(logging.INFO, logger="pdf_reader.state")
 
-    from file_hash import sha256
+    from pdf_reader.file_hash import sha256
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
@@ -46,7 +47,7 @@ def test_replace_page_logs_info_on_success(app_state, sample_pdf, caplog):
     setup_logging(False)
     caplog.set_level(logging.INFO, logger="pdf_reader.state")
 
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -76,7 +77,7 @@ def test_replace_page_logs_error_and_reraises_on_failure(app_state, sample_pdf, 
     setup_logging(False)
     caplog.set_level(logging.INFO, logger="pdf_reader.state")
 
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -96,7 +97,7 @@ def test_replace_pages_logs_info_on_success(app_state, sample_pdf, caplog):
     setup_logging(False)
     caplog.set_level(logging.INFO, logger="pdf_reader.state")
 
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -122,12 +123,12 @@ def test_replace_pages_logs_info_on_success(app_state, sample_pdf, caplog):
 
 def test_render_page_debug_off_no_output(app_state, sample_pdf, caplog):
     """debug off 时 render_page 不产生 INFO 级别记录."""
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     caplog.set_level(logging.INFO, logger="pdf_reader.render")
 
-    app_state.render_page("left", 0, lambda doc, pn, dpi: __import__("pdf_renderer").render_page(doc, pn, dpi), 200)
+    app_state.render_page("left", 0, render_page, 200)
 
     records = [r for r in caplog.records if r.name == "pdf_reader.render"]
     assert len(records) == 0, f"expected no INFO from render_page, got: {[r.message for r in records]}"
@@ -135,12 +136,12 @@ def test_render_page_debug_off_no_output(app_state, sample_pdf, caplog):
 
 def test_render_page_debug_on_logs_debug(app_state, sample_pdf, caplog):
     """debug on 时 render_page 产生 DEBUG 记录含 [render] page=N."""
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     caplog.set_level(logging.DEBUG, logger="pdf_reader.render")
 
-    app_state.render_page("left", 0, lambda doc, pn, dpi: __import__("pdf_renderer").render_page(doc, pn, dpi), 200)
+    app_state.render_page("left", 0, render_page, 200)
 
     records = [r for r in caplog.records if r.name == "pdf_reader.render" and r.levelno == logging.DEBUG]
     assert len(records) >= 1, f"expected DEBUG from render_page, got: {[r.message for r in caplog.records]}"
@@ -154,7 +155,7 @@ def test_replace_pages_logs_error_and_reraises_on_failure(app_state, sample_pdf,
     setup_logging(False)
     caplog.set_level(logging.INFO, logger="pdf_reader.state")
 
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -186,7 +187,7 @@ def test_translate_thread_lifecycle_logging_debug_off(caplog):
         for evt in events:
             yield evt
 
-    with patch("translation_orchestrator.do_translate_async_stream", fake_stream):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_stream):
         list(run_translation(MagicMock(), "fake.pdf", flow_label="page=1"))
 
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
@@ -205,7 +206,7 @@ def test_translate_thread_exception_logging(caplog):
         yield {"type": "progress_start"}
         raise RuntimeError("translation crash")
 
-    with patch("translation_orchestrator.do_translate_async_stream", failing_stream):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", failing_stream):
         with pytest.raises(TranslationError, match="translation crash"):
             list(run_translation(MagicMock(), "fake.pdf", flow_label="page=1"))
 
@@ -282,7 +283,7 @@ def test_generate_logging_info_messages(caplog, tmp_path):
         task_ctx=task_ctx,
     )
 
-    with patch("translation_orchestrator.do_translate_async_stream", fake_stream):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_stream):
         list(generate(ctx))
 
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
@@ -343,7 +344,7 @@ def test_generate_batch_logging_info_messages(caplog, tmp_path):
         task_ctx=task_ctx,
     )
 
-    with patch("translation_orchestrator.do_translate_async_stream", fake_stream):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_stream):
         list(generate_batch(ctx))
 
     records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]

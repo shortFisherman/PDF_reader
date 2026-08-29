@@ -14,11 +14,11 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from file_hash import sha256
+from pdf_reader.file_hash import sha256
 
 
 def _identity_api() -> tuple[type, type]:
-    from state import DocumentSnapshot, StaleDocumentError
+    from pdf_reader.state import DocumentSnapshot, StaleDocumentError
 
     return DocumentSnapshot, StaleDocumentError
 
@@ -356,7 +356,7 @@ def test_matching_glossary_merge_invokes_callback(app_state, sample_pdf, tmp_pat
 def test_stale_glossary_merge_with_real_merger_keeps_current_glossary(app_state, sample_pdf, tmp_path):
     """The final AppState boundary must stop a stale merge before the real merger runs."""
 
-    from glossary_service import merge_after_translate
+    from pdf_reader.glossary_service import merge_after_translate
 
     _, StaleDocumentError = _identity_api()
     pdf_b = _make_pdf(tmp_path / "b.pdf", label="B")

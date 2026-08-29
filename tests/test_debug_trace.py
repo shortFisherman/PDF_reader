@@ -2,7 +2,7 @@ import io
 import logging
 from unittest.mock import patch
 
-import debug_trace
+from pdf_reader import debug_trace
 
 
 def test_trace_logger_exists():
@@ -56,7 +56,7 @@ def test_full_debug_trace_bytes_identical(tmp_path):
     debug_trace.trace_logger.setLevel(logging.DEBUG)
 
     try:
-        with patch("debug_trace.config") as mock_config:
+        with patch("pdf_reader.debug_trace.config") as mock_config:
             mock_config.DEBUG = True
 
             with debug_trace.debug_session(glossary_path, page=1):
@@ -102,7 +102,7 @@ def test_level_stratification_when_debug_false(tmp_path):
     debug_trace.trace_logger.setLevel(logging.INFO)
 
     try:
-        with patch("debug_trace.config") as mock_config:
+        with patch("pdf_reader.debug_trace.config") as mock_config:
             mock_config.DEBUG = False
 
             with debug_trace.debug_session(glossary_path, page=1):
@@ -127,7 +127,7 @@ def test_debug_session_creates_and_removes_file_handler(tmp_path):
     glossary_path = tmp_path / "glossary"
     glossary_path.mkdir()
 
-    with patch("debug_trace.config") as mock_config:
+    with patch("pdf_reader.debug_trace.config") as mock_config:
         mock_config.DEBUG = True
 
         with debug_trace.debug_session(glossary_path, page=3):
@@ -144,7 +144,7 @@ def test_debug_session_no_op_when_debug_false(tmp_path):
     glossary_path = tmp_path / "glossary"
     glossary_path.mkdir()
 
-    with patch("debug_trace.config") as mock_config:
+    with patch("pdf_reader.debug_trace.config") as mock_config:
         mock_config.DEBUG = False
 
         with debug_trace.debug_session(glossary_path, page=3):
@@ -154,7 +154,7 @@ def test_debug_session_no_op_when_debug_false(tmp_path):
 
 def test_debug_session_no_op_when_glossary_path_none():
     """debug_session is a no-op when glossary_path is None."""
-    with patch("debug_trace.config") as mock_config:
+    with patch("pdf_reader.debug_trace.config") as mock_config:
         mock_config.DEBUG = True
 
         with debug_trace.debug_session(None, page=3):
@@ -171,7 +171,7 @@ def test_debug_session_rotates_existing_log(tmp_path):
     original_level = debug_trace.trace_logger.level
     debug_trace.trace_logger.setLevel(logging.DEBUG)
     try:
-        with patch("debug_trace.config") as mock_config:
+        with patch("pdf_reader.debug_trace.config") as mock_config:
             mock_config.DEBUG = True
 
             with debug_trace.debug_session(glossary_path, page=1):
@@ -192,7 +192,7 @@ def test_debug_session_exception_safe(tmp_path):
 
     handlers_before = [h for h in debug_trace.trace_logger.handlers if isinstance(h, logging.FileHandler)]
 
-    with patch("debug_trace.config") as mock_config:
+    with patch("pdf_reader.debug_trace.config") as mock_config:
         mock_config.DEBUG = True
 
         try:

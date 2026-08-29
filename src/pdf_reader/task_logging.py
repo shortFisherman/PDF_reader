@@ -165,7 +165,7 @@ def task_log(
 def _configured_secrets() -> set[str]:
     secrets: set[str] = set()
     try:
-        import config
+        from pdf_reader import config
 
         if config.MODEL_API_KEY:
             secrets.add(config.MODEL_API_KEY)

@@ -4,8 +4,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-import config
-from task_logging import SafeFormatter, task_log
+from pdf_reader import config
+from pdf_reader.task_logging import SafeFormatter, task_log
 
 logger = logging.getLogger("pdf_reader.debug_trace")
 

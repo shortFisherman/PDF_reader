@@ -4,8 +4,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-import debug_trace
-from task_logging import task_log
+from pdf_reader import debug_trace
+from pdf_reader.task_logging import task_log
 
 logger = logging.getLogger("pdf_reader.lifecycle")
 

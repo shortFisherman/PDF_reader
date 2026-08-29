@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock
 
-import config
-from engine_resolver import build_engine_kwargs, resolve_engine
+from pdf_reader import config
+from pdf_reader.engine_resolver import build_engine_kwargs, resolve_engine
 
 ALL_PROVIDERS = [
     "deepseek",

@@ -10,10 +10,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import logging_config
-import task_logging
-from state import StaleDocumentError
-from task_logging import (
+from pdf_reader import logging_config, task_logging
+from pdf_reader.state import StaleDocumentError
+from pdf_reader.task_logging import (
     TaskContext,
     pages_label,
     redact_secrets,
@@ -23,7 +22,7 @@ from task_logging import (
     truncate_document_id,
     truncate_pdf_hash,
 )
-from translation_coordinator import TranslationCoordinator
+from pdf_reader.translation_coordinator import TranslationCoordinator
 
 
 @pytest.fixture(autouse=True)
@@ -146,7 +145,7 @@ def test_task_context_propagates_to_worker_thread(caplog):
 
 
 def test_translation_stream_worker_uses_task_context(caplog):
-    from translation_orchestrator import run_translation
+    from pdf_reader.translation_orchestrator import run_translation
 
     task = TaskContext("job-w", "doc-w", "hash-w", page=1, status="started")
 
@@ -154,7 +153,7 @@ def test_translation_stream_worker_uses_task_context(caplog):
         yield {"type": "progress_start"}
         yield {"type": "finish", "translate_result": MagicMock()}
 
-    with patch("translation_orchestrator.do_translate_async_stream", fake_stream):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_stream):
         with caplog.at_level(logging.INFO, logger="pdf_reader.translate"):
             list(run_translation(MagicMock(), "fake.pdf", flow_label="x", task_ctx=task))
 
@@ -164,7 +163,7 @@ def test_translation_stream_worker_uses_task_context(caplog):
 
 
 def test_redact_secrets_common_tokens(monkeypatch):
-    monkeypatch.setattr("config.MODEL_API_KEY", "sk-configured-secret")
+    monkeypatch.setattr("pdf_reader.config.MODEL_API_KEY", "sk-configured-secret")
     text = (
         "api_key=sk-raw-value Authorization: Bearer abcdef123 "
         '"api_key": "json-secret" "Authorization": "Bearer json-bearer" '
@@ -257,7 +256,7 @@ def test_rotating_file_handler_redacts_on_disk(monkeypatch, tmp_path, capsys):
 
 
 def test_safe_rmtree_returns_verifiable_result(tmp_path):
-    from sse_stream import _safe_rmtree
+    from pdf_reader.sse_stream import _safe_rmtree
 
     missing = tmp_path / "missing"
     assert _safe_rmtree(missing) is True
@@ -269,13 +268,13 @@ def test_safe_rmtree_returns_verifiable_result(tmp_path):
 
     stubborn = tmp_path / "stubborn"
     stubborn.mkdir()
-    with patch("sse_stream.shutil.rmtree", side_effect=OSError("boom")):
+    with patch("pdf_reader.sse_stream.shutil.rmtree", side_effect=OSError("boom")):
         assert _safe_rmtree(stubborn) is False
     assert stubborn.exists()
 
 
 def test_single_cleanup_failure_records_cleanup_deferred(caplog, tmp_path):
-    from sse_stream import GenerateContext, generate
+    from pdf_reader.sse_stream import GenerateContext, generate
 
     coordinator = TranslationCoordinator()
     job = coordinator.start("doc-1234567890", [0], pdf_hash="hash-abcdef")
@@ -307,10 +306,13 @@ def test_single_cleanup_failure_records_cleanup_deferred(caplog, tmp_path):
         task_ctx=task_ctx,
     )
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
-        with patch("sse_stream.run_translation", return_value=iter([{"type": "finish", "translate_result": result}])):
-            with patch("sse_stream.debug_trace"):
-                with patch("sse_stream.shutil.rmtree", side_effect=OSError("boom")):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+        with patch(
+            "pdf_reader.sse_stream.run_translation",
+            return_value=iter([{"type": "finish", "translate_result": result}]),
+        ):
+            with patch("pdf_reader.sse_stream.debug_trace"):
+                with patch("pdf_reader.sse_stream.shutil.rmtree", side_effect=OSError("boom")):
                     with caplog.at_level(logging.INFO, logger="pdf_reader"):
                         list(generate(ctx))
 
@@ -322,7 +324,7 @@ def test_single_cleanup_failure_records_cleanup_deferred(caplog, tmp_path):
 
 
 def test_batch_cleanup_failure_records_cleanup_deferred(caplog, tmp_path):
-    from sse_stream import GenerateBatchContext, generate_batch
+    from pdf_reader.sse_stream import GenerateBatchContext, generate_batch
 
     coordinator = TranslationCoordinator()
     job = coordinator.start("doc-1234567890", [1, 2], pdf_hash="hash-abcdef")
@@ -352,15 +354,15 @@ def test_batch_cleanup_failure_records_cleanup_deferred(caplog, tmp_path):
         task_ctx=task_ctx,
     )
 
-    with patch("sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
+    with patch("pdf_reader.sse_stream.tempfile.mkdtemp", side_effect=[str(tmpdir), str(output_dir)]):
         with patch(
-            "sse_stream.run_translation",
+            "pdf_reader.sse_stream.run_translation",
             return_value=iter(
                 [{"type": "finish", "translate_result": MagicMock(mono_pdf_path=str(tmp_path / "t.pdf"))}]
             ),
         ):
-            with patch("sse_stream.debug_trace"):
-                with patch("sse_stream.shutil.rmtree", side_effect=OSError("boom")):
+            with patch("pdf_reader.sse_stream.debug_trace"):
+                with patch("pdf_reader.sse_stream.shutil.rmtree", side_effect=OSError("boom")):
                     with caplog.at_level(logging.INFO, logger="pdf_reader"):
                         list(generate_batch(ctx))
 
@@ -372,7 +374,7 @@ def test_batch_cleanup_failure_records_cleanup_deferred(caplog, tmp_path):
 
 
 def test_success_lifecycle_status_sequence(caplog, tmp_path):
-    from sse_stream import GenerateContext, generate
+    from pdf_reader.sse_stream import GenerateContext, generate
 
     coordinator = TranslationCoordinator()
     job = coordinator.start("doc-1234567890", [0], pdf_hash="hash-abcdef")
@@ -400,8 +402,11 @@ def test_success_lifecycle_status_sequence(caplog, tmp_path):
         task_ctx=task_ctx,
     )
 
-    with patch("sse_stream.run_translation", return_value=iter([{"type": "finish", "translate_result": result}])):
-        with patch("sse_stream.debug_trace"):
+    with patch(
+        "pdf_reader.sse_stream.run_translation",
+        return_value=iter([{"type": "finish", "translate_result": result}]),
+    ):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             with caplog.at_level(logging.INFO, logger="pdf_reader"):
                 list(generate(ctx))
 
@@ -410,7 +415,7 @@ def test_success_lifecycle_status_sequence(caplog, tmp_path):
 
 
 def test_failed_lifecycle_status_sequence(caplog, tmp_path):
-    from sse_stream import GenerateContext, generate
+    from pdf_reader.sse_stream import GenerateContext, generate
 
     coordinator = TranslationCoordinator()
     job = coordinator.start("doc-1234567890", [0], pdf_hash="hash-abcdef")
@@ -433,8 +438,8 @@ def test_failed_lifecycle_status_sequence(caplog, tmp_path):
         task_ctx=task_ctx,
     )
 
-    with patch("sse_stream.run_translation"):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation"):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             with caplog.at_level(logging.INFO, logger="pdf_reader"):
                 list(generate(ctx))
 
@@ -443,7 +448,7 @@ def test_failed_lifecycle_status_sequence(caplog, tmp_path):
 
 
 def test_batch_failed_lifecycle_status_sequence(caplog, tmp_path):
-    from sse_stream import GenerateBatchContext, generate_batch
+    from pdf_reader.sse_stream import GenerateBatchContext, generate_batch
 
     coordinator = TranslationCoordinator()
     job = coordinator.start("doc-1234567890", [1, 2, 3, 4], pdf_hash="hash-abcdef")
@@ -468,8 +473,8 @@ def test_batch_failed_lifecycle_status_sequence(caplog, tmp_path):
         task_ctx=task_ctx,
     )
 
-    with patch("sse_stream.run_translation"):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.sse_stream.run_translation"):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             with caplog.at_level(logging.INFO, logger="pdf_reader"):
                 list(generate_batch(ctx))
 
@@ -480,7 +485,7 @@ def test_batch_failed_lifecycle_status_sequence(caplog, tmp_path):
 
 
 def test_disconnect_late_discard_lifecycle_sequence(caplog, tmp_path):
-    from sse_stream import GenerateContext, generate
+    from pdf_reader.sse_stream import GenerateContext, generate
 
     coordinator = TranslationCoordinator()
     job = coordinator.start("doc-1234567890", [0], pdf_hash="hash-abcdef")
@@ -508,8 +513,8 @@ def test_disconnect_late_discard_lifecycle_sequence(caplog, tmp_path):
         await asyncio.sleep(0.3)
         yield {"type": "finish", "translate_result": MagicMock()}
 
-    with patch("translation_orchestrator.do_translate_async_stream", slow_source):
-        with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", slow_source):
+        with patch("pdf_reader.sse_stream.debug_trace"):
             with caplog.at_level(logging.INFO, logger="pdf_reader"):
                 gen = generate(ctx)
                 next(gen)
@@ -523,7 +528,7 @@ def test_disconnect_late_discard_lifecycle_sequence(caplog, tmp_path):
 
 
 def test_join_timeout_cleanup_deferred(caplog, tmp_path):
-    from sse_stream import GenerateContext, generate
+    from pdf_reader.sse_stream import GenerateContext, generate
 
     coordinator = TranslationCoordinator()
     job = coordinator.start("doc-1234567890", [0], pdf_hash="hash-abcdef")
@@ -550,9 +555,9 @@ def test_join_timeout_cleanup_deferred(caplog, tmp_path):
         yield {"type": "progress_start", "stage": "layout_analysis"}
         await asyncio.sleep(3600)
 
-    with patch("translation_orchestrator.do_translate_async_stream", stuck_source):
-        with patch("sse_stream.WORKER_JOIN_TIMEOUT", 0.2):
-            with patch("sse_stream.debug_trace"):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_source):
+        with patch("pdf_reader.sse_stream.WORKER_JOIN_TIMEOUT", 0.2):
+            with patch("pdf_reader.sse_stream.debug_trace"):
                 with caplog.at_level(logging.INFO, logger="pdf_reader"):
                     gen = generate(ctx)
                     next(gen)
@@ -577,7 +582,7 @@ def test_stale_release_does_not_emit_half_baked_task_log(caplog):
 
 
 def test_stale_result_rejection_carries_task_context(app_state, sample_pdf, caplog):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     snapshot = app_state.translation_snapshot()
@@ -598,7 +603,7 @@ def test_stale_result_rejection_carries_task_context(app_state, sample_pdf, capl
 
 
 def test_replace_failure_carries_task_context(app_state, sample_pdf, caplog):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     snapshot = app_state.translation_snapshot()

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from translation_orchestrator import TranslationError, run_translation
+from pdf_reader.translation_orchestrator import TranslationError, run_translation
 
 
 def test_run_translation_yields_events_in_order():
@@ -18,7 +18,7 @@ def test_run_translation_yields_events_in_order():
         for evt in events:
             yield evt
 
-    with patch("translation_orchestrator.do_translate_async_stream", fake_stream):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_stream):
         result = list(run_translation(MagicMock(), "fake.pdf"))
 
     assert len(result) == 3
@@ -32,7 +32,7 @@ def test_run_translation_raises_on_thread_error():
         yield {"type": "progress_start", "stage": "layout_analysis"}
         raise RuntimeError("translation engine crashed")
 
-    with patch("translation_orchestrator.do_translate_async_stream", failing_stream):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", failing_stream):
         with pytest.raises(TranslationError, match="translation engine crashed"):
             list(run_translation(MagicMock(), "fake.pdf"))
 
@@ -42,7 +42,7 @@ def test_run_translation_propagates_error_event():
         yield {"type": "error", "error": "engine error"}
         yield {"type": "finish"}
 
-    with patch("translation_orchestrator.do_translate_async_stream", error_stream):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", error_stream):
         result = list(run_translation(MagicMock(), "fake.pdf"))
 
     assert len(result) == 2
@@ -67,7 +67,7 @@ def test_translation_stream_cancel_stops_cooperative_worker():
             }
             i += 1
 
-    with patch("translation_orchestrator.do_translate_async_stream", endless_stream):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", endless_stream):
         stream = run_translation(MagicMock(), "fake.pdf")
         while not isinstance(next(stream), dict):
             pass
@@ -85,7 +85,7 @@ def test_translation_stream_join_timeout_reports_worker_alive():
         yield {"type": "progress_start", "stage": "layout_analysis"}
         await asyncio.sleep(3600)
 
-    with patch("translation_orchestrator.do_translate_async_stream", stuck_stream):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_stream):
         stream = run_translation(MagicMock(), "fake.pdf")
         assert isinstance(next(stream), dict)
         stream.cancel()
@@ -101,8 +101,8 @@ def test_translation_stream_heartbeat_when_worker_silent():
         await asyncio.sleep(5)
         yield {"type": "progress_start", "stage": "layout_analysis"}
 
-    with patch("translation_orchestrator.do_translate_async_stream", slow_stream):
-        with patch("translation_orchestrator.QUEUE_POLL_TIMEOUT", 0.05):
+    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", slow_stream):
+        with patch("pdf_reader.translation_orchestrator.QUEUE_POLL_TIMEOUT", 0.05):
             stream = run_translation(MagicMock(), "fake.pdf")
             first = next(stream)
 

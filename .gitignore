@@ -7,6 +7,7 @@ config.toml
 page.*.pdf
 page.*.csv
 *.tmp
+*.egg-info/
 logs/*.log*
 node_modules/
 .worktrees/

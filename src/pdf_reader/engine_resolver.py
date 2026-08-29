@@ -1,6 +1,6 @@
 import logging
 
-import config
+from pdf_reader import config
 
 logger = logging.getLogger("pdf_reader.engine")
 

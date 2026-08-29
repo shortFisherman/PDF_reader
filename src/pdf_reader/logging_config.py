@@ -2,8 +2,8 @@ import logging
 import sys
 from logging.handlers import RotatingFileHandler
 
-import paths
-from task_logging import SafeFormatter
+from pdf_reader import paths
+from pdf_reader.task_logging import SafeFormatter
 
 LOG_DIR = paths.get_log_dir()
 

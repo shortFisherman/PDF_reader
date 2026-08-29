@@ -14,14 +14,12 @@ from flask import (
 )
 from werkzeug.exceptions import HTTPException
 
-import config
-import glossary_service
-import sse_stream
-from file_hash import sha256
-from pdf_renderer import render_page
-from task_logging import STATUS_STARTED, task_context_from_indices, task_log
-from translation_coordinator import TranslationBusyError, TranslationCoordinator, TranslationJob
-from translation_settings import build_settings
+from pdf_reader import config, glossary_service, sse_stream
+from pdf_reader.file_hash import sha256
+from pdf_reader.pdf_renderer import render_page
+from pdf_reader.task_logging import STATUS_STARTED, task_context_from_indices, task_log
+from pdf_reader.translation_coordinator import TranslationBusyError, TranslationCoordinator, TranslationJob
+from pdf_reader.translation_settings import build_settings
 
 logger = logging.getLogger("pdf_reader.routes")
 

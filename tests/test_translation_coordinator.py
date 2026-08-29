@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from translation_coordinator import TranslationBusyError, TranslationCoordinator, TranslationJob
+from pdf_reader.translation_coordinator import TranslationBusyError, TranslationCoordinator, TranslationJob
 
 
 @pytest.fixture

@@ -20,10 +20,9 @@ The repository SHALL include a GitHub Actions workflow that, on every push to th
 #### Scenario: Fresh clone without config.toml runs tests
 
 - **WHEN** the CI workflow checks out the repository into a fresh clone that has no `config.toml`
-- **THEN** the test suite SHALL still run successfully (relying on defer-config-validation), and `import config` SHALL not raise
+- **THEN** the test suite SHALL still run successfully (relying on defer-config-validation), and `from pdf_reader import config` SHALL not raise
 
 #### Scenario: Lint failure blocks CI
 
 - **WHEN** `ruff check .` exits non-zero
 - **THEN** the workflow SHALL fail and the dependent job (tests) SHALL not report success
-

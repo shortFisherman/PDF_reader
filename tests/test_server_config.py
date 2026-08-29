@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-import config
-import paths
+import pdf_reader
+from pdf_reader import config, paths
 
 
 @pytest.fixture(autouse=True)
@@ -249,9 +249,10 @@ class TestImportTypeSafety:
         monkeypatch.delenv("MODEL_API_KEY", raising=False)
         monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
         with patch.dict(sys.modules):
-            sys.modules.pop("config", None)
+            sys.modules.pop("pdf_reader.config", None)
+            pdf_reader.__dict__.pop("config", None)
             with patch("builtins.open", return_value=io.BytesIO(toml_bytes)):
-                import config as fresh_config
+                from pdf_reader import config as fresh_config
         return fresh_config
 
     def test_import_survives_non_table_and_bad_field_types(self, monkeypatch):

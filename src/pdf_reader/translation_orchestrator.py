@@ -5,7 +5,7 @@ import threading
 
 from pdf2zh_next import SettingsModel, do_translate_async_stream
 
-from task_logging import (
+from pdf_reader.task_logging import (
     STATUS_CANCELLING,
     STATUS_CLEANUP_DEFERRED,
     TaskContext,

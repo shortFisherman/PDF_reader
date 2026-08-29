@@ -90,7 +90,7 @@ The system SHALL include a ruff configuration file and SHALL pass linting checks
 
 ### Requirement: Modular source code organization
 
-The system SHALL be organized into separate Python modules with clear separation of concerns. `app.py` SHALL be free of import-time side effects: no monkey-patching, no hardcoded debug flags, and no logging at module import. Debug initialization SHALL occur explicitly inside `create_app()`. Debug tracing SHALL be encapsulated in a dedicated `debug_trace` module.
+The system SHALL be organized into separate Python modules with clear separation of concerns. `src/pdf_reader/app.py` SHALL be free of import-time side effects: no monkey-patching, no hardcoded debug flags, and no logging at module import. Debug initialization SHALL occur explicitly inside `create_app()`. Debug tracing SHALL be encapsulated in a dedicated `pdf_reader.debug_trace` module.
 
 #### Scenario: Config loading is independent
 
@@ -99,12 +99,12 @@ The system SHALL be organized into separate Python modules with clear separation
 
 #### Scenario: Routes are registered via app
 
-- **WHEN** app.py creates the Flask application
+- **WHEN** `pdf_reader.app` creates the Flask application
 - **THEN** it SHALL import and register routes from the routes module
 
 #### Scenario: app.py import has no side effects
 
-- **WHEN** `app.py` is imported without executing the server
+- **WHEN** `pdf_reader.app` is imported without executing the server
 - **THEN** no monkey-patching SHALL be applied, no debug flag SHALL be hardcoded, and no debug logging SHALL occur
 
 #### Scenario: Debug tracing is module-isolated

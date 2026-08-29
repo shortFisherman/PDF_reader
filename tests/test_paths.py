@@ -21,10 +21,8 @@ from pathlib import Path
 
 import pytest
 
-import config
-import logging_config
-import paths
-from app import create_app
+from pdf_reader import config, logging_config, paths
+from pdf_reader.app import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -34,9 +32,9 @@ import logging
 
 logging.disable(logging.CRITICAL)
 
-import paths
-import config
-from app import create_app
+from pdf_reader import paths
+from pdf_reader import config
+from pdf_reader.app import create_app
 
 app = create_app()
 print(json.dumps({
@@ -54,7 +52,7 @@ print(json.dumps({
 _ENV_OVERRIDE_PROBE = """
 import sys
 
-import paths
+from pdf_reader import paths
 
 which = sys.argv[1] if len(sys.argv) > 1 else "root"
 try:
@@ -67,11 +65,10 @@ else:
 
 
 def _probe_env(data_root: Path) -> dict:
-    # 说明：当前尚未包化，`python -c` 子进程需要 PYTHONPATH 才能发现仓库根模块。
-    # 它只解决“模块可导入”，不参与 PROJECT_ROOT/DATA_ROOT 的计算（两者由
-    # paths.py 的 marker/环境变量契约决定）；P2-01 包化后可移除。
+    # 说明：P2-01 包化后子进程直接导入已安装的 pdf_reader 包，不再设置
+    # PYTHONPATH；PROJECT_ROOT/DATA_ROOT 由 paths.py 的 marker/环境变量契约决定。
     env = os.environ.copy()
-    env["PYTHONPATH"] = os.pathsep.join([str(REPO_ROOT), env.get("PYTHONPATH", "")])
+    env.pop("PYTHONPATH", None)
     env["PDF_READER_DATA_ROOT"] = str(data_root)
     env.pop("PDF_READER_ROOT", None)
     return env

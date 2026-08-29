@@ -5,9 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-import config
-import debug_trace
-import logging_config
+from pdf_reader import config, debug_trace, logging_config
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +23,7 @@ def _cleanup_logger() -> None:
 class TestSetupLoggingInfoMode:
     def test_has_exactly_one_stream_and_one_rotating_handler(self, tmp_path):
         """setup_logging(False) 后 pdf_reader logger 恰好有 1 个 StreamHandler + 1 个 RotatingFileHandler"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
 
         root = logging.getLogger("pdf_reader")
@@ -41,7 +39,7 @@ class TestSetupLoggingInfoMode:
 
     def test_root_level_is_info_when_debug_false(self, tmp_path):
         """debug=False 时 pdf_reader logger 级别为 INFO"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
 
         root = logging.getLogger("pdf_reader")
@@ -49,7 +47,7 @@ class TestSetupLoggingInfoMode:
 
     def test_stream_handler_level_is_info_when_debug_false(self, tmp_path):
         """debug=False 时 StreamHandler 级别为 INFO"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
 
         root = logging.getLogger("pdf_reader")
@@ -58,7 +56,7 @@ class TestSetupLoggingInfoMode:
 
     def test_formatter_format_string(self, tmp_path):
         """formatter 使用指定的格式字符串"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
 
         root = logging.getLogger("pdf_reader")
@@ -74,7 +72,7 @@ class TestSetupLoggingInfoMode:
 class TestSetupLoggingDebugMode:
     def test_root_level_is_debug_when_debug_true(self, tmp_path):
         """debug=True 时 pdf_reader logger 级别为 DEBUG"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(True)
 
         root = logging.getLogger("pdf_reader")
@@ -82,7 +80,7 @@ class TestSetupLoggingDebugMode:
 
     def test_stream_handler_level_is_debug_when_debug_true(self, tmp_path):
         """debug=True 时 StreamHandler 级别为 DEBUG"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(True)
 
         root = logging.getLogger("pdf_reader")
@@ -93,7 +91,7 @@ class TestSetupLoggingDebugMode:
 class TestSetupLoggingIdempotent:
     def test_calling_setup_logging_twice_does_not_double_handlers(self, tmp_path):
         """重复调用 setup_logging 不会增加 handler 数量"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
             logging_config.setup_logging(False)
 
@@ -111,20 +109,20 @@ class TestThirdPartyLoggerDemotion:
     @pytest.mark.parametrize("logger_name", ["werkzeug", "pdf2zh_next", "babeldoc"])
     def test_level_is_warning_when_debug_off(self, tmp_path, logger_name):
         """setup_logging(False) 后第三方 logger effective level 为 WARNING"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
         assert logging.getLogger(logger_name).getEffectiveLevel() == logging.WARNING
 
     @pytest.mark.parametrize("logger_name", ["werkzeug", "pdf2zh_next", "babeldoc"])
     def test_level_is_debug_when_debug_on(self, tmp_path, logger_name):
         """setup_logging(True) 后第三方 logger effective level 为 DEBUG"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(True)
         assert logging.getLogger(logger_name).getEffectiveLevel() == logging.DEBUG
 
     def test_info_blocked_when_debug_off(self, tmp_path):
         """debug off 时第三方 logger 的 INFO/DEBUG 消息被 logger 级别拦下"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
 
         wk = logging.getLogger("werkzeug")
@@ -145,7 +143,7 @@ class TestThirdPartyLoggerDemotion:
 
     def test_info_passes_when_debug_on(self, tmp_path):
         """debug on 时第三方 logger 的 INFO 消息可通过（细节可见）"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(True)
 
         wk = logging.getLogger("werkzeug")
@@ -163,7 +161,7 @@ class TestThirdPartyLoggerDemotion:
 
     def test_info_messages_not_captured_by_pdf_reader_handlers(self, tmp_path):
         """第三方 logger INFO 消息不进入 pdf_reader 的 handler（隔离性）"""
-        with patch("logging_config.LOG_DIR", tmp_path / "logs"):
+        with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
 
         pdf = logging.getLogger("pdf_reader")
@@ -195,12 +193,12 @@ class TestApiKeyNeverLogged:
         monkeypatch.setattr(config, "DPI", 200)
         monkeypatch.setattr(config, "DEBUG", False)
 
-        from logging_config import setup_logging
+        from pdf_reader.logging_config import setup_logging
 
         setup_logging(False)
         caplog.set_level(logging.INFO, logger="pdf_reader.app")
 
-        import app as app_module
+        from pdf_reader import app as app_module
 
         app_module.create_app()
 
@@ -223,12 +221,12 @@ class TestApiKeyNeverLogged:
         monkeypatch.setattr(config, "DPI", 200)
         monkeypatch.setattr(config, "DEBUG", False)
 
-        from logging_config import setup_logging
+        from pdf_reader.logging_config import setup_logging
 
         setup_logging(False)
         caplog.set_level(logging.DEBUG)
 
-        import app as app_module
+        from pdf_reader import app as app_module
 
         app_module.create_app()
 
@@ -257,7 +255,7 @@ class TestApiKeyNeverLogged:
         monkeypatch.setattr(config, "CACHE_DIR", Path("/tmp/cache"))
         monkeypatch.setattr(config, "DPI", 300)
 
-        from translation_settings import _settings_summary
+        from pdf_reader.translation_settings import _settings_summary
 
         summary = _settings_summary()
 

@@ -4,10 +4,10 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-import config
-from file_hash import sha256
-from pdf_renderer import render_page
-from translation_settings import build_settings
+from pdf_reader import config
+from pdf_reader.file_hash import sha256
+from pdf_reader.pdf_renderer import render_page
+from pdf_reader.translation_settings import build_settings
 
 
 def test_sha256_consistent():
@@ -87,7 +87,7 @@ def test_resolve_engine_deepseek(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_PROVIDER", "deepseek")
     from pdf2zh_next.config.translate_engine_model import DeepSeekSettings
 
-    from engine_resolver import resolve_engine
+    from pdf_reader.engine_resolver import resolve_engine
 
     spec = resolve_engine("deepseek")
     assert isinstance(spec, config.EngineSpec)
@@ -98,7 +98,7 @@ def test_resolve_engine_unknown_fallback(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_PROVIDER", "nonexistent")
     from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
 
-    from engine_resolver import resolve_engine
+    from pdf_reader.engine_resolver import resolve_engine
 
     spec = resolve_engine("nonexistent")
     assert isinstance(spec, config.EngineSpec)
@@ -109,7 +109,7 @@ def test_build_engine_kwargs_deepseek(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test")
     monkeypatch.setattr(config, "MODEL", "deepseek-chat")
     monkeypatch.setattr(config, "MODEL_BASE_URL", "https://api.deepseek.com/v1")
-    from engine_resolver import build_engine_kwargs
+    from pdf_reader.engine_resolver import build_engine_kwargs
 
     spec = config.PROVIDER_INDEX["deepseek"]
     kwargs = build_engine_kwargs(spec)
@@ -119,7 +119,7 @@ def test_build_engine_kwargs_deepseek(mock_config, monkeypatch):
 
 def test_build_engine_kwargs_zhipu_ignores_thinking_mode(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_THINKING_MODE", "enabled")
-    from engine_resolver import build_engine_kwargs
+    from pdf_reader.engine_resolver import build_engine_kwargs
 
     spec = config.PROVIDER_INDEX["zhipu"]
     kwargs = build_engine_kwargs(spec)
@@ -129,7 +129,7 @@ def test_build_engine_kwargs_zhipu_ignores_thinking_mode(mock_config, monkeypatc
 def test_build_engine_kwargs_missing_api_key_raises(mock_config, monkeypatch):
     monkeypatch.setattr(config, "MODEL_API_KEY", None)
     monkeypatch.setattr(config, "MODEL", "some-model")
-    from engine_resolver import build_engine_kwargs
+    from pdf_reader.engine_resolver import build_engine_kwargs
 
     spec = config.PROVIDER_INDEX["deepseek"]
     with pytest.raises(RuntimeError, match="未配置"):

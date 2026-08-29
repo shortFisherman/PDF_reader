@@ -4,17 +4,15 @@ import sys
 
 from flask import Flask
 
-import config
-import logging_config
-import paths
-from state import AppState
-from translation_coordinator import TranslationCoordinator
+from pdf_reader import config, logging_config, paths
+from pdf_reader.state import AppState
+from pdf_reader.translation_coordinator import TranslationCoordinator
 
 logger = logging.getLogger("pdf_reader.app")
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="app.py", description="PDF Reader 本地双语 PDF 阅读服务")
+    parser = argparse.ArgumentParser(prog="python -m pdf_reader", description="PDF Reader 本地双语 PDF 阅读服务")
     debug_group = parser.add_mutually_exclusive_group()
     debug_group.add_argument(
         "--debug",
@@ -54,7 +52,7 @@ def create_app(run_cfg: config.ServerConfig | None = None) -> Flask:
     )
     app.config["app_state"] = AppState(config.CACHE_DIR)
     app.config["translation_coordinator"] = TranslationCoordinator()
-    from routes import register_routes
+    from pdf_reader.routes import register_routes
 
     register_routes(app)
     return app

@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from glossary_service import merge_after_translate
-from translation_lifecycle import finish_translation, merge_glossary_only
+from pdf_reader.glossary_service import merge_after_translate
+from pdf_reader.translation_lifecycle import finish_translation, merge_glossary_only
 
 
 def test_finish_translation_mono_non_none():
@@ -16,7 +16,7 @@ def test_finish_translation_mono_non_none():
     result.dual_pdf_path = None
     result.auto_extracted_glossary_path = None
 
-    with patch("translation_lifecycle.debug_trace.log_glossary_merge"):
+    with patch("pdf_reader.translation_lifecycle.debug_trace.log_glossary_merge"):
         finish_translation(result, mock_replace, mock_merge)
 
     mock_replace.assert_called_once_with(str(Path("/tmp/mono.pdf")))
@@ -31,7 +31,7 @@ def test_finish_translation_mono_none_dual_fallback():
     result.dual_pdf_path = Path("/tmp/dual.pdf")
     result.auto_extracted_glossary_path = None
 
-    with patch("translation_lifecycle.debug_trace.log_glossary_merge"):
+    with patch("pdf_reader.translation_lifecycle.debug_trace.log_glossary_merge"):
         finish_translation(result, mock_replace, mock_merge)
 
     mock_replace.assert_called_once_with(str(Path("/tmp/dual.pdf")))
@@ -39,7 +39,7 @@ def test_finish_translation_mono_none_dual_fallback():
 
 
 def test_finish_translation_stale_replace_skips_glossary_merge():
-    from state import StaleDocumentError
+    from pdf_reader.state import StaleDocumentError
 
     mock_replace = MagicMock(side_effect=StaleDocumentError("stale translation result rejected"))
     mock_merge = MagicMock()
@@ -62,7 +62,7 @@ def test_finish_translation_both_none_skip_replace():
     result.dual_pdf_path = None
     result.auto_extracted_glossary_path = None
 
-    with patch("translation_lifecycle.debug_trace.log_glossary_merge"):
+    with patch("pdf_reader.translation_lifecycle.debug_trace.log_glossary_merge"):
         finish_translation(result, mock_replace, mock_merge)
 
     mock_replace.assert_not_called()
@@ -77,7 +77,7 @@ def test_finish_translation_auto_extracted_present():
     result.dual_pdf_path = None
     result.auto_extracted_glossary_path = Path("/tmp/g.csv")
 
-    with patch("translation_lifecycle.debug_trace.log_glossary_merge"):
+    with patch("pdf_reader.translation_lifecycle.debug_trace.log_glossary_merge"):
         finish_translation(result, mock_replace, mock_merge)
 
     mock_replace.assert_called_once_with(str(Path("/tmp/m.pdf")))
@@ -92,7 +92,7 @@ def test_finish_translation_auto_extracted_none():
     result.dual_pdf_path = None
     result.auto_extracted_glossary_path = None
 
-    with patch("translation_lifecycle.debug_trace.log_glossary_merge"):
+    with patch("pdf_reader.translation_lifecycle.debug_trace.log_glossary_merge"):
         finish_translation(result, mock_replace, mock_merge)
 
     mock_replace.assert_called_once_with(str(Path("/tmp/m.pdf")))

@@ -7,6 +7,7 @@ if not exist ".\venv\Scripts\python.exe" (
     echo [start.bat] Create it first:
     echo [start.bat]   python -m venv venv
     echo [start.bat]   .\venv\Scripts\python.exe -m pip install -r requirements.lock
+    echo [start.bat]   .\venv\Scripts\python.exe -m pip install -e .
     exit /b 1
 )
 
@@ -32,5 +33,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-python app.py
+python -m pdf_reader
 exit /b %errorlevel%

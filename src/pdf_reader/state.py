@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pymupdf
 
-from task_logging import (
+from pdf_reader.task_logging import (
     STATUS_DISCARDED,
     get_current_task,
     task_log,

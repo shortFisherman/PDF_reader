@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from task_logging import (
+from pdf_reader.task_logging import (
     STATUS_CREATED,
     STATUS_STARTED,
     task_context_from_indices,

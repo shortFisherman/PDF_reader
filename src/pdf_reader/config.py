@@ -17,7 +17,7 @@ from pdf2zh_next.config.translate_engine_model import (
     ZhipuSettings,
 )
 
-import paths
+from pdf_reader import paths
 
 CONFIG_PATH = paths.get_config_path()
 

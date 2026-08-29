@@ -28,8 +28,11 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.lock
 
+      - name: Install local package (editable)
+        run: pip install -e .
+
       - name: Smoke-test Python dependencies
-        run: python -c "import flask, pymupdf, pdf2zh_next"
+        run: python -c "import flask, pymupdf, pdf2zh_next, pdf_reader"
 
       - name: Install frontend test dependencies
         run: npm ci

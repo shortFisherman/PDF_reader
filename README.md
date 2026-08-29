@@ -46,6 +46,7 @@ cd PDF_reader
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.lock
+pip install -e .
 Copy-Item config.example.toml config.toml
 ```
 
@@ -77,7 +78,7 @@ $env:MODEL_API_KEY = 'your-api-key'
 
 ## 路径约定
 
-项目资源位置与运行数据位置由根目录 `paths.py` 统一解析，与启动时的当前工作目录（CWD）无关：
+项目资源位置与运行数据位置由 `src/pdf_reader/paths.py` 统一解析，与启动时的当前工作目录（CWD）无关：
 
 | 路径 | 基准 | 说明 |
 |---|---|---|
@@ -88,9 +89,9 @@ $env:MODEL_API_KEY = 'your-api-key'
 | 相对 `cache_dir` | `DATA_ROOT` | 相对配置值按 `DATA_ROOT` 解析 |
 | 绝对 `cache_dir` | 原样 | 不被重写 |
 
-- `PROJECT_ROOT`（项目资源根）＝仓库根。`paths.py` 从自身位置向上查找 `config.example.toml` 标记；P2-01 把模块迁入 `src/pdf_reader/` 后，同一规则会自动回到仓库根，无需改数据位置。环境变量 `PDF_READER_ROOT` 可显式覆盖。
+- `PROJECT_ROOT`（项目资源根）＝仓库根。`paths.py` 位于 `src/pdf_reader/`，从自身位置向上查找 `config.example.toml` 标记自动回到仓库根，无需改数据位置。环境变量 `PDF_READER_ROOT` 可显式覆盖。
 - `DATA_ROOT`（运行数据根）默认等于 `PROJECT_ROOT`：日志仍在仓库 `logs/`，相对缓存仍在仓库根下。环境变量 `PDF_READER_DATA_ROOT` 可覆盖（测试隔离等场景）。
-- 从任意 CWD 通过仓库入口的绝对/已解析路径启动（例如 `C:\...\python.exe C:\...\app.py`，或先 `cd` 到仓库根再运行），配置、手动术语表、模板、静态文件、日志和缓存位置一致；`start.bat` 自身仍会切换到仓库根。
+- 安装本包后，从任意 CWD 运行 `python -m pdf_reader`（或 `start.bat`，其自身仍会切换到仓库根），配置、手动术语表、模板、静态文件、日志和缓存位置一致。
 
 ## 错误契约与安全
 
@@ -102,7 +103,7 @@ $env:MODEL_API_KEY = 'your-api-key'
 
 ## 任务日志上下文
 
-- 任务日志由 `task_logging.py` 集中输出，稳定前缀：`[job=<完整 job_id> doc=<8 字符> hash=<12 字符> page=N|pages=A-B status=<状态>]`；页码一律 1-based，`document_id` 截断 8 字符、pdf hash 截断 12 字符。
+- 任务日志由 `src/pdf_reader/task_logging.py` 集中输出，稳定前缀：`[job=<完整 job_id> doc=<8 字符> hash=<12 字符> page=N|pages=A-B status=<状态>]`；页码一律 1-based，`document_id` 截断 8 字符、pdf hash 截断 12 字符。
 - 生命周期状态：`created`、`started`、`client_disconnected`、`cancelling`、`finished`、`failed`、`discarded`、`cleaned`；join timeout 记录 `cleanup_deferred`，不会误报 `cleaned`。coordinator 释放语义保留 `cancelled`。
 - 上下文经 `contextvars` 贯穿协调器、路由、SSE 生成器、后台 worker 线程、翻译生命周期与 AppState 写回/恢复；worker 线程显式传播，不依赖请求线程字段。
 - 日志脱敏在格式化边界完成：控制台与 `logs/pdf_reader.log` 会替换 `sk-...`、`Authorization/Bearer`、`api_key` 字段及配置中的 API Key；traceback 结构保留，路径/HTML 仅作为服务端诊断内容保留；用户 prompt 不写入任何日志。
@@ -111,7 +112,7 @@ $env:MODEL_API_KEY = 'your-api-key'
 
 | 来源 | 示例 | 优先级 |
 |---|---|---|
-| CLI 参数 | `python app.py --debug` / `--no-debug` | 1（最高） |
+| CLI 参数 | `python -m pdf_reader --debug` / `--no-debug` | 1（最高） |
 | 环境变量 | `$env:PDF_READER_DEBUG = "true"` | 2 |
 | config.toml | `[server] debug = true` | 3 |
 | 默认值 | — | 4（`false`） |
@@ -136,12 +137,13 @@ $env:MODEL_API_KEY = 'your-api-key'
 
 ```powershell
 $env:PDF_READER_DEBUG = "banana"
-python app.py
+python -m pdf_reader
 # ERROR: 环境变量 PDF_READER_DEBUG 非法值 'banana'：只接受 true/false/1/0/on/off/yes/no（不区分大小写，忽略首尾空白）
 # 退出码 2，服务器不会启动
 
-python app.py --debug --no-debug
-# app.py: error: argument --no-debug: not allowed with argument --debug
+python -m pdf_reader --debug --no-debug
+# usage: python -m pdf_reader [-h] [--debug | --no-debug]
+# python -m pdf_reader: error: argument --no-debug: not allowed with argument --debug
 # 退出码 2
 ```
 
@@ -153,13 +155,13 @@ python app.py --debug --no-debug
 .\start.bat
 ```
 
-脚本会切换到仓库根目录、检查并激活 `.\venv`，然后运行 `python app.py`。如果端口 5000 已被占用，`start.bat` 会打印占用进程的 PID 与排查命令，并以非零状态退出；它不会自动终止任何进程。
+脚本会切换到仓库根目录、检查并激活 `.\venv`，然后运行 `python -m pdf_reader`。如果端口 5000 已被占用，`start.bat` 会打印占用进程的 PID 与排查命令，并以非零状态退出；它不会自动终止任何进程。
 
 也可以手动启动：
 
 ```powershell
 .\venv\Scripts\Activate.ps1
-python app.py
+python -m pdf_reader
 ```
 
 然后打开 `http://127.0.0.1:5000`，输入本地 PDF 的绝对路径。
@@ -178,7 +180,7 @@ tasklist /FI "PID eq <pid>"
 如果不想结束现有程序，也可以改用其他端口：编辑 `config.toml` 的 `[server]` 段（例如 `port = 5001`）后直接运行：
 
 ```powershell
-.\venv\Scripts\python.exe app.py
+.\venv\Scripts\python.exe -m pdf_reader
 ```
 
 然后访问 `http://127.0.0.1:5001`。
@@ -186,8 +188,8 @@ tasklist /FI "PID eq <pid>"
 调试模式（优先级高于环境变量与 `config.toml`）：
 
 ```powershell
-python app.py --debug
-python app.py --no-debug
+python -m pdf_reader --debug
+python -m pdf_reader --no-debug
 ```
 
 ## 验证
@@ -221,13 +223,15 @@ npm test
 ## 核心结构
 
 ```text
-app.py                         Flask 应用入口
-routes.py                      HTTP 与 SSE 路由
-state.py                       当前文档、缓存和阅读状态
-translation_orchestrator.py    翻译线程与事件桥接
-sse_stream.py                  翻译进度事件
-translation_lifecycle.py       译文持久化与资源清理
-translation_settings.py        pdf2zh-next 参数组装
+src/pdf_reader/                 可安装包（python -m pdf_reader 入口）
+src/pdf_reader/app.py           Flask 应用入口
+src/pdf_reader/routes.py        HTTP 与 SSE 路由
+src/pdf_reader/state.py         当前文档、缓存和阅读状态
+src/pdf_reader/translation_orchestrator.py  翻译线程与事件桥接
+src/pdf_reader/sse_stream.py    翻译进度事件
+src/pdf_reader/translation_lifecycle.py     译文持久化与资源清理
+src/pdf_reader/translation_settings.py      pdf2zh-next 参数组装
+pyproject.toml                  可安装包元数据
 static/app.js                  阅读器前端入口
 static/modules/                对齐、懒加载、缩放和翻译模块
 tests/                         Python 与前端测试

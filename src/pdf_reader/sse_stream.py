@@ -9,10 +9,8 @@ from pathlib import Path
 
 from pdf2zh_next import SettingsModel
 
-import config
-import debug_trace
-import pdf_extraction
-from task_logging import (
+from pdf_reader import config, debug_trace, pdf_extraction
+from pdf_reader.task_logging import (
     STATUS_CANCELLING,
     STATUS_CLEANED,
     STATUS_CLEANUP_DEFERRED,
@@ -24,8 +22,13 @@ from task_logging import (
     task_log_context,
     with_status,
 )
-from translation_lifecycle import finish_translation, merge_glossary_only
-from translation_orchestrator import WORKER_JOIN_TIMEOUT, TranslationError, TranslationStream, run_translation
+from pdf_reader.translation_lifecycle import finish_translation, merge_glossary_only
+from pdf_reader.translation_orchestrator import (
+    WORKER_JOIN_TIMEOUT,
+    TranslationError,
+    TranslationStream,
+    run_translation,
+)
 
 STAGE_LABELS = {
     "layout_analysis": "\u6b63\u5728\u5206\u6790\u7248\u9762\u2026",

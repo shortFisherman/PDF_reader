@@ -5,7 +5,7 @@ import threading
 from collections import defaultdict
 from pathlib import Path
 
-from task_logging import task_log
+from pdf_reader.task_logging import task_log
 
 logger = logging.getLogger("pdf_reader")
 

@@ -1,8 +1,8 @@
 import logging
 from pathlib import Path
 
-from glossary_merger import merge_glossary_csvs
-from task_logging import task_log
+from pdf_reader.glossary_merger import merge_glossary_csvs
+from pdf_reader.task_logging import task_log
 
 logger = logging.getLogger("pdf_reader.glossary")
 

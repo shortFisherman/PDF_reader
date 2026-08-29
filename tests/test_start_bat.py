@@ -9,7 +9,7 @@ port is bound, and no real process is killed.  These tests pin:
 2. When port 5000 appears occupied, start.bat reports the listener and exits
    non-zero without invoking python/app or taskkill.
 3. When port 5000 is free, start.bat activates the venv and invokes
-   ``python app.py``.
+   ``python -m pdf_reader``.
 4. When the venv is missing, start.bat explains how to create it and exits
    non-zero.
 """
@@ -115,7 +115,7 @@ def test_start_bat_activates_venv_and_runs_python_app_when_port_free(tmp_path: P
 
     assert result.returncode == 0
     assert (ctx["logs"] / "activate.log").read_text(encoding="ascii").strip() == "activated"
-    assert (ctx["logs"] / "python.log").read_text(encoding="ascii").strip() == "app.py"
+    assert (ctx["logs"] / "python.log").read_text(encoding="ascii").strip() == "-m pdf_reader"
     assert not (ctx["logs"] / "taskkill.log").exists()
 
 

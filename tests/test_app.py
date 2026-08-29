@@ -5,8 +5,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import app as app_module
-import config
+import pdf_reader
+from pdf_reader import app as app_module
+from pdf_reader import config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -233,11 +234,12 @@ class TestMainErrorPaths:
 class TestImportHasNoCliSideEffects:
     def test_import_app_does_not_parse_cli_or_modify_config_debug(self):
         original_debug = config.DEBUG
-        with patch.object(sys, "argv", ["app.py", "--debug"]):
-            with patch("logging_config.setup_logging") as mock_setup:
+        with patch.object(sys, "argv", ["python", "-m", "pdf_reader", "--debug"]):
+            with patch("pdf_reader.logging_config.setup_logging") as mock_setup:
                 with patch.dict(sys.modules):
-                    sys.modules.pop("app", None)
-                    import app as fresh_app  # noqa: F401
+                    sys.modules.pop("pdf_reader.app", None)
+                    pdf_reader.__dict__.pop("app", None)
+                    from pdf_reader import app as fresh_app  # noqa: F401
 
                     assert config.DEBUG == original_debug
                     assert not hasattr(fresh_app, "_parser")
@@ -248,13 +250,13 @@ class TestImportHasNoCliSideEffects:
 class TestCreateAppLogging:
     def test_create_app_uses_resolved_debug(self, monkeypatch):
         monkeypatch.setattr(config, "DEBUG", False)
-        with patch("app.logging_config.setup_logging") as mock_setup:
+        with patch("pdf_reader.app.logging_config.setup_logging") as mock_setup:
             app_module.create_app(config.ServerConfig(host="127.0.0.1", port=5000, debug=True))
             mock_setup.assert_called_once_with(True)
 
     def test_create_app_default_uses_config_debug(self, monkeypatch):
         monkeypatch.setattr(config, "DEBUG", True)
-        with patch("app.logging_config.setup_logging") as mock_setup:
+        with patch("pdf_reader.app.logging_config.setup_logging") as mock_setup:
             app_module.create_app()
             mock_setup.assert_called_once_with(True)
 
@@ -267,7 +269,7 @@ class TestCreateAppLogging:
         monkeypatch.setattr(config, "MODEL", "deepseek-chat")
         monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
         monkeypatch.setattr(config, "DEBUG", False)
-        with patch("app.logging_config.setup_logging") as mock_setup:
+        with patch("pdf_reader.app.logging_config.setup_logging") as mock_setup:
             with patch.object(Flask, "run") as mock_run:
                 assert app_module.main(["--debug"]) == 0
 
@@ -283,7 +285,7 @@ class TestCreateAppLogging:
         monkeypatch.setattr(config, "MODEL", "deepseek-chat")
         monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
         monkeypatch.setattr(config, "DEBUG", False)
-        with patch("app.logging_config.setup_logging") as mock_setup:
+        with patch("pdf_reader.app.logging_config.setup_logging") as mock_setup:
             with patch.object(Flask, "run") as mock_run:
                 assert app_module.main([]) == 0
 
@@ -295,7 +297,7 @@ class TestCreateAppLogging:
 class TestRealEntry:
     def test_mutually_exclusive_flags_exit_nonzero(self):
         result = subprocess.run(
-            [sys.executable, "app.py", "--debug", "--no-debug"],
+            [sys.executable, "-m", "pdf_reader", "--debug", "--no-debug"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -303,6 +305,7 @@ class TestRealEntry:
         )
 
         assert result.returncode != 0
+        assert "usage: python -m pdf_reader" in result.stderr
         assert "not allowed with argument --debug" in result.stderr
 
     def test_invalid_env_exits_nonzero_with_clear_error(self):
@@ -311,7 +314,7 @@ class TestRealEntry:
         env = os.environ.copy()
         env["PDF_READER_DEBUG"] = "banana"
         result = subprocess.run(
-            [sys.executable, "app.py"],
+            [sys.executable, "-m", "pdf_reader"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -324,7 +327,7 @@ class TestRealEntry:
 
     def test_real_entry_injected_bad_config_exits_2(self):
         script = (
-            "import app, config, sys;"
+            "import sys; from pdf_reader import app, config;"
             "config.CONFIG = {'model': {'model': 123, 'api_key': 'sk-x'}, 'pdf_reader': {}, 'translation': {}};"
             "sys.exit(app.main([]))"
         )

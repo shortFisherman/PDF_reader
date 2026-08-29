@@ -5,7 +5,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from state import AppState
+from pdf_reader.state import AppState
 
 
 def test_app_state_initial():
@@ -19,7 +19,7 @@ def test_open_pdf_creates_cache(sample_pdf, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     state = AppState(cache_dir)
-    from file_hash import sha256
+    from pdf_reader.file_hash import sha256
 
     result = state.open_pdf(str(sample_pdf), sha256)
     assert result["page_count"] == 2
@@ -32,7 +32,7 @@ def test_reopen_closes_old_docs(sample_pdf, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     state = AppState(cache_dir)
-    from file_hash import sha256
+    from pdf_reader.file_hash import sha256
 
     state.open_pdf(str(sample_pdf), sha256)
     state.open_pdf(str(sample_pdf), sha256)
@@ -46,7 +46,7 @@ def test_translated_pages_tracking(sample_pdf, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     state = AppState(cache_dir)
-    from file_hash import sha256
+    from pdf_reader.file_hash import sha256
 
     state.open_pdf(str(sample_pdf), sha256)
     assert len(state.translated_pages) == 0
@@ -64,7 +64,7 @@ def test_glossary_cache_path_after_open(sample_pdf, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     state = AppState(cache_dir)
-    from file_hash import sha256
+    from pdf_reader.file_hash import sha256
 
     state.open_pdf(str(sample_pdf), sha256)
     expected = cache_dir / state.pdf_hash
@@ -73,7 +73,7 @@ def test_glossary_cache_path_after_open(sample_pdf, tmp_path):
 
 
 def test_render_page_concurrent_replace_no_crash(app_state, sample_pdf, tmp_path):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -124,7 +124,7 @@ def test_render_page_concurrent_replace_no_crash(app_state, sample_pdf, tmp_path
 
 
 def test_extract_page_returns_path(app_state, sample_pdf, tmp_path):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
@@ -152,7 +152,7 @@ def test_extract_page_raises_when_no_doc(tmp_path):
 def test_extract_page_holds_lock(app_state, sample_pdf, tmp_path):
     import threading
 
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
@@ -181,7 +181,7 @@ def test_extract_page_holds_lock(app_state, sample_pdf, tmp_path):
 
 
 def test_concurrent_replace_different_pages(app_state, sample_pdf, tmp_path):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -228,8 +228,8 @@ def test_concurrent_replace_different_pages(app_state, sample_pdf, tmp_path):
 
 
 def test_extract_page_normal(app_state, sample_pdf, tmp_path):
-    import pdf_extraction
-    from file_hash import sha256 as sha256_func
+    from pdf_reader import pdf_extraction
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
@@ -242,8 +242,8 @@ def test_extract_page_normal(app_state, sample_pdf, tmp_path):
 
 
 def test_extract_page_under_lock(app_state, sample_pdf, tmp_path):
-    import pdf_extraction
-    from file_hash import sha256 as sha256_func
+    from pdf_reader import pdf_extraction
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
@@ -264,9 +264,9 @@ def test_concurrent_extract_and_render_serialized(app_state, sample_pdf, tmp_pat
     import threading
     import time
 
-    import pdf_extraction
-    from file_hash import sha256 as sha256_func
-    from pdf_renderer import render_page
+    from pdf_reader import pdf_extraction
+    from pdf_reader.file_hash import sha256 as sha256_func
+    from pdf_reader.pdf_renderer import render_page
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
@@ -324,7 +324,7 @@ def test_concurrent_extract_and_render_serialized(app_state, sample_pdf, tmp_pat
 
 
 def test_replace_pages_batch_backfill_and_tracking(app_state, sample_pdf, tmp_path):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -352,7 +352,7 @@ def test_replace_pages_batch_backfill_and_tracking(app_state, sample_pdf, tmp_pa
 
 
 def test_replace_pages_ascending_preserves_other_indices(app_state, sample_pdf, tmp_path):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -375,7 +375,7 @@ def test_replace_pages_ascending_preserves_other_indices(app_state, sample_pdf, 
 
 
 def test_replace_pages_holds_lock(app_state, sample_pdf, tmp_path, monkeypatch):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     document_id = app_state.translation_snapshot().document_id
@@ -410,7 +410,7 @@ def test_replace_pages_holds_lock(app_state, sample_pdf, tmp_path, monkeypatch):
 
 
 def test_save_reading_progress_writes_file(app_state, sample_pdf):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
@@ -432,7 +432,7 @@ def test_save_reading_progress_no_doc_raises(app_state):
 
 
 def test_save_reading_progress_out_of_range_raises(app_state, sample_pdf):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     page_count = app_state.page_count
@@ -445,7 +445,7 @@ def test_save_reading_progress_out_of_range_raises(app_state, sample_pdf):
 
 
 def test_save_reading_progress_leaves_no_tmp_on_failure(app_state, sample_pdf):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
@@ -462,7 +462,7 @@ def test_save_reading_progress_leaves_no_tmp_on_failure(app_state, sample_pdf):
 def test_load_reading_progress_hit(app_state, sample_pdf):
     import json
 
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
 
@@ -474,7 +474,7 @@ def test_load_reading_progress_hit(app_state, sample_pdf):
 
 
 def test_load_reading_progress_missing_returns_none(app_state, sample_pdf):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     assert app_state.load_reading_progress() is None
@@ -482,7 +482,7 @@ def test_load_reading_progress_missing_returns_none(app_state, sample_pdf):
 
 
 def test_load_reading_progress_corrupt_returns_none(app_state, sample_pdf):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     progress_file = app_state._reading_progress_path()
@@ -495,7 +495,7 @@ def test_load_reading_progress_corrupt_returns_none(app_state, sample_pdf):
 def test_load_reading_progress_missing_page_key_returns_none(app_state, sample_pdf):
     import json
 
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     progress_file = app_state._reading_progress_path()
@@ -508,7 +508,7 @@ def test_load_reading_progress_missing_page_key_returns_none(app_state, sample_p
 def test_load_reading_progress_out_of_range_clamped_to_zero(app_state, sample_pdf):
     import json
 
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     page_count = app_state.page_count
@@ -523,7 +523,7 @@ def test_load_reading_progress_out_of_range_clamped_to_zero(app_state, sample_pd
 def test_load_reading_progress_negative_clamped_to_zero(app_state, sample_pdf):
     import json
 
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     progress_file = app_state._reading_progress_path()
@@ -534,7 +534,7 @@ def test_load_reading_progress_negative_clamped_to_zero(app_state, sample_pdf):
 
 
 def test_open_pdf_response_includes_saved_page_none(app_state, sample_pdf):
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     result = app_state.open_pdf(str(sample_pdf), sha256_func)
     assert "saved_page" in result
@@ -544,7 +544,7 @@ def test_open_pdf_response_includes_saved_page_none(app_state, sample_pdf):
 
 def test_open_pdf_response_includes_saved_page_value(app_state, sample_pdf):
 
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     # 先打开写入进度
     app_state.open_pdf(str(sample_pdf), sha256_func)
@@ -559,7 +559,7 @@ def test_open_pdf_response_includes_saved_page_value(app_state, sample_pdf):
 
 def test_open_pdf_does_not_delete_progress_file(app_state, sample_pdf):
 
-    from file_hash import sha256 as sha256_func
+    from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
     app_state.save_reading_progress(1)

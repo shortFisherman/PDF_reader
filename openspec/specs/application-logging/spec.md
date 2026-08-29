@@ -5,7 +5,7 @@ TBD - created by archiving change logging-system-overhaul. Update Purpose after 
 ## Requirements
 ### Requirement: Centralized logging configuration
 
-The system SHALL provide a `logging_config` module that performs all logging setup via a single `setup_logging(debug: bool)` entry point, called once at application startup. The setup SHALL configure the root `pdf_reader.*` logger namespace, per-module child loggers, console + rotating file handlers, and formatters. `app.py` SHALL NOT use `logging.basicConfig`; all logging configuration SHALL flow through `logging_config.setup_logging`.
+The system SHALL provide a `logging_config` module that performs all logging setup via a single `setup_logging(debug: bool)` entry point, called once at application startup. The setup SHALL configure the root `pdf_reader.*` logger namespace, per-module child loggers, console + rotating file handlers, and formatters. `src/pdf_reader/app.py` SHALL NOT use `logging.basicConfig`; all logging configuration SHALL flow through `pdf_reader.logging_config.setup_logging`.
 
 #### Scenario: Setup invoked at startup
 
@@ -14,7 +14,7 @@ The system SHALL provide a `logging_config` module that performs all logging set
 
 #### Scenario: No basicConfig in app
 
-- **WHEN** `app.py` is inspected
+- **WHEN** `src/pdf_reader/app.py` is inspected
 - **THEN** there is no call to `logging.basicConfig`; logging initialization is delegated to `logging_config`
 
 ### Requirement: Per-module logger hierarchy
@@ -164,4 +164,3 @@ The system SHALL NOT log API keys or the raw `api_key` config value. Settings su
 
 - **WHEN** any logging statement executes, including startup summary and error context
 - **THEN** the api_key value does not appear in any log record
-

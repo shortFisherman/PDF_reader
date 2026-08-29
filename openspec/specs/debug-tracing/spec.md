@@ -9,7 +9,7 @@ The system SHALL support debug mode driven by `config.toml` (default False) or t
 
 #### Scenario: Debug mode enabled via CLI
 
-- **WHEN** user starts the app with `python app.py --debug`
+- **WHEN** user starts the app with `python -m pdf_reader --debug`
 - **THEN** `config.DEBUG` is `True` and `setup_logging(True)` sets the root `pdf_reader` logger level to DEBUG, making DEBUG-level details visible
 
 #### Scenario: Debug mode enabled via config
@@ -19,12 +19,12 @@ The system SHALL support debug mode driven by `config.toml` (default False) or t
 
 #### Scenario: Debug mode disabled (default) still emits flow logs
 
-- **WHEN** user starts the app with `python app.py` (no `--debug`) and config does not enable debug
+- **WHEN** user starts the app with `python -m pdf_reader` (no `--debug`) and config does not enable debug
 - **THEN** the root `pdf_reader` logger level is INFO, INFO flow milestones are emitted, and DEBUG-only details (render per page, token usage, third-party detail) are not shown
 
 #### Scenario: No import-time side effects
 
-- **WHEN** `app.py` is imported (without running the server)
+- **WHEN** `pdf_reader.app` is imported (without running the server)
 - **THEN** no logging initialization SHALL occur; `setup_logging` SHALL happen only inside `create_app()` based on resolved config
 
 ### Requirement: babeldoc debug output capture

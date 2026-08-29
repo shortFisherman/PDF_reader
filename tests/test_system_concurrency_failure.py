@@ -46,13 +46,11 @@ import pymupdf
 import pytest
 from flask import Flask
 
-import config
-import sse_stream
-import translation_orchestrator
-from file_hash import sha256
-from routes import register_routes
-from state import AppState
-from translation_coordinator import TranslationCoordinator
+from pdf_reader import config, sse_stream, translation_orchestrator
+from pdf_reader.file_hash import sha256
+from pdf_reader.routes import register_routes
+from pdf_reader.state import AppState
+from pdf_reader.translation_coordinator import TranslationCoordinator
 
 
 class FakeTranslateResult:

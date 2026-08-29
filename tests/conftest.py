@@ -12,11 +12,9 @@ import pytest
 _TEST_DATA_ROOT = tempfile.TemporaryDirectory(prefix="pdf-reader-test-data-")
 os.environ["PDF_READER_DATA_ROOT"] = _TEST_DATA_ROOT.name
 
-import config  # noqa: E402
-import logging_config  # noqa: E402
-import paths  # noqa: E402
-from app import create_app  # noqa: E402
-from state import AppState  # noqa: E402
+from pdf_reader import config, logging_config, paths  # noqa: E402
+from pdf_reader.app import create_app  # noqa: E402
+from pdf_reader.state import AppState  # noqa: E402
 
 # 镜像生产前置条件：文档打开后缓存根目录已存在（AppState.open_pdf 会创建
 # cache/<hash>）；路由的翻译输出目录（tempfile.mkdtemp(dir=cache_dir)）依赖它。

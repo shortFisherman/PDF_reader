@@ -2,7 +2,7 @@ import csv
 from pathlib import Path
 from unittest.mock import patch
 
-from glossary_service import merge_after_translate, resolve_glossary_paths
+from pdf_reader.glossary_service import merge_after_translate, resolve_glossary_paths
 
 
 def test_resolve_glossary_paths_returns_none_when_no_cache():
@@ -41,7 +41,7 @@ def test_merge_after_translate_delegates_to_merger(tmp_path):
     cumulative.write_text("")
     auto.write_text("")
 
-    with patch("glossary_service.merge_glossary_csvs") as mock_merge:
+    with patch("pdf_reader.glossary_service.merge_glossary_csvs") as mock_merge:
         merge_after_translate(cumulative, auto)
         mock_merge.assert_called_once_with(cumulative, auto)
 
@@ -50,7 +50,7 @@ def test_merge_after_translate_swallows_exception(tmp_path):
     cumulative = tmp_path / "cumulative.csv"
     auto = tmp_path / "auto.csv"
 
-    with patch("glossary_service.merge_glossary_csvs", side_effect=Exception("merge failed")):
+    with patch("pdf_reader.glossary_service.merge_glossary_csvs", side_effect=Exception("merge failed")):
         merge_after_translate(cumulative, auto)
 
 

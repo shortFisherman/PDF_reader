@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-import glossary_merger
-from glossary_merger import merge_glossary_csvs
+from pdf_reader import glossary_merger
+from pdf_reader.glossary_merger import merge_glossary_csvs
 
 
 def write_csv(path: Path, rows: list[tuple[str, str]]) -> None:

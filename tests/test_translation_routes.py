@@ -3,9 +3,9 @@ from unittest.mock import MagicMock, patch
 
 from flask import Flask
 
-from file_hash import sha256
-from routes import register_routes
-from translation_coordinator import TranslationCoordinator
+from pdf_reader.file_hash import sha256
+from pdf_reader.routes import register_routes
+from pdf_reader.translation_coordinator import TranslationCoordinator
 
 
 def _make_app(app_state, sample_pdf) -> Flask:
@@ -25,9 +25,9 @@ def test_overlapping_single_and_batch_requests_accept_only_one(app_state, sample
     coordinator = app.config["translation_coordinator"]
 
     with (
-        patch("routes.build_settings", return_value=MagicMock()),
-        patch("routes.sse_stream.generate", return_value=iter([""])) as generate_single,
-        patch("routes.sse_stream.generate_batch") as generate_batch,
+        patch("pdf_reader.routes.build_settings", return_value=MagicMock()),
+        patch("pdf_reader.routes.sse_stream.generate", return_value=iter([""])) as generate_single,
+        patch("pdf_reader.routes.sse_stream.generate_batch") as generate_batch,
     ):
         first_client = app.test_client()
         second_client = app.test_client()
@@ -54,9 +54,9 @@ def test_busy_request_does_not_create_stream_or_temp_directory(app_state, sample
     active_job = coordinator.start(snapshot.document_id, [0])
 
     with (
-        patch("routes.build_settings", return_value=MagicMock()),
-        patch("routes.sse_stream.generate") as generate_single,
-        patch("sse_stream.tempfile.mkdtemp") as make_temp_dir,
+        patch("pdf_reader.routes.build_settings", return_value=MagicMock()),
+        patch("pdf_reader.routes.sse_stream.generate") as generate_single,
+        patch("pdf_reader.sse_stream.tempfile.mkdtemp") as make_temp_dir,
     ):
         with app.test_client() as client:
             response = client.post("/api/translate/0", json={})
@@ -110,8 +110,8 @@ def test_single_route_coordinator_start_logs_truncated_context(app_state, sample
     app = _make_app(app_state, sample_pdf)
     snapshot = app_state.translation_snapshot()
 
-    with patch("routes.build_settings", return_value=MagicMock()):
-        with patch("routes.sse_stream.generate", return_value=iter([""])):
+    with patch("pdf_reader.routes.build_settings", return_value=MagicMock()):
+        with patch("pdf_reader.routes.sse_stream.generate", return_value=iter([""])):
             with app.test_client() as client:
                 with caplog.at_level(logging.INFO, logger="pdf_reader.translate"):
                     resp = client.post("/api/translate/0", json={}, buffered=False)
@@ -126,8 +126,8 @@ def test_batch_route_coordinator_start_logs_truncated_context(app_state, sample_
     app = _make_app(app_state, sample_pdf)
     snapshot = app_state.translation_snapshot()
 
-    with patch("routes.build_settings", return_value=MagicMock()):
-        with patch("routes.sse_stream.generate_batch", return_value=iter([""])):
+    with patch("pdf_reader.routes.build_settings", return_value=MagicMock()):
+        with patch("pdf_reader.routes.sse_stream.generate_batch", return_value=iter([""])):
             with app.test_client() as client:
                 with caplog.at_level(logging.INFO, logger="pdf_reader.translate"):
                     resp = client.post("/api/translate-batch", json={"from": 1, "to": 2}, buffered=False)
