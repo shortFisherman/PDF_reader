@@ -28,6 +28,7 @@ PDF 版面翻译由 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-
 - [项目记忆](docs/project.md)：项目为什么存在、长期意图、常青原则和产品边界。
 - [当前架构](docs/architecture.md)：当前 HEAD 的模块、数据流、API、状态、依赖、测试和技术约束。
 - [路线图](docs/roadmap.md)：候选方向、开放问题、依赖和决策状态；不构成实施授权。
+- [工程与架构长期改进清单](docs/engineering-improvement-plan.md)：按优先级跟踪可靠性、任务生命周期、目录结构和工程卫生改进。
 - [pdf2zh-next 开发参考](docs/pdf2zh-next-development-guide.md)：涉及上游接口、事件和配置时按版本范围阅读。
 
 ## 环境要求
