@@ -149,9 +149,7 @@ def test_debug_session_captures_pdf_reader_and_third_party_logs(tmp_path):
             logging.getLogger("werkzeug").warning("werkzeug-trace-marker-002")
             logging.getLogger("pdf2zh_next").warning("pdf2zh-trace-marker-003")
             logging.getLogger("babeldoc").warning("babeldoc-trace-marker-004")
-            logging.getLogger("werkzeug").warning(
-                "secret api_key=sk-trace-secret-999 prompt=do not log this prompt"
-            )
+            logging.getLogger("werkzeug").warning("secret api_key=sk-trace-secret-999 prompt=do not log this prompt")
 
     content = (glossary_path / "debug_trace.log").read_text(encoding="utf-8")
     for marker in (

@@ -201,7 +201,7 @@ def test_redact_secrets_redacts_prompt_fields():
         '{"custom_system_prompt": "keep instructions secret"}\n'
         "prompt=translate this confidential text\n"
         "user_prompt: keep it secret\n"
-        "system_prompt=secret with \"quotes\" inside"
+        'system_prompt=secret with "quotes" inside'
     )
     redacted = redact_secrets(text)
 
