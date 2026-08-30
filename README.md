@@ -288,6 +288,10 @@ tests/                         Python 与前端测试
 
 详细模块职责、调用链和运行时状态见 [当前架构](docs/architecture.md)。
 
-## 上游依赖与授权提醒
+## 许可证与再分发
 
-本项目依赖采用 AGPL-3.0 的 PDFMathTranslate-next / `pdf2zh-next`。重新分发、在线部署或调整许可证前，请先核对上游许可要求。该提醒不构成法律意见。
+本项目源代码以 **AGPL-3.0-only** 授权，根目录 [LICENSE](LICENSE) 为标准完整 GNU AGPL v3 官方文本；`pyproject.toml`、`package.json`、`package-lock.json` 与 README 的许可证声明一致。
+
+PDF 版面翻译依赖 `pdf2zh-next`（2.9.0）与底层 BabelDOC（0.6.2），其官方元数据与发行物均标注 **AGPL-3.0**。重新分发本项目、与上游组合分发或网络部署前，请按实际组合方式核对许可证与源码提供义务；不要假定“只要 Python 依赖就自动必然构成衍生作品”，也不要移除上游 LICENSE 与版权声明。
+
+许可证与再分发核验基线、本地内部使用、源代码再分发、与上游组合再分发或网络部署四种场景见 [许可证与再分发治理](docs/governance/license.md)。本说明不构成法律意见。

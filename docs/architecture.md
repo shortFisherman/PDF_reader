@@ -4,10 +4,10 @@
 
 ## 核验基线
 
-- 核验日期：2026-08-30；代码基线 commit：`6f6e79a`（P3-03）；本文件与 P3-05 实现提交同步更新（P3-05 提交 hash 由收口 Agent 在工程清单完成记录中补充）。
+- 核验日期：2026-08-30；代码基线 commit：`8652530`（P3-04 前置 HEAD）；本文件随 P3-04 更新，补充许可证与包元数据边界事实。
 - 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml` 和测试收集结果。
 - 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2。
-- 测试基线：`pytest --collect-only -q` 收集到 545 个 Python 测试；`package.json` 的 `test:frontend` 定义六个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller）。
+- 测试基线：`pytest --collect-only -q` 收集到 575 个 Python 测试（P3-04 核验值，含新增许可证契约用例）；`package.json` 的 `test:frontend` 定义六个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller）。
 - 基线说明：后续文档系统提交只修改文档，不改变实现；任何新的架构核对都应以当前源码、锁定文件和测试命令为准。
 
 ## 系统总览
@@ -31,13 +31,22 @@
 | Node.js | >=22（仅测试需要，CI 固定 22） | 运行六个前端测试套件 |
 | ruff / pytest | 锁定在 `requirements.lock` | 代码检查与 Python 测试 |
 
+## 许可证与包元数据
+
+- 本项目许可证为 **AGPL-3.0-only**：根目录 `LICENSE` 是标准完整 GNU AGPL v3 官方文本（来源 <https://www.gnu.org/licenses/agpl-3.0.txt>），`pyproject.toml` 以 PEP 639 `license = "AGPL-3.0-only"` + `license-files = ["LICENSE"]` 声明，`package.json` 与 `package-lock.json` 根包许可证字段同为 `AGPL-3.0-only`，README 提供许可证与再分发说明并链接治理文档。
+- `package.json` 无 `main` 字段，`type: "module"` 与浏览器 ES Modules 前端及 `.mjs` 测试运行器一致（P3-03 已删除无意义入口，P3-04 不再重做 ESM）。
+- 固定翻译依赖：`pdf2zh-next==2.9.0` 与 `babeldoc==0.6.2`（`requirements.lock`），两者官方元数据与发行物（PyPI、wheel、GitHub tag LICENSE）均标注 AGPL-3.0；核验日期、精确版本、直链与所见许可证标识记录在 [docs/governance/license.md](governance/license.md)。
+- 分发边界：本项目当前面向本地单用户运行；重新分发本项目、与上游组合分发或网络部署前，按实际组合方式单独核验 AGPL 义务（保留版权/许可证/源码提供义务等）。该记录不是法律意见。
+
 ## 仓库结构与文件职责
 
 | 路径 | 职责 |
 |---|---|
 | `src/pdf_reader/app.py` | 启动边界 `main(argv)`、`create_app(settings)` 装配 Flask 与全局 `AppState`、启动服务；`src/pdf_reader/__main__.py` 提供 `python -m pdf_reader` 入口（导入无副作用，仅 `python -m` 时调用 `main`） |
 | `src/pdf_reader/cache_ops.py` | 任务临时工作区所有权（每任务 cache 根 workspace：input/output+标记创建与失败清理）、缓存分类、只读统计与孤儿工作区清理：固定前缀/标记校验、Windows 安全 PID 存活探测、dry-run 清理边界与启动恢复 |
-| `pyproject.toml` | P2-01/P2-04 可安装包与依赖契约：setuptools src 布局、`project.dependencies` 唯一直接依赖声明、`project.optional-dependencies.dev`（pytest/Ruff/coverage/mypy/pip-tools） |
+| `pyproject.toml` | P2-01/P2-04 可安装包与依赖契约：setuptools src 布局、`project.dependencies` 唯一直接依赖声明、`project.optional-dependencies.dev`（pytest/Ruff/coverage/mypy/pip-tools）、PEP 639 许可证（AGPL-3.0-only + LICENSE） |
+| `LICENSE` | 本项目许可证：标准完整 GNU AGPL v3 官方文本（AGPL-3.0-only），与 `pyproject.toml`/`package.json`/`package-lock.json` 声明一致 |
+| `docs/governance/license.md` | 本项目与固定上游依赖（pdf2zh-next/BabelDOC）的许可证核验基线、四种使用/分发场景与发布前核验清单（非法律意见） |
 | `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python -m pdf_reader` |
 | `src/pdf_reader/config.py` | 读取 `config.toml`、定义 `EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
 | `src/pdf_reader/paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
@@ -62,7 +71,7 @@
 | `static/app.js` | 前端入口与共享状态 |
 | `static/modules/` | dom、lazy-loader、scroll-sync、alignment-controller、zoom、sse-client、stages、translator、translation-ui-controller、reader-session |
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
-| `tests/` | 28 个 pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局与 P2-03 契约用例）与前端 `.mjs` 测试运行器 |
+| `tests/` | 34 个 pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约与 P3-04 许可证用例）与前端 `.mjs` 测试运行器 |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `scripts/secret_scan.py` | 高可信密钥扫描：只扫 Git 跟踪内容，占位示例放行，不输出 secret 值 |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
