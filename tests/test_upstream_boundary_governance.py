@@ -19,15 +19,18 @@ SHADOW_PREFIXES = (
 )
 
 # BabelDOC/pdf2zh-next 独有定义标记：真源码副本必然包含这些行。
-UPSTREAM_DEFINITION_MARKERS = (
-    "class SharedContextCrossSplitPart:",
-    "class AutomaticTermExtractor:",
-    "class TranslationConfig:",
-    "class Glossary:",
-    "class GlossaryEntry:",
-    "def get_glossaries_for_translation(",
-    "def finalize_auto_extracted_glossary(",
+# 以组合片段形式书写，保证源文件中不出现完整 marker 字面量（否则守卫会
+# 把自身误判为源码副本），但运行时值与真实标记逐字节一致。
+_MARKER_PARTS: tuple[tuple[str, ...], ...] = (
+    ("class ", "SharedContextCrossSplitPart", ":"),
+    ("class ", "AutomaticTermExtractor", ":"),
+    ("class ", "TranslationConfig", ":"),
+    ("class ", "Glossary", ":"),
+    ("class ", "GlossaryEntry", ":"),
+    ("def ", "get_glossaries_for_translation", "("),
+    ("def ", "finalize_auto_extracted_glossary", "("),
 )
+UPSTREAM_DEFINITION_MARKERS = tuple("".join(parts) for parts in _MARKER_PARTS)
 
 MONKEY_PATCH_PATTERNS = (
     # 直接给上游术语函数/类赋新值（含链式模块属性赋值）。
@@ -65,6 +68,18 @@ def _tracked() -> list[str]:
     return result.stdout.splitlines()
 
 
+def _copy_violations(tracked: list[str], root: Path = REPO_ROOT) -> list[str]:
+    violations: list[str] = []
+    for rel in tracked:
+        normalized = rel.replace("\\", "/")
+        if normalized.endswith(".py"):
+            text = (root / rel).read_text(encoding="utf-8", errors="replace")
+            for marker in UPSTREAM_DEFINITION_MARKERS:
+                if marker in text:
+                    violations.append(f"{rel}: {marker}")
+    return violations
+
+
 def _monkey_patch_violations(root: Path) -> list[str]:
     violations: list[str] = []
     for py in sorted(root.rglob("*.py")):
@@ -84,18 +99,13 @@ def test_no_tracked_shadow_packages_or_upstream_source_copies():
     assert tracked, "git ls-files 返回空，治理守卫无法运行"
 
     shadows: list[str] = []
-    copies: list[str] = []
     for rel in tracked:
         normalized = rel.replace("\\", "/")
         if any(normalized.startswith(prefix) for prefix in SHADOW_PREFIXES):
             shadows.append(rel)
-        if normalized.endswith(".py"):
-            text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="replace")
-            for marker in UPSTREAM_DEFINITION_MARKERS:
-                if marker in text:
-                    copies.append(f"{rel}: {marker}")
 
     assert not shadows, f"发现被 Git 跟踪的 pdf2zh_next/babeldoc 影子包：{shadows}"
+    copies = _copy_violations(tracked)
     assert not copies, f"发现疑似上游源码副本的 Git 跟踪文件：{copies}"
 
 
@@ -124,3 +134,32 @@ def test_guard_scope_excludes_test_patches(tmp_path):
 
     assert _monkey_patch_violations(tmp_path), "守卫应能识别测试替身模式（有检测能力）"
     assert _monkey_patch_violations(SRC_PACKAGE) == [], "守卫只扫描 src/pdf_reader，不扫描 tests/"
+
+
+def test_guard_scans_itself_without_false_positive():
+    assert _copy_violations(["tests/test_upstream_boundary_governance.py"]) == []
+
+
+def test_guard_detects_real_upstream_source_copy(tmp_path):
+    fake = tmp_path / "fake_upstream.py"
+    fake.write_text("class " + "AutomaticTermExtractor" + ":\n    pass\n", encoding="utf-8")
+    violations = _copy_violations(["fake_upstream.py"], root=tmp_path)
+    assert len(violations) == 1
+    assert "fake_upstream.py" in violations[0]
+    assert "AutomaticTermExtractor" in violations[0]
+
+
+def test_upstream_marker_constants_keep_runtime_values():
+    expected = tuple(
+        "".join(parts)
+        for parts in (
+            ("class ", "SharedContext", "CrossSplitPart", ":"),
+            ("class ", "Automatic", "TermExtractor", ":"),
+            ("class ", "Translation", "Config", ":"),
+            ("class ", "Glossary", ":"),
+            ("class ", "Glossary", "Entry", ":"),
+            ("def ", "get_glossaries", "_for_translation", "("),
+            ("def ", "finalize_auto", "_extracted_glossary", "("),
+        )
+    )
+    assert UPSTREAM_DEFINITION_MARKERS == expected

@@ -8,6 +8,7 @@ import pytest
 
 from pdf_reader import glossary_merger
 from pdf_reader.glossary_merger import merge_glossary_csvs
+from pdf_reader.term_model import PROTECTED_AUTHORITATIVE_FILENAMES, TermStoreError
 
 
 def write_csv(path: Path, rows: list[tuple[str, str]]) -> None:
@@ -396,3 +397,27 @@ def test_bom_cumulative_is_read_and_merged(tmp_path):
     assert ("alpha", "阿尔法") in rows
     assert ("beta", "贝塔") in rows
     assert not list(tmp_path.glob("*.tmp"))
+
+
+@pytest.mark.parametrize("name", sorted(PROTECTED_AUTHORITATIVE_FILENAMES))
+def test_auto_merge_refuses_protected_destination(tmp_path, name: str):
+    cumulative_path = tmp_path / name
+    auto_path = tmp_path / "auto.csv"
+    write_csv(auto_path, [("beta", "贝塔")])
+
+    with pytest.raises(TermStoreError, match="protected"):
+        merge_glossary_csvs(cumulative_path, auto_path)
+
+    assert not cumulative_path.exists()
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_auto_merge_allows_legacy_cumulative_destination(tmp_path):
+    cumulative_path = tmp_path / "cumulative_glossary.csv"
+    auto_path = tmp_path / "auto.csv"
+    write_csv(cumulative_path, [("alpha", "阿尔法")])
+    write_csv(auto_path, [("beta", "贝塔")])
+
+    merge_glossary_csvs(cumulative_path, auto_path)
+
+    assert dict(read_csv(cumulative_path)) == {"alpha": "阿尔法", "beta": "贝塔"}

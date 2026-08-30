@@ -5,7 +5,9 @@ import threading
 from collections import defaultdict
 from pathlib import Path
 
+from pdf_reader.path_locks import lock_for_path
 from pdf_reader.task_logging import task_log
+from pdf_reader.term_model import PROTECTED_AUTHORITATIVE_FILENAMES, TermStoreError
 
 logger = logging.getLogger("pdf_reader")
 
@@ -51,42 +53,52 @@ def merge_glossary_csvs(cumulative_path: Path, auto_extracted_path: Path) -> Non
     cumulative file stays in place and the temp file is removed.
     """
     with _merge_lock:
-        if not auto_extracted_path.exists():
-            task_log(logger, logging.WARNING, "auto-extracted glossary file not found: %s", auto_extracted_path)
-            return
-
-        counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-        if cumulative_path.exists():
-            cumulative_counts = _read_glossary_counts(cumulative_path, "cumulative")
-            if cumulative_counts is None:
+        if cumulative_path.name in PROTECTED_AUTHORITATIVE_FILENAMES:
+            raise TermStoreError(f"auto glossary merge must not write protected file: {cumulative_path.name}")
+        # 与迁移共用 cumulative 路径锁：读取与 os.replace 提交全程互斥，
+        # 保证迁移看到的 rows 与备份来源是同一快照。
+        with lock_for_path(cumulative_path):
+            if not auto_extracted_path.exists():
+                task_log(
+                    logger,
+                    logging.WARNING,
+                    "auto-extracted glossary file not found: %s",
+                    auto_extracted_path,
+                )
                 return
-            counts = cumulative_counts
 
-        auto_counts = _read_glossary_counts(auto_extracted_path, "auto-extracted")
-        if auto_counts is None:
-            return
-        for source, targets in auto_counts.items():
-            for target, vote in targets.items():
-                counts[source][target] += vote
+            counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+            if cumulative_path.exists():
+                cumulative_counts = _read_glossary_counts(cumulative_path, "cumulative")
+                if cumulative_counts is None:
+                    return
+                counts = cumulative_counts
 
-        if not counts:
-            return
+            auto_counts = _read_glossary_counts(auto_extracted_path, "auto-extracted")
+            if auto_counts is None:
+                return
+            for source, targets in auto_counts.items():
+                for target, vote in targets.items():
+                    counts[source][target] += vote
 
-        tmp_path = cumulative_path.with_name(cumulative_path.name + ".tmp")
-        try:
-            with open(tmp_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["source", "target"])
-                for source, targets in sorted(counts.items()):
-                    best_target = max(targets, key=lambda target: targets[target])
-                    writer.writerow([source, best_target])
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_path, cumulative_path)
-        except Exception:
-            logger.error("Failed to write cumulative glossary %s", cumulative_path, exc_info=True)
+            if not counts:
+                return
+
+            tmp_path = cumulative_path.with_name(cumulative_path.name + ".tmp")
             try:
-                tmp_path.unlink()
-            except OSError:
-                pass
-            raise
+                with open(tmp_path, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["source", "target"])
+                    for source, targets in sorted(counts.items()):
+                        best_target = max(targets, key=lambda target: targets[target])
+                        writer.writerow([source, best_target])
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, cumulative_path)
+            except Exception:
+                logger.error("Failed to write cumulative glossary %s", cumulative_path, exc_info=True)
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+                raise
