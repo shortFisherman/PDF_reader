@@ -14,6 +14,9 @@
 更新原则：
 
 - 架构行为变化时，文档修改与代码修改必须在同一提交中，禁止事后补写。
+- 移动、重命名或归档 `docs/` 文件时，必须在同一变更中更新 README、architecture、project、
+  roadmap 等常青文档里的相对链接与文档导航，避免留下失效链接；链接可解析性由
+  `tests/test_documentation_governance.py` 回归。
 - `docs/project.md` 只承载长期意图；短期进度、测试数量与实施细节属于 `CHANGELOG.md`、工程清单或提交消息。
 - `docs/roadmap.md` 不构成实施授权；`已决定，尚未授权实施` 仍不能开工。
 

@@ -1,20 +1,20 @@
 """P4-01 配置示例与文档契约。
 
 锁定 config.example.toml 与当前代码支持面一致：可解析、活跃键在白名单内、
-全部 41 个支持键都有文档赋值行、无真实密钥；README 链接有效；roadmap 未被本次修改。
+全部 41 个支持键都有文档赋值行、无真实密钥；README 链接有效（含 URL 编码路径）。
+roadmap 的链接可解析性由 test_documentation_governance 的常青文档链接检查覆盖。
 """
 
 import re
-import subprocess
 import tomllib
 from pathlib import Path
+from urllib.parse import unquote
 
 from pdf_reader import config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = REPO_ROOT / "config.example.toml"
 README = REPO_ROOT / "README.md"
-ROADMAP = REPO_ROOT / "docs" / "roadmap.md"
 
 _SECTION_HEADER = re.compile(r"^\[([a-zA-Z0-9_]+)\]\s*$")
 _COMMENT_ASSIGNMENT = re.compile(r"^\s*#\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
@@ -80,20 +80,12 @@ def test_readme_links_to_example_and_design_doc():
     assert "docs/pdf2zh-configuration-expansion-design.md" in text
     broken = []
     for target in re.findall(r"\]\(([^)]+)\)", text):
-        if target.startswith(("http://", "https://", "#", "mailto:")):
+        link = target.strip()
+        if link.startswith(("#", "http://", "https://", "mailto:")):
             continue
-        path_part = target.split("#", 1)[0]
+        if link.startswith("<") and link.endswith(">"):
+            link = link[1:-1]
+        path_part = unquote(link.split("#", 1)[0])
         if not (README.parent / path_part).resolve().exists():
             broken.append(target)
     assert not broken, f"README 链接无法解析: {broken}"
-
-
-def test_roadmap_unchanged_by_this_change():
-    result = subprocess.run(
-        ["git", "diff", "--exit-code", "--", str(ROADMAP.relative_to(REPO_ROOT))],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert result.returncode == 0, "docs/roadmap.md 不得在本变更中被修改"

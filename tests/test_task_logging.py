@@ -194,6 +194,34 @@ def test_redact_secrets_common_tokens(monkeypatch):
     assert "api_key field without colon" in redacted
 
 
+def test_redact_secrets_redacts_prompt_fields():
+    """prompt 类字段值不得进入日志（quoted JSON 与 unquoted 自由文本均覆盖）"""
+    text = (
+        '"prompt": "translate this confidential text"\n'
+        '{"custom_system_prompt": "keep instructions secret"}\n'
+        "prompt=translate this confidential text\n"
+        "user_prompt: keep it secret\n"
+        "system_prompt=secret with \"quotes\" inside"
+    )
+    redacted = redact_secrets(text)
+
+    assert "translate this confidential text" not in redacted
+    assert "keep instructions secret" not in redacted
+    assert "keep it secret" not in redacted
+    assert 'secret with "quotes" inside' not in redacted
+    assert '"prompt": "<redacted>"' in redacted
+    assert '"custom_system_prompt": "<redacted>"' in redacted
+    assert "prompt=<redacted>" in redacted
+    assert "user_prompt:<redacted>" in redacted
+    assert "system_prompt=<redacted>" in redacted
+
+
+def test_redact_secrets_keeps_token_count_prompt_mentions():
+    """token 统计中的 "Prompt N"（无字段赋值语法）不被误伤"""
+    text = "Total 100, Prompt 10, Cache Hit Prompt 5, Completion 90"
+    assert redact_secrets(text) == text
+
+
 def test_safe_formatter_redacts_message_and_traceback():
     formatter = task_logging.SafeFormatter("%(message)s")
     try:
@@ -373,7 +401,8 @@ def test_success_lifecycle_status_sequence(caplog, tmp_path):
     from pdf_reader.sse_stream import GenerateContext, generate
 
     coordinator = TranslationCoordinator()
-    job = coordinator.start("doc-1234567890", [0], pdf_hash="hash-abcdef")
+    with caplog.at_level(logging.INFO, logger="pdf_reader"):
+        job = coordinator.start("doc-1234567890", [0], pdf_hash="hash-abcdef")
     task_ctx = task_context_from_indices(job.job_id, job.document_id, job.pdf_hash or "", [0])
 
     result = MagicMock()
@@ -414,7 +443,8 @@ def test_failed_lifecycle_status_sequence(caplog, tmp_path):
     from pdf_reader.sse_stream import GenerateContext, generate
 
     coordinator = TranslationCoordinator()
-    job = coordinator.start("doc-1234567890", [0], pdf_hash="hash-abcdef")
+    with caplog.at_level(logging.INFO, logger="pdf_reader"):
+        job = coordinator.start("doc-1234567890", [0], pdf_hash="hash-abcdef")
     task_ctx = task_context_from_indices(job.job_id, job.document_id, job.pdf_hash or "", [0])
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
@@ -447,7 +477,8 @@ def test_batch_failed_lifecycle_status_sequence(caplog, tmp_path):
     from pdf_reader.sse_stream import GenerateBatchContext, generate_batch
 
     coordinator = TranslationCoordinator()
-    job = coordinator.start("doc-1234567890", [1, 2, 3, 4], pdf_hash="hash-abcdef")
+    with caplog.at_level(logging.INFO, logger="pdf_reader"):
+        job = coordinator.start("doc-1234567890", [1, 2, 3, 4], pdf_hash="hash-abcdef")
     task_ctx = task_context_from_indices(job.job_id, job.document_id, job.pdf_hash or "", [1, 2, 3, 4])
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()

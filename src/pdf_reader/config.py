@@ -50,7 +50,11 @@ def is_loopback_host(host: str) -> bool:
 
 @dataclass(frozen=True)
 class ServerConfig:
-    """启动服务器所需的运行时配置（host/port/debug 的唯一最终来源）。"""
+    """启动服务器所需的运行时配置（host/port/debug 的唯一最终来源）。
+
+    ``debug`` 只表示“详细诊断日志模式”（日志 DEBUG + debug_trace）；
+    它不再控制 Flask debugger 或 reloader。
+    """
 
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
@@ -58,8 +62,8 @@ class ServerConfig:
 
     @property
     def use_reloader(self) -> bool:
-        """reloader 语义：debug 开启时启用，关闭时显式关闭（不依赖 Flask 隐式默认）。"""
-        return self.debug
+        """安全语义：无论 debug 值如何，永不启用 Flask reloader。"""
+        return False
 
 
 @dataclass(frozen=True)
@@ -1085,7 +1089,7 @@ def build_app_settings(
 
     默认按 ``resolve_server_config(config_data, cli_debug=cli_debug)`` 解析一次；
     传入 ``run_cfg`` 时直接复用该已解析结果（不再调用 ``resolve_server_config``，
-    避免 ``main`` 内两次解析导致 debug/use_reloader 与 ``settings.debug`` 分叉，
+    避免 ``main`` 内两次解析导致 ``settings.debug`` 与启动参数分叉，
     此时 ``run_cfg`` 优先于 ``cli_debug``）。传入 ``upstream`` 时原样复用
     （``main`` 必须传回 ``validate_startup_requirements`` 的严格实例）；
     未传入时以宽松模式装配，供无 config.toml 的测试/兼容 fallback 使用。

@@ -144,7 +144,7 @@ The system SHALL demote the `werkzeug`, `pdf2zh_next`, and `babeldoc` top-level 
 
 ### Requirement: Console and rotating file dual output
 
-The system SHALL attach a `StreamHandler` (console) and a `RotatingFileHandler` to `logs/pdf_reader.log` (maxBytes=5MB, backupCount=5, utf-8) to the `pdf_reader` namespace. Both handlers SHALL use the same formatter. The `logs/` directory SHALL be created if missing.
+The system SHALL attach a `StreamHandler` (console) and a `RotatingFileHandler` to `logs/pdf_reader.log` (maxBytes=128KiB, backupCount=5, utf-8) to the `pdf_reader` namespace. Both handlers SHALL use the same formatter. The `logs/` directory SHALL be created if missing. The rotating file handler SHALL delete this log's own numbered backups (e.g. `pdf_reader.log.1`) whose mtime is older than 14 days, at setup startup and after each rotation, and SHALL NOT delete other files (e.g. `debug_trace.log*`, non-numbered suffixes, or the main log itself). Cleanup failure SHALL only log a warning and SHALL NOT interrupt startup or logging, and the warning SHALL NOT trigger recursive rotation/cleanup.
 
 #### Scenario: Both handlers attached
 
@@ -153,8 +153,13 @@ The system SHALL attach a `StreamHandler` (console) and a `RotatingFileHandler` 
 
 #### Scenario: File rotation caps disk usage
 
-- **WHEN** the log file exceeds 5MB
-- **THEN** the current file is rotated and at most 5 backup files are retained, capping total log disk usage at approximately 30MB
+- **WHEN** the log file exceeds 128KiB
+- **THEN** the current file is rotated and at most 5 backup files are retained, capping total log disk usage at approximately 768KiB
+
+#### Scenario: Expired backups removed without touching unrelated files
+
+- **WHEN** `setup_logging` runs or a rotation occurs and a `pdf_reader.log.<N>` backup is older than 14 days
+- **THEN** that backup is removed; newer backups, `debug_trace.log` files, and non-numbered suffixes are kept, and any cleanup failure only produces a warning
 
 ### Requirement: No secrets in logs
 

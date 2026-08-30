@@ -434,7 +434,7 @@ def test_method_not_allowed_returns_json_error(test_client):
     assert data["error"]
 
 
-def test_internal_error_sanitizes_response_and_keeps_log(caplog, monkeypatch, tmp_path):
+def test_internal_error_sanitizes_response_and_keeps_log(managed_caplog, monkeypatch, tmp_path):
     import logging
 
     from pdf_reader.routes import register_routes
@@ -456,7 +456,7 @@ def test_internal_error_sanitizes_response_and_keeps_log(caplog, monkeypatch, tm
         raise RuntimeError(sentinel)
 
     monkeypatch.setattr(state, "save_reading_progress", boom)
-    with caplog.at_level(logging.ERROR, logger="pdf_reader.routes"):
+    with managed_caplog.at_level(logging.ERROR, logger="pdf_reader.routes"):
         with app.test_client() as client:
             resp = client.post("/api/reading-progress", json={"page": 0})
 
@@ -466,7 +466,7 @@ def test_internal_error_sanitizes_response_and_keeps_log(caplog, monkeypatch, tm
     body = resp.data.decode("utf-8")
     for secret in ("sk-secret-123", "Users\\secret", "onerror"):
         assert secret not in body
-    assert "sk-secret-123" in caplog.text
+    assert "sk-secret-123" in managed_caplog.text
 
 
 def test_translate_context_uses_injected_settings_not_module_globals(app_state, sample_pdf, monkeypatch):
@@ -582,3 +582,210 @@ def test_register_routes_builds_settings_only_when_key_missing(monkeypatch):
     register_routes(missing_app)
     assert missing_app.config["app_settings"] is fallback
     assert len(calls) == 1
+
+
+def test_client_errors_valid_report_logs_cleaned_fields(test_client, managed_caplog):
+    import logging
+
+    payload = {
+        "kind": "window_error",
+        "message": "boom\nsecond line\x00",
+        "source": "http://127.0.0.1/app.js",
+        "line": 12,
+        "column": 3,
+        "stack": "Error: boom\n    at app.js:12:3",
+    }
+    with managed_caplog.at_level(logging.WARNING, logger="pdf_reader.client"):
+        resp = test_client.post("/api/client-errors", json=payload)
+
+    assert resp.status_code == 202
+    assert resp.get_json() == {"ok": True}
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.client"]
+    assert len(records) == 1
+    assert records[0].levelno == logging.WARNING
+    message = records[0].message
+    assert "kind='window_error'" in message
+    assert "message='boom second line'" in message
+    assert "source='http://127.0.0.1/app.js'" in message
+    assert "line=12 column=3" in message
+    assert "stack='Error: boom at app.js:12:3'" in message
+    assert "\n" not in message
+    assert "\x00" not in message
+
+
+def test_client_errors_invalid_payloads(test_client, managed_caplog):
+    import logging
+
+    cases = [
+        ["not", "an", "object"],
+        "plain text",
+        42,
+        {"message": "x", "user_prompt": "secret business data"},
+        {"message": 42},
+        {"line": "12"},
+        {},
+        {"kind": "window_error"},
+        {"message": ""},
+    ]
+    with managed_caplog.at_level(logging.WARNING, logger="pdf_reader.client"):
+        for payload in cases:
+            resp = test_client.post("/api/client-errors", json=payload)
+            assert resp.status_code == 400, f"unexpected status for {payload!r}"
+            assert resp.get_json()["code"] == "invalid_payload", f"unexpected code for {payload!r}"
+
+        resp = test_client.post("/api/client-errors", data="null", content_type="application/json")
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "invalid_payload"
+
+        resp = test_client.post("/api/client-errors", data="{broken", content_type="application/json")
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "invalid_payload"
+
+    assert not [r for r in managed_caplog.records if r.name == "pdf_reader.client"]
+
+
+def test_client_errors_non_loopback_rejected(test_client, managed_caplog):
+    import logging
+
+    with managed_caplog.at_level(logging.WARNING):
+        resp = test_client.post(
+            "/api/client-errors",
+            json={"message": "must not be accepted"},
+            environ_base={"REMOTE_ADDR": "203.0.113.9"},
+        )
+
+    assert resp.status_code == 403
+    assert resp.get_json()["code"] == "client_errors_local_only"
+    assert not [r for r in managed_caplog.records if r.name == "pdf_reader.client"]
+
+
+def test_client_errors_accepts_loopback_variants(test_client, managed_caplog):
+    import logging
+
+    with managed_caplog.at_level(logging.WARNING, logger="pdf_reader.client"):
+        for addr in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+            resp = test_client.post(
+                "/api/client-errors",
+                json={"kind": "window_error", "message": f"boom-{addr}"},
+                environ_base={"REMOTE_ADDR": addr},
+            )
+            assert resp.status_code == 202, addr
+            assert resp.get_json() == {"ok": True}
+
+    assert len([r for r in managed_caplog.records if r.name == "pdf_reader.client"]) == 3
+
+
+def test_client_errors_oversized_body_rejected(test_client, managed_caplog):
+    import logging
+
+    with managed_caplog.at_level(logging.WARNING, logger="pdf_reader.client"):
+        resp = test_client.post("/api/client-errors", json={"message": "x" * 9000})
+
+    assert resp.status_code == 413
+    assert resp.get_json()["code"] == "payload_too_large"
+    assert not [r for r in managed_caplog.records if r.name == "pdf_reader.client"]
+
+
+def test_client_errors_truncates_long_string_fields(test_client, managed_caplog):
+    import logging
+
+    with managed_caplog.at_level(logging.WARNING, logger="pdf_reader.client"):
+        resp = test_client.post(
+            "/api/client-errors",
+            json={"kind": "window_error", "message": "m" * 5000},
+        )
+        assert resp.status_code == 202
+        resp = test_client.post(
+            "/api/client-errors",
+            json={"kind": "window_error", "stack": "t" * 5000},
+        )
+        assert resp.status_code == 202
+
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.client"]
+    assert len(records) == 2
+    assert ("m" * 1024) in records[0].message
+    assert ("m" * 1025) not in records[0].message
+    assert ("t" * 4096) in records[1].message
+    assert ("t" * 4097) not in records[1].message
+
+
+def test_client_errors_redacts_secrets_from_final_log_output(test_client):
+    import logging
+
+    from pdf_reader.task_logging import SafeFormatter
+
+    captured = []
+    handler = logging.Handler()
+    handler.setLevel(logging.WARNING)
+    handler.setFormatter(SafeFormatter("%(message)s"))
+    handler.emit = lambda record: captured.append(handler.format(record))
+    client_logger = logging.getLogger("pdf_reader.client")
+    client_logger.addHandler(handler)
+    try:
+        resp = test_client.post(
+            "/api/client-errors",
+            json={
+                "kind": "window_error",
+                "message": "api_key=sk-super-secret-123456 and Authorization: Bearer abcdefghijklmnop",
+                "stack": "sk-another-secret-9999",
+            },
+        )
+    finally:
+        client_logger.removeHandler(handler)
+        handler.close()
+
+    assert resp.status_code == 202
+    output = "\n".join(captured)
+    assert "sk-super-secret-123456" not in output
+    assert "sk-another-secret-9999" not in output
+    assert "abcdefghijklmnop" not in output
+    assert "<redacted>" in output
+
+
+def test_http_exception_500_records_traceback(managed_caplog, monkeypatch, tmp_path):
+    import logging
+
+    from werkzeug.exceptions import InternalServerError
+
+    from pdf_reader.routes import register_routes
+    from pdf_reader.state import AppState
+    from pdf_reader.translation_coordinator import TranslationCoordinator
+
+    state = AppState(tmp_path / "cache")
+    app = Flask(__name__)
+    app.config.update(
+        app_state=state,
+        TESTING=False,
+        translation_coordinator=TranslationCoordinator(),
+    )
+    register_routes(app)
+
+    def boom(page):  # noqa: ANN202
+        raise InternalServerError("boom-http500-diagnostic")
+
+    monkeypatch.setattr(state, "save_reading_progress", boom)
+    with managed_caplog.at_level(logging.ERROR, logger="pdf_reader.routes"):
+        with app.test_client() as client:
+            resp = client.post("/api/reading-progress", json={"page": 0})
+
+    assert resp.status_code == 500
+    assert resp.get_json() == {"code": "internal_error", "error": "服务器内部错误"}
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.routes"]
+    assert len(records) == 1
+    assert records[0].levelno == logging.ERROR
+    assert "HTTP error 500 while processing POST /api/reading-progress" in records[0].message
+    assert "Traceback (most recent call last):" in managed_caplog.text
+    assert "boom-http500-diagnostic" in managed_caplog.text
+
+
+def test_http_exception_4xx_has_no_traceback(test_client, managed_caplog):
+    import logging
+
+    with managed_caplog.at_level(logging.WARNING, logger="pdf_reader.routes"):
+        resp = test_client.post("/api/page/left/0")
+
+    assert resp.status_code == 405
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.routes"]
+    assert len(records) == 1
+    assert "HTTP error 405" in records[0].message
+    assert "Traceback" not in managed_caplog.text

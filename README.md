@@ -28,7 +28,7 @@ PDF 版面翻译由 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-
 - [项目记忆](docs/project.md)：项目为什么存在、长期意图、常青原则和产品边界。
 - [当前架构](docs/architecture.md)：当前 HEAD 的模块、数据流、API、状态、依赖、测试和技术约束。
 - [路线图](docs/roadmap.md)：候选方向、开放问题、依赖和决策状态；不构成实施授权。
-- [工程与架构长期改进清单](docs/engineering-improvement-plan-829.md)：按优先级跟踪可靠性、任务生命周期、目录结构和工程卫生改进。
+- [工程与架构长期改进清单](docs/completed%20improvements/engineering-improvement-plan-829.md)：按优先级跟踪可靠性、任务生命周期、目录结构和工程卫生改进（P0–P3 已收口，文档保留在 `docs/completed improvements/`）。
 - [pdf2zh-next 开发参考](docs/pdf2zh-next-development-guide.md)：涉及上游接口、事件和配置时按版本范围阅读。
 - [工具与工作流目录治理](docs/governance/tool-directories.md)：`.agents/`、`.codex/`、`.comet/`、`.opencode/`、`openspec/` 等目录的职责、跟踪与重建边界。
 - [依赖升级流程](docs/governance/dependency-upgrade.md)：Python/Node 支持范围与上游翻译依赖升级契约。
@@ -77,7 +77,8 @@ powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable .\
 
 把 [config.example.toml](config.example.toml) 复制为 `config.toml` 后编辑；完整字段手册、
 每个字段的类型/默认值/范围/Provider 适用性与副作用、Provider 配方和内部固定值都在该文件中。
-配置扩展的设计决策与实施说明见 [PDF2ZH 配置能力扩展设计](docs/pdf2zh-configuration-expansion-design.md)。
+配置扩展的设计决策与实施说明见 [PDF2ZH 配置能力扩展设计](docs/completed%20improvements/pdf2zh-configuration-expansion-design-830.md)。
+该设计文档已随收口移入 `docs/completed improvements/`（原路径 `docs/pdf2zh-configuration-expansion-design.md` 不再使用）。
 
 > **普通用户提示：只改你确定的字段。** 高级参数不了解就保持注释或删除，全部都有可直接使用的
 > 默认值；不要猜阈值或并发值。41 键的完整类型、默认值与副作用手册仍在
@@ -184,7 +185,7 @@ API Key 不应提交到 Git。
 | `right.pdf` | 该文档的译文工作副本（首次打开时复制源文件，翻译后原子替换） |
 | `cumulative_glossary.csv` | 该文档的累计术语表 |
 | `reading_progress.json` | 阅读进度 |
-| `debug_trace.log` | 仅 debug 模式产生 |
+| `debug_trace.log` | 仅详细诊断日志模式产生：按文档保存的有界轮转调试轨迹（2MB × 3 备份，按 job 过滤） |
 
 翻译任务运行时会在 `cache/` 直接子目录创建一个**任务根工作区** `pdf-reader-translation-*`，内部固定含 `input/`（抽取输入 PDF）与 `output/`（上游译文输出）两个子目录，根工作区内含 `.pdf-reader-temp-workspace` 标记（`kind`/`job_id`/`pid`/`created_at`）。整个根工作区只在后台 worker 确认退出后一次性删除；join timeout、进程崩溃或强制退出留下的工作区会**整体保留**（input/output/标记都在），供下次启动识别并安全处理。标记写入或创建中途失败时，只清理本次新建的空目录，不触碰其他缓存内容。
 
@@ -209,14 +210,33 @@ python scripts/cache_manage.py clean --yes       # 真正删除
 - SSE 错误事件统一为 `{"type": "error", "code": <稳定错误码>, "error": <安全消息>}`；上游 `error` 事件、`TranslationError`、普通异常与“无翻译结果”均只发送安全摘要。
 - 前端错误文本一律经 DOM 节点 `textContent` 呈现，不拼接未转义 HTML。
 - 前端翻译请求使用 `AbortController` 终止浏览器 fetch/SSE 消费；浏览器 abort 不是服务端取消确认，服务端任务生命周期仍由 SSE 断开与后端机制决定。
+- 前端 `window` 的 `error` 与 `unhandledrejection` 会经 `static/modules/client-error.js` 采集并上报 `/api/client-errors`：仅接受本机来源，白名单字段 `kind/message/source/line/column/stack`，正文上限 8KB，不记录请求 headers、cookies 或 prompt。
 - 服务默认绑定 `127.0.0.1`。若配置为 `localhost`/`127.0.0.0/8`/`::1` 之外的地址，启动日志会输出醒目的安全 WARNING（服务无认证，可能暴露本地 PDF 与 API 配置），但不会阻止启动。
+
+## 日志位置与排障
+
+程序常驻写入 `logs/pdf_reader.log`（位于 `PDF_READER_DATA_ROOT`，默认仓库根下），单文件 128 KiB
+（128×1024 字节）、保留 5 份轮转备份（常规上限约 768 KiB）；超过 14 天的轮转备份会在启动与轮转时
+自动清理，不需要手动清理。每行包含 ISO 时间、级别、`run_id`、pid、thread、logger，翻译任务行
+还带 `[job=... doc=... hash=... page=... status=...]` 前缀；`werkzeug`、`pdf2zh_next`、`babeldoc`
+的第三方日志与项目日志写入同一文件、走同一脱敏。
+
+遇到翻译失败或界面异常时按下面顺序排查：
+
+1. 打开 `logs/pdf_reader.log`，先搜 `ERROR` 或 `Traceback` 定位失败发生点；
+2. 页面/接口返回里出现 `job_id` 时，在日志中搜 `job=<该 id>`，即可看到该任务的完整生命周期；
+3. 需要更多细节时，短期用 `python -m pdf_reader --debug` 重启（额外生成按文档保存的
+   `cache/<hash>/debug_trace.log`，2MB × 3 轮转），复现问题后关掉 debug 恢复正常运行；
+4. 日志中 API Key、Bearer token、`api_key` 字段与 prompt 内容都会被打码，看到 `<redacted>` 是正常行为。
+
+debug 只控制日志详细程度，不会启用 Flask debugger 或 reloader。
 
 ## 任务日志上下文
 
 - 任务日志由 `src/pdf_reader/task_logging.py` 集中输出，稳定前缀：`[job=<完整 job_id> doc=<8 字符> hash=<12 字符> page=N|pages=A-B status=<状态>]`；页码一律 1-based，`document_id` 截断 8 字符、pdf hash 截断 12 字符。
 - 生命周期状态：`created`、`started`、`client_disconnected`、`cancelling`、`finished`、`failed`、`discarded`、`cleaned`；join timeout 记录 `cleanup_deferred`，不会误报 `cleaned`。coordinator 释放语义保留 `cancelled`。
 - 上下文经 `contextvars` 贯穿协调器、路由、SSE 生成器、后台 worker 线程、翻译生命周期与 AppState 写回/恢复；worker 线程显式传播，不依赖请求线程字段。
-- 日志脱敏在格式化边界完成：控制台与 `logs/pdf_reader.log` 会替换 `sk-...`、`Authorization/Bearer`、`api_key` 字段及配置中的 API Key；traceback 结构保留，路径/HTML 仅作为服务端诊断内容保留；用户 prompt 不写入任何日志。
+- 日志脱敏在格式化边界完成：控制台、`logs/pdf_reader.log` 与 `debug_trace.log` 会替换配置中的 API Key、`sk-...`、`Authorization/Bearer`、`api_key` 字段以及 `custom_system_prompt`/`system_prompt`/`user_prompt`/`prompt` 类字段值；`werkzeug`/`pdf2zh_next`/`babeldoc` 的第三方日志与项目日志共用同一对 handler 和同一个 `SafeFormatter`，因此同样脱敏。traceback 结构保留，路径/HTML 仅作为服务端诊断内容保留。
 
 ### debug 优先级与安全默认值
 
@@ -229,7 +249,8 @@ python scripts/cache_manage.py clean --yes       # 真正删除
 
 - `--debug` 与 `--no-debug` 互斥，同时传入会立即报错并以非零状态退出。
 - `PDF_READER_DEBUG` 只接受 `true` / `false` / `1` / `0` / `on` / `off` / `yes` / `no`（不区分大小写、忽略首尾空白）；空值或其它值在启动时报错并退出。
-- 解析出的同一个 debug 布尔值同时用于应用日志与 Flask 服务：`debug = true` 时启用 Flask debugger 与 reloader；`debug = false`（默认）时两者都显式关闭，不依赖 Flask 隐式默认。
+- `debug` 只表示“详细诊断日志模式”：`debug = true` 开启日志 DEBUG 级别与 `debug_trace` 会话记录；Flask debugger 与 reloader 无论 debug 值如何都保持关闭（`app.run(debug=False, use_reloader=False)`），不会暴露交互式调试器或自动重载进程。它是有用的详细诊断开关，不是“没用的调试模式”。
+- debug 开启时，每次翻译任务会在文档缓存目录写入/追加 `cache/<hash>/debug_trace.log`（2MB × 3 备份，按 `job_id` 过滤）；关闭时不产生该文件。
 - `MODEL_API_KEY` 环境变量仍优先于 `config.toml` 的 `model.api_key`。
 
 ### 启动配置校验
@@ -295,7 +316,7 @@ tasklist /FI "PID eq <pid>"
 
 然后访问 `http://127.0.0.1:5001`。
 
-调试模式（优先级高于环境变量与 `config.toml`）：
+详细诊断日志模式（优先级高于环境变量与 `config.toml`；只影响日志，不会启用 Flask debugger/reloader）：
 
 ```powershell
 python -m pdf_reader --debug
@@ -356,12 +377,15 @@ src/pdf_reader/                 可安装包（python -m pdf_reader 入口）
 src/pdf_reader/app.py           Flask 应用入口
 src/pdf_reader/routes.py        HTTP 与 SSE 路由
 src/pdf_reader/state.py         当前文档、缓存和阅读状态
+src/pdf_reader/logging_config.py 统一日志管线（主日志轮转、第三方托管、脱敏）
+src/pdf_reader/debug_trace.py   按任务的有界 debug_trace.log 会话捕获
 src/pdf_reader/translation_orchestrator.py  翻译线程与事件桥接
 src/pdf_reader/sse_stream.py    翻译进度事件
 src/pdf_reader/translation_lifecycle.py     译文持久化与资源清理
 src/pdf_reader/translation_settings.py      pdf2zh-next 参数组装
 pyproject.toml                  可安装包元数据
 static/app.js                  阅读器前端入口
+static/modules/client-error.js 前端全局错误上报（window error/unhandledrejection）
 static/modules/translation-ui-controller.js  翻译 UI 状态机（busy/progress/stage/error/abort/reset）
 static/modules/reader-session.js             文档级资源 session/dispose 边界
 static/modules/                对齐、懒加载、缩放、SSE、翻译与状态机模块

@@ -77,7 +77,7 @@ class TestMainDebugPriority:
 
         assert run(["--debug"]) == 0
 
-        mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=True, use_reloader=True)
+        mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
         assert mock_app.settings.debug is True
 
     def test_cli_no_debug_overrides_env_and_config(self, monkeypatch, main_entry):
@@ -97,7 +97,7 @@ class TestMainDebugPriority:
 
         assert run([]) == 0
 
-        mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=True, use_reloader=True)
+        mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
 
     def test_env_false_overrides_config_true(self, monkeypatch, main_entry):
         monkeypatch.setenv("PDF_READER_DEBUG", "0")
@@ -115,7 +115,7 @@ class TestMainDebugPriority:
 
         assert run([]) == 0
 
-        mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=True, use_reloader=True)
+        mock_app.run.assert_called_once_with(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
 
     def test_main_resolves_server_config_once(self, monkeypatch, main_entry):
         """main 只解析一次 ServerConfig 并复用，避免 settings.debug 与 run 参数分叉。"""
@@ -374,7 +374,7 @@ class TestCreateAppLogging:
                 assert app_module.main(["--debug"]) == 0
 
         mock_setup.assert_called_once_with(True)
-        mock_run.assert_called_once_with(host="127.0.0.1", port=5000, debug=True, use_reloader=True)
+        mock_run.assert_called_once_with(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
         assert config.DEBUG is False  # main 不再把解析结果写回模块全局
 
     def test_main_default_logging_and_run_share_false(self, monkeypatch):
@@ -463,6 +463,21 @@ class TestRealEntry:
         assert result.returncode != 0
         assert "usage: python -m pdf_reader" in result.stderr
         assert "not allowed with argument --debug" in result.stderr
+
+    def test_help_describes_debug_as_diagnostic_logging_only(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "pdf_reader", "--help"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
+        assert result.returncode == 0
+        assert "详细诊断日志模式" in result.stdout
+        assert "Flask debugger/reloader" not in result.stdout
+        assert "不启用 Flask" in result.stdout
+        assert "debugger/reloader" in result.stdout
 
     def test_invalid_env_exits_nonzero_with_clear_error(self):
         import os

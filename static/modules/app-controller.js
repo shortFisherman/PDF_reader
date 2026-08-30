@@ -6,6 +6,8 @@
  * 依赖测试全局标记。浏览器入口 `app.js` 只负责装配真实依赖并调用 `init()`。
  */
 
+import { createClientErrorReporter } from './client-error.js';
+
 export function createReaderAppController({
     getElements,
     createPageEl,
@@ -43,6 +45,7 @@ export function createReaderAppController({
     let zoomInst = null;
     let progressCleanup = null;
     let configPanel = null;
+    let clientErrorReporter = null;
 
     function createProgressCleanup() {
         function onPageHide() {
@@ -354,6 +357,16 @@ export function createReaderAppController({
         els = getElements();
         translationController = new TranslationUIController({ els });
 
+        if (!clientErrorReporter) {
+            clientErrorReporter = createClientErrorReporter({
+                api: `${API}/client-errors`,
+                windowObj,
+                navigatorObj: windowObj && windowObj.navigator,
+                fetchImpl,
+            });
+        }
+        clientErrorReporter.install();
+
         if (createConfigPanel && els.configBtn) {
             configPanel = createConfigPanel({ fetchImpl, windowObj, documentObj, api: API });
             els.configBtn.addEventListener('click', () => {
@@ -400,6 +413,10 @@ export function createReaderAppController({
         }
         if (configPanel) {
             configPanel.dispose();
+        }
+        if (clientErrorReporter) {
+            clientErrorReporter.uninstall();
+            clientErrorReporter = null;
         }
     }
 

@@ -11,9 +11,10 @@
   绝不错误声称 cleaned。coordinator 释放语义保留 cancelled。
 - 上下文通过 ``contextvars`` 在当前执行链传播；后台 worker 线程必须显式
   :func:`set_current_task`，不能依赖请求线程的字段。
-- 控制台与 ``logs/pdf_reader.log`` 使用 :class:`SafeFormatter` 在格式化边界
-  脱敏 API Key 与常见 token（``sk-...``、Authorization/Bearer、api_key 字段）；
-  traceback 结构保留，秘密值被替换。路径/HTML 属于服务端诊断内容，保留。
+  - 控制台与 ``logs/pdf_reader.log`` 使用 :class:`SafeFormatter` 在格式化边界
+  脱敏 API Key、常见 token（``sk-...``、Authorization/Bearer、api_key 字段）以及
+  prompt 类字段值；traceback 结构保留，秘密值被替换。路径/HTML 属于服务端诊断
+  内容，保留。
 """
 
 import logging
@@ -44,6 +45,14 @@ _SK_TOKEN = re.compile(r"\bsk-[A-Za-z0-9_\-]{4,}\b")
 _AUTH_BEARER = re.compile(r"(?i)(authorization[\"']?\s*[:=]\s*[\"']?(?:bearer\s+)?)[A-Za-z0-9._~+/=_-]+")
 _API_KEY_FIELD = re.compile(r"(?i)(api_key[\"']?\s*[:=]\s*[\"']?)[^\"'\s,}]+")
 _STANDALONE_BEARER = re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=_-]{8,}")
+_PROMPT_QUOTED = re.compile(
+    r"(?i)((?:custom_system_prompt|system_prompt|user_prompt|prompt)[\"']?\s*[:=]\s*)([\"'])(.*?)\2"
+)
+_PROMPT_PLAIN = re.compile(
+    # 未引号 prompt 值可能含空格、等号或内部 ]；整体替换为 <redacted>，
+    # 仅保留行尾最多一个 ]，避免吞掉 PipelineSafeFormatter 的 [%(message)s] 闭合符。
+    r"(?i)((?:custom_system_prompt|system_prompt|user_prompt|prompt)[\"']?\s*[:=])(?!\s*[\"'])\s*([^\n]+?)(\]?)(?=\n|$)"
+)
 
 
 @dataclass(frozen=True)
@@ -188,6 +197,14 @@ def redact_secrets(text: str) -> str:
     text = _AUTH_BEARER.sub(lambda match: match.group(1) + _CREDENTIAL_REDACTED, text)
     text = _API_KEY_FIELD.sub(lambda match: match.group(1) + _CREDENTIAL_REDACTED, text)
     text = _STANDALONE_BEARER.sub(lambda match: match.group(1) + _CREDENTIAL_REDACTED, text)
+    text = _PROMPT_QUOTED.sub(
+        lambda match: match.group(1) + match.group(2) + _CREDENTIAL_REDACTED + match.group(2),
+        text,
+    )
+    text = _PROMPT_PLAIN.sub(
+        lambda match: match.group(1) + _CREDENTIAL_REDACTED + match.group(3),
+        text,
+    )
     return text
 
 

@@ -125,3 +125,19 @@ def test_merge_glossary_only_does_not_replace(tmp_path):
         rows = {r["source"]: r["target"] for r in csv.DictReader(f)}
     assert rows.get("alpha") == "阿尔法"
     assert rows.get("beta") == "贝塔"
+
+
+def test_finish_translation_passes_one_based_page_to_glossary_log():
+    mock_replace = MagicMock()
+    mock_merge = MagicMock()
+    result = MagicMock()
+    result.mono_pdf_path = Path("/tmp/mono.pdf")
+    result.dual_pdf_path = None
+    result.auto_extracted_glossary_path = None
+
+    with patch("pdf_reader.translation_lifecycle.debug_trace.log_glossary_merge") as log_merge:
+        finish_translation(result, mock_replace, mock_merge, page=3, job_id="job-1")
+
+    mock_replace.assert_called_once_with(str(Path("/tmp/mono.pdf")))
+    assert log_merge.call_args.kwargs["page"] == 3
+    assert log_merge.call_args.kwargs["job_id"] == "job-1"

@@ -6,6 +6,7 @@
 
 import re
 from pathlib import Path
+from urllib.parse import unquote
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -90,7 +91,9 @@ def test_evergreen_doc_links_resolve():
             link = target.strip()
             if link.startswith(("#", "http://", "https://", "mailto:")):
                 continue
-            path_part = link.split("#", 1)[0]
+            if link.startswith("<") and link.endswith(">"):
+                link = link[1:-1]
+            path_part = unquote(link.split("#", 1)[0])
             if not (doc.parent / path_part).resolve().exists():
                 broken.append(f"{doc.relative_to(REPO_ROOT)} -> {link}")
     assert not broken, "以下文档链接无法解析：\n" + "\n".join(broken)

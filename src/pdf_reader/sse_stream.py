@@ -47,8 +47,12 @@ def _safe_rmtree(path: Path | None) -> bool:
     try:
         shutil.rmtree(path)
     except Exception:
+        logger.warning("failed to remove temp workspace %s", path, exc_info=True)
         return False
-    return not path.exists()
+    if path.exists():
+        logger.warning("temp workspace %s still exists after removal", path)
+        return False
+    return True
 
 
 @dataclass
@@ -61,7 +65,7 @@ class GenerateContext:
     replace_page: Callable[[str], None]
     merge_glossary: Callable[[str | Path | None], None]
     glossary_cache_path: Path | None
-    page: int
+    page: int  # 0-based page index（日志/用户显示时统一转 1-based）
     glossary_paths: list[str] | None
     cache_dir: Path
     extract_page: Callable[[int, Path, Callable], Path]
@@ -82,9 +86,9 @@ class GenerateBatchContext:
     finish_job: Callable[[str], bool]
     fail_job: Callable[[str], bool]
     cancel_job: Callable[[str], bool]
-    from_page: int
-    to_page: int
-    page_indices: list[int]
+    from_page: int  # 1-based 起始页
+    to_page: int  # 1-based 结束页
+    page_indices: list[int]  # 0-based 页索引
     replace_pages: Callable[[str], None]
     merge_glossary: Callable[[str | Path | None], None]
     glossary_cache_path: Path | None
@@ -243,7 +247,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                 stream = run_translation(
                     ctx.settings,
                     str(single_page_pdf),
-                    flow_label=f"job={ctx.job_id}][page={ctx.page}",
+                    flow_label=f"page={ctx.page + 1}",
                     task_ctx=ctx.task_ctx,
                 )
                 if ctx.register_stream is not None:
@@ -289,7 +293,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                     translate_result,
                     ctx.replace_page,
                     ctx.merge_glossary,
-                    ctx.page,
+                    ctx.page + 1,
                     ctx.job_id,
                 )
 
@@ -385,7 +389,12 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
             tmpdir = workspace / "input"
             output_dir = workspace / "output"
             ctx.settings.translation.output = str(output_dir)
-            with debug_trace.debug_session(ctx.glossary_cache_path, ctx.from_page, ctx.job_id, debug=ctx.debug):
+            with debug_trace.debug_session(
+                ctx.glossary_cache_path,
+                ctx.from_page - 1,
+                ctx.job_id,
+                debug=ctx.debug,
+            ):
                 task_log(logger, logging.INFO, "submit translate", task=ctx.task_ctx)
 
                 translate_start = time.time()
@@ -399,7 +408,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
                 stream = run_translation(
                     ctx.settings,
                     str(multi_page_pdf),
-                    flow_label=f"job={ctx.job_id}][batch={ctx.from_page}-{ctx.to_page}",
+                    flow_label=f"pages={ctx.from_page}-{ctx.to_page}",
                     task_ctx=ctx.task_ctx,
                 )
                 if ctx.register_stream is not None:

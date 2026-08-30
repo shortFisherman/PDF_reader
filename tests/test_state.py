@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 from pathlib import Path
@@ -6,6 +7,7 @@ import pymupdf
 import pytest
 
 from pdf_reader.state import AppState
+from pdf_reader.task_logging import truncate_pdf_hash
 
 
 def test_app_state_initial():
@@ -570,4 +572,34 @@ def test_open_pdf_does_not_delete_progress_file(app_state, sample_pdf):
     assert progress_file.exists()
     app_state.open_pdf(str(sample_pdf), sha256_func)
     assert progress_file.exists()
+    app_state._close_docs()
+
+
+def test_open_pdf_logs_truncated_hash(app_state, sample_pdf, caplog):
+    from pdf_reader.file_hash import sha256
+
+    caplog.set_level(logging.INFO, logger="pdf_reader.state")
+    app_state.open_pdf(str(sample_pdf), sha256)
+    full_hash = app_state.pdf_hash
+    assert full_hash is not None
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.state" and "[open]" in r.message]
+    assert records
+    assert f"hash={truncate_pdf_hash(full_hash)}" in records[0].message
+    assert f"hash={full_hash}" not in records[0].message
+    app_state._close_docs()
+
+
+def test_save_reading_progress_logs_truncated_hash(app_state, sample_pdf, caplog):
+    from pdf_reader.file_hash import sha256
+
+    caplog.set_level(logging.INFO, logger="pdf_reader.state")
+    app_state.open_pdf(str(sample_pdf), sha256)
+    full_hash = app_state.pdf_hash
+    app_state.save_reading_progress(0)
+
+    records = [r for r in caplog.records if r.name == "pdf_reader.state" and "[progress] save" in r.message]
+    assert records
+    assert f"hash={truncate_pdf_hash(full_hash or '')}" in records[0].message
+    assert f"hash={full_hash}" not in records[0].message
     app_state._close_docs()

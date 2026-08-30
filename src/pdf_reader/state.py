@@ -16,6 +16,7 @@ from pdf_reader.task_logging import (
     get_current_task,
     task_log,
     truncate_document_id,
+    truncate_pdf_hash,
     with_status,
 )
 
@@ -138,34 +139,43 @@ class AppState:
             try:
                 tmp.write_text(json.dumps({"page": page}), encoding="utf-8")
                 os.replace(tmp, path)
-                logger.info("[progress] save hash=%s page=%d", self._pdf_hash, page)
+                logger.info("[progress] save hash=%s page=%d", truncate_pdf_hash(self._pdf_hash), page)
             except Exception:
                 if tmp.exists():
                     try:
                         tmp.unlink()
                     except OSError:
                         pass
-                logger.error("[progress] save failed hash=%s page=%d", self._pdf_hash, page, exc_info=True)
+                logger.error(
+                    "[progress] save failed hash=%s page=%d",
+                    truncate_pdf_hash(self._pdf_hash),
+                    page,
+                    exc_info=True,
+                )
                 raise
 
     def load_reading_progress(self) -> int | None:
         path = self._reading_progress_path()
         if path is None or not path.exists():
-            logger.debug("[progress] load hash=%s none", self._pdf_hash)
+            logger.debug("[progress] load hash=%s none", truncate_pdf_hash(self._pdf_hash or ""))
             return None
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             page = data["page"]
             if not isinstance(page, int) or isinstance(page, bool):
-                logger.debug("[progress] load hash=%s none (bad type)", self._pdf_hash)
+                logger.debug("[progress] load hash=%s none (bad type)", truncate_pdf_hash(self._pdf_hash or ""))
                 return None
             if page >= self._page_count or page < 0:
-                logger.debug("[progress] load hash=%s clamp=%d", self._pdf_hash, page)
+                logger.debug("[progress] load hash=%s clamp=%d", truncate_pdf_hash(self._pdf_hash or ""), page)
                 return 0
-            logger.debug("[progress] load hash=%s page=%d", self._pdf_hash, page)
+            logger.debug("[progress] load hash=%s page=%d", truncate_pdf_hash(self._pdf_hash or ""), page)
             return page
         except Exception:
-            logger.debug("[progress] load hash=%s none (corrupt)", self._pdf_hash, exc_info=True)
+            logger.debug(
+                "[progress] load hash=%s none (corrupt)",
+                truncate_pdf_hash(self._pdf_hash or ""),
+                exc_info=True,
+            )
             return None
 
     def open_pdf(self, pdf_path: str, sha256_func) -> dict:
@@ -192,7 +202,7 @@ class AppState:
             self._page_width = sample_page.rect.width
             logger.info(
                 "[open] hash=%s pages=%d dim=%.0fx%.0f cache=%s",
-                pdf_hash,
+                truncate_pdf_hash(pdf_hash),
                 self._page_count,
                 self._page_width,
                 self._page_height,

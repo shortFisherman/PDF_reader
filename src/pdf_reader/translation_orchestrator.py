@@ -2,6 +2,7 @@ import asyncio
 import logging
 import queue
 import threading
+from collections.abc import Callable
 
 from pdf2zh_next import SettingsModel, do_translate_async_stream
 
@@ -69,6 +70,7 @@ class TranslationStream:
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            loop.set_exception_handler(self._make_loop_exception_handler())
 
             async def _run() -> None:
                 async for evt in do_translate_async_stream(self._settings, self._pdf_path):
@@ -102,9 +104,43 @@ class TranslationStream:
                             task.cancel()
                         loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
                 except Exception:
-                    pass
-                loop.close()
+                    task_log(
+                        logger,
+                        logging.ERROR,
+                        "failed to cancel or join pending asyncio tasks",
+                        task=self._task_ctx,
+                        exc_info=True,
+                    )
+                try:
+                    loop.close()
+                except Exception:
+                    task_log(
+                        logger,
+                        logging.ERROR,
+                        "failed to close asyncio event loop",
+                        task=self._task_ctx,
+                        exc_info=True,
+                    )
             self._queue.put({"type": "_done"})
+
+    def _make_loop_exception_handler(
+        self,
+    ) -> Callable[[asyncio.AbstractEventLoop, dict[str, object]], None]:
+        """返回事件循环异常处理器：记录未被等待的 asyncio 异常及其 traceback。"""
+
+        def handle(_loop: asyncio.AbstractEventLoop, context: dict[str, object]) -> None:
+            message = context.get("message", "unhandled asyncio exception")
+            exc = context.get("exception")
+            task_log(
+                logger,
+                logging.ERROR,
+                "unhandled asyncio exception: %s",
+                message,
+                task=self._task_ctx,
+                exc_info=exc if isinstance(exc, BaseException) else None,
+            )
+
+        return handle
 
     def cancel(self) -> None:
         """Request cooperative cancellation; the worker stops at the next event boundary."""

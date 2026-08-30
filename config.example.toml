@@ -70,6 +70,10 @@
 #   true / false / 1 / 0 / on / off / yes / no
 # 其它值（包括空字符串）会在启动时明确报错。
 #
+# debug 只表示“详细诊断日志模式”：日志级别降到 DEBUG，并在每次翻译任务期间按文档
+# 写入 cache/<hash>/debug_trace.log（2MB × 3 备份，按 job 过滤）。它不会启用
+# Flask debugger 或 reloader——两者始终关闭。
+#
 # 高级路径环境变量（通常无需设置；值必须是绝对路径）：
 #   PDF_READER_ROOT
 #     项目资源根。config.toml、config.example.toml、templates/、static/ 和
@@ -529,7 +533,10 @@ port = 5000
 
 # 应用调试模式；默认 false。
 # 类型：TOML 布尔值 true/false，不能写成字符串 "true" 或数字 1。
-# true 同时启用 DEBUG 日志、Flask debugger 和 reloader；仅限本机开发。
+# true 表示“详细诊断日志模式”：日志级别降到 DEBUG，并在每次翻译任务期间按文档
+# 写入 cache/<hash>/debug_trace.log（2MB × 3 备份，按 job 过滤；false 时不产生该文件）。
+# Flask debugger 与 reloader 无论本字段如何都保持关闭，不会暴露交互式调试器或自动
+# 重载进程；排障后请关闭 debug，恢复正常 INFO 日志。
 # 覆盖优先级：CLI --debug/--no-debug > PDF_READER_DEBUG > 本字段 > false。
 debug = false
 
@@ -591,4 +598,16 @@ debug = false
 # 缓存语义不变：前端文档缓存仍只按原 PDF 哈希保存（cache/<pdf_hash>/right.pdf、
 # cumulative_glossary.csv、reading_progress.json）；修改配置不会追溯更新旧译文页面，
 # 新配置只作用于之后执行的翻译或主动重译；累计术语表继续跨模型/配置复用。
+#
+# 日志与脱敏边界：
+#   - 主日志永久常驻 DATA_ROOT/logs/pdf_reader.log（128 KiB × 5 备份，UTF-8；常规上限约
+#     768 KiB），超过 14 天的编号轮转备份在启动与轮转后自动清理；统一托管
+#     pdf_reader / werkzeug / pdf2zh_next / babeldoc 四个 logger；所有通道共用同一对
+#     handler 与同一个 SafeFormatter，第三方日志同样脱敏。
+#   - 行格式：ISO 时间、level、run_id、pid、thread、logger；任务日志保留
+#     [job=... doc=... hash=... page=N|pages=A-B status=...] 前缀。
+#   - 脱敏范围：配置中的 API Key、sk-...、Authorization/Bearer、api_key 字段，以及
+#     custom_system_prompt/system_prompt/user_prompt/prompt 类字段值；traceback 结构保留。
+#   - debug=true 时额外按文档写 cache/<hash>/debug_trace.log（2MB × 3 备份，按 job 过滤，
+#     记录 start/end/elapsed 与失败 traceback）；debug=false 时完全无 IO。
 # =============================================================================

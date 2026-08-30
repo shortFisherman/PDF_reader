@@ -1,3 +1,4 @@
+import logging
 import threading
 from dataclasses import FrozenInstanceError
 from datetime import datetime
@@ -138,3 +139,59 @@ def test_concurrent_start_allows_exactly_one_winner(coordinator: TranslationCoor
     assert coordinator.is_busy is True
     for exc in losers:
         assert exc.active_job is winners[0]
+
+
+def test_shutdown_logs_stream_cancel_failure_with_job_context(caplog):
+    class _BadCancelStream:
+        def cancel(self) -> None:
+            raise RuntimeError("cancel boom")
+
+        def join(self, timeout=None) -> None:
+            pass
+
+        @property
+        def is_alive(self) -> bool:
+            return False
+
+    coordinator = TranslationCoordinator()
+    job = coordinator.start("doc-1", [2, 3], pdf_hash="hash1234567890")
+    coordinator.register_stream(job.job_id, _BadCancelStream())
+
+    with caplog.at_level(logging.ERROR, logger="pdf_reader.translate"):
+        report = coordinator.shutdown(timeout=0.1)
+
+    assert report.worker_joined is True
+    assert "stream cancel failed" in caplog.text
+    assert "RuntimeError: cancel boom" in caplog.text
+    cancel_records = [r for r in caplog.records if "stream cancel failed" in r.message]
+    assert cancel_records
+    assert "job=" in cancel_records[0].message
+    assert cancel_records[0].exc_info is not None
+
+
+def test_shutdown_logs_stream_join_failure_with_job_context(caplog):
+    class _BadJoinStream:
+        def cancel(self) -> None:
+            pass
+
+        def join(self, timeout=None) -> None:
+            raise RuntimeError("join boom")
+
+        @property
+        def is_alive(self) -> bool:
+            return True
+
+    coordinator = TranslationCoordinator()
+    job = coordinator.start("doc-2", [4], pdf_hash="hash1234567890")
+    coordinator.register_stream(job.job_id, _BadJoinStream())
+
+    with caplog.at_level(logging.ERROR, logger="pdf_reader.translate"):
+        report = coordinator.shutdown(timeout=0.1)
+
+    assert report.worker_joined is False
+    assert "stream join failed" in caplog.text
+    assert "RuntimeError: join boom" in caplog.text
+    join_records = [r for r in caplog.records if "stream join failed" in r.message]
+    assert join_records
+    assert "job=" in join_records[0].message
+    assert join_records[0].exc_info is not None

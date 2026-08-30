@@ -30,12 +30,13 @@ class TestServerConfigValidation:
         assert cfg.host == "0.0.0.0"
         assert cfg.port == 8000
         assert cfg.debug is True
-        assert cfg.use_reloader is True
+        assert cfg.use_reloader is False
 
     @pytest.mark.parametrize("debug", [False, True])
-    def test_use_reloader_matches_debug(self, debug):
+    def test_use_reloader_always_false(self, debug):
         cfg = config.resolve_server_config({"server": {"debug": debug}})
-        assert cfg.use_reloader is debug
+        assert cfg.debug is debug
+        assert cfg.use_reloader is False
 
     @pytest.mark.parametrize("server", ["not-a-table", 42, ["server"]])
     def test_server_must_be_table(self, server):

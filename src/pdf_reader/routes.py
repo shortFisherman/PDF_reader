@@ -2,6 +2,7 @@ import io
 import ipaddress
 import logging
 import os
+import re
 from typing import cast
 
 from flask import (
@@ -29,8 +30,20 @@ from pdf_reader.translation_coordinator import (
 from pdf_reader.translation_settings import build_settings
 
 logger = logging.getLogger("pdf_reader.routes")
+client_logger = logging.getLogger("pdf_reader.client")
 
 bp = Blueprint("main", __name__)
+
+_CLIENT_ERROR_FIELDS = frozenset({"kind", "message", "source", "line", "column", "stack"})
+_CLIENT_ERROR_STRING_LIMITS = {
+    "kind": 64,
+    "message": 1024,
+    "source": 512,
+    "stack": 4096,
+}
+_CLIENT_ERROR_MAX_BODY_BYTES = 8192
+_CLIENT_ERROR_MAX_COORDINATE = 2**31 - 1
+_CLIENT_ERROR_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
 
 def error_response(msg: str, code: int, error_code: str) -> tuple:
@@ -80,6 +93,22 @@ def _loopback_config_guard() -> tuple | None:
         403,
         "config_local_only",
     )
+
+
+def _clean_client_error_text(value: object, limit: int) -> str:
+    """白名单字符串字段规范化：换行/控制字符折叠为空格后截断，保证单行可读。"""
+    text = str(value).replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    text = _CLIENT_ERROR_CONTROL_CHARS.sub(" ", text)
+    text = re.sub(r"[ \t]{2,}", " ", text).strip()
+    return text[:limit]
+
+
+def _clean_client_error_coordinate(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value < 0 or value > _CLIENT_ERROR_MAX_COORDINATE:
+        return None
+    return value
 
 
 def translation_busy_response(active_job: TranslationJob | None = None) -> tuple:
@@ -429,6 +458,64 @@ def get_stages():
     return jsonify(sse_stream.STAGE_LABELS)
 
 
+@bp.route("/api/client-errors", methods=["POST"])
+def client_errors():
+    """受限的前端错误上报：仅本机来源 + 白名单字段，绝不记录请求体原文。"""
+    if not _is_loopback_remote_addr(request.remote_addr):
+        logger.warning(
+            "client error report rejected from non-loopback remote_addr=%r",
+            request.remote_addr,
+        )
+        return error_response("客户端错误上报仅允许本机访问", 403, "client_errors_local_only")
+
+    if request.content_length is not None and request.content_length > _CLIENT_ERROR_MAX_BODY_BYTES:
+        return error_response("客户端错误负载过大", 413, "payload_too_large")
+
+    raw = request.get_data(cache=True)
+    if len(raw) > _CLIENT_ERROR_MAX_BODY_BYTES:
+        return error_response("客户端错误负载过大", 413, "payload_too_large")
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("请求体必须是 JSON 对象", 400, "invalid_payload")
+    unknown = set(data) - _CLIENT_ERROR_FIELDS
+    if unknown:
+        return error_response("请求体包含不支持的字段", 400, "invalid_payload")
+
+    cleaned: dict[str, str | int] = {}
+    for field, limit in _CLIENT_ERROR_STRING_LIMITS.items():
+        value = data.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            return error_response("字段类型错误", 400, "invalid_payload")
+        cleaned[field] = _clean_client_error_text(value, limit)
+    for field in ("line", "column"):
+        value = data.get(field)
+        if value is None:
+            continue
+        coordinate = _clean_client_error_coordinate(value)
+        if coordinate is None:
+            return error_response("字段类型错误", 400, "invalid_payload")
+        cleaned[field] = coordinate
+
+    if not cleaned:
+        return error_response("至少需要一个上报字段", 400, "invalid_payload")
+    if not (cleaned.get("message") or cleaned.get("stack")):
+        return error_response("message 或 stack 不能为空", 400, "invalid_payload")
+
+    client_logger.warning(
+        "client error kind=%r source=%r line=%s column=%s message=%r stack=%r",
+        cleaned.get("kind", "browser_error"),
+        cleaned.get("source", ""),
+        cleaned.get("line", "-"),
+        cleaned.get("column", "-"),
+        cleaned.get("message", ""),
+        cleaned.get("stack", ""),
+    )
+    return jsonify({"ok": True}), 202
+
+
 @bp.app_errorhandler(404)
 def not_found(e):
     return jsonify({"code": "not_found", "error": "not found"}), 404
@@ -437,7 +524,15 @@ def not_found(e):
 @bp.app_errorhandler(HTTPException)
 def http_error(exc: HTTPException):
     status = exc.code or 500
-    logger.warning("HTTP error %s while processing %s %s", status, request.method, request.path)
+    if status == 500:
+        logger.error(
+            "HTTP error 500 while processing %s %s",
+            request.method,
+            request.path,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+    else:
+        logger.warning("HTTP error %s while processing %s %s", status, request.method, request.path)
     if status == 500:
         return jsonify({"code": "internal_error", "error": "服务器内部错误"}), 500
     return jsonify({"code": f"http_{status}", "error": "请求错误"}), status

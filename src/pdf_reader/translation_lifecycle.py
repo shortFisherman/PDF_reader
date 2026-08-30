@@ -23,6 +23,10 @@ def finish_translation(
     page: int = -1,
     job_id: str = "unknown",
 ) -> None:
+    """完成单页翻译：替换页面并合并词表。
+
+    ``page`` 是 1-based 显示页码，仅用于 glossary 等诊断日志字段。
+    """
     translated_pdf = translate_result.mono_pdf_path
     if translated_pdf is None and translate_result.dual_pdf_path is not None:
         translated_pdf = translate_result.dual_pdf_path
@@ -43,6 +47,10 @@ def merge_glossary_only(
     page: int = -1,
     job_id: str = "unknown",
 ) -> None:
+    """批量模式只合并词表，不替换页面。
+
+    ``page`` 是 1-based 显示页码，仅用于 glossary 等诊断日志字段。
+    """
     merge_start = time.time()
     merge_glossary(translate_result.auto_extracted_glossary_path)
     elapsed = time.time() - merge_start

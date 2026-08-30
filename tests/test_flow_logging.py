@@ -20,10 +20,10 @@ from pdf_reader.task_logging import TaskContext
 from pdf_reader.translation_orchestrator import TranslationError, run_translation
 
 
-def test_open_pdf_logs_info_with_hash_and_pages(sample_pdf, tmp_path, caplog):
+def test_open_pdf_logs_info_with_hash_and_pages(sample_pdf, tmp_path, managed_caplog):
     """open_pdf 成功后产生 INFO 记录，包含 hash+pages+dim+cache 标记."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.state")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.state")
 
     from pdf_reader.file_hash import sha256
 
@@ -32,7 +32,7 @@ def test_open_pdf_logs_info_with_hash_and_pages(sample_pdf, tmp_path, caplog):
     state = AppState(cache_dir)
     result = state.open_pdf(str(sample_pdf), sha256)
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.state"]
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.state"]
     assert len(records) >= 1, "expected at least one INFO from open_pdf"
     msg = records[0].message
     assert "hash=" in msg
@@ -42,10 +42,10 @@ def test_open_pdf_logs_info_with_hash_and_pages(sample_pdf, tmp_path, caplog):
     assert result["page_count"] == 2
 
 
-def test_replace_page_logs_info_on_success(app_state, sample_pdf, caplog):
+def test_replace_page_logs_info_on_success(app_state, sample_pdf, managed_caplog):
     """replace_page 成功后产生 INFO，含 page 索引与 right.pdf 路径."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.state")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.state")
 
     from pdf_reader.file_hash import sha256 as sha256_func
 
@@ -63,7 +63,7 @@ def test_replace_page_logs_info_on_success(app_state, sample_pdf, caplog):
 
     app_state.replace_page(str(translated_pdf), 0, document_id)
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.INFO]
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.INFO]
     replace_msgs = [r.message for r in records if "replace" in r.message]
     assert len(replace_msgs) >= 1, f"expected replace INFO, got: {replace_msgs}"
     msg = replace_msgs[0]
@@ -72,10 +72,10 @@ def test_replace_page_logs_info_on_success(app_state, sample_pdf, caplog):
     assert "right.pdf" in msg
 
 
-def test_replace_page_logs_error_and_reraises_on_failure(app_state, sample_pdf, caplog):
+def test_replace_page_logs_error_and_reraises_on_failure(app_state, sample_pdf, managed_caplog):
     """replace_page 失败时记录 ERROR+exc_info，然后重新抛出异常."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.state")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.state")
 
     from pdf_reader.file_hash import sha256 as sha256_func
 
@@ -85,17 +85,17 @@ def test_replace_page_logs_error_and_reraises_on_failure(app_state, sample_pdf, 
     with pytest.raises(Exception):
         app_state.replace_page("/nonexistent/path/translated.pdf", 0, document_id)
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.ERROR]
-    assert len(records) >= 1, f"expected ERROR log, got: {[r.message for r in caplog.records]}"
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.ERROR]
+    assert len(records) >= 1, f"expected ERROR log, got: {[r.message for r in managed_caplog.records]}"
     assert "page=" in records[0].message
     assert "replace failed" in records[0].message
     assert records[0].exc_info is not None
 
 
-def test_replace_pages_logs_info_on_success(app_state, sample_pdf, caplog):
+def test_replace_pages_logs_info_on_success(app_state, sample_pdf, managed_caplog):
     """replace_pages 成功后产生 INFO，含 batch 标记、page_indices 与路径."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.state")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.state")
 
     from pdf_reader.file_hash import sha256 as sha256_func
 
@@ -113,7 +113,7 @@ def test_replace_pages_logs_info_on_success(app_state, sample_pdf, caplog):
 
     app_state.replace_pages(str(translated_pdf), [0, 1], document_id)
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.INFO]
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.INFO]
     batch_msgs = [r.message for r in records if "pages=1-2" in r.message and "replace into" in r.message]
     assert len(batch_msgs) >= 1, f"expected batch INFO, got: {batch_msgs}"
     msg = batch_msgs[0]
@@ -121,39 +121,39 @@ def test_replace_pages_logs_info_on_success(app_state, sample_pdf, caplog):
     assert "right.pdf" in msg
 
 
-def test_render_page_debug_off_no_output(app_state, sample_pdf, caplog):
+def test_render_page_debug_off_no_output(app_state, sample_pdf, managed_caplog):
     """debug off 时 render_page 不产生 INFO 级别记录."""
     from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
-    caplog.set_level(logging.INFO, logger="pdf_reader.render")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.render")
 
     app_state.render_page("left", 0, render_page, 200)
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.render"]
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.render"]
     assert len(records) == 0, f"expected no INFO from render_page, got: {[r.message for r in records]}"
 
 
-def test_render_page_debug_on_logs_debug(app_state, sample_pdf, caplog):
+def test_render_page_debug_on_logs_debug(app_state, sample_pdf, managed_caplog):
     """debug on 时 render_page 产生 DEBUG 记录含 [render] page=N."""
     from pdf_reader.file_hash import sha256 as sha256_func
 
     app_state.open_pdf(str(sample_pdf), sha256_func)
-    caplog.set_level(logging.DEBUG, logger="pdf_reader.render")
+    managed_caplog.set_level(logging.DEBUG, logger="pdf_reader.render")
 
     app_state.render_page("left", 0, render_page, 200)
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.render" and r.levelno == logging.DEBUG]
-    assert len(records) >= 1, f"expected DEBUG from render_page, got: {[r.message for r in caplog.records]}"
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.render" and r.levelno == logging.DEBUG]
+    assert len(records) >= 1, f"expected DEBUG from render_page, got: {[r.message for r in managed_caplog.records]}"
     msg = records[0].message
     assert "[render]" in msg
     assert "page=0" in msg
 
 
-def test_replace_pages_logs_error_and_reraises_on_failure(app_state, sample_pdf, caplog):
+def test_replace_pages_logs_error_and_reraises_on_failure(app_state, sample_pdf, managed_caplog):
     """replace_pages 失败时记录 ERROR+exc_info，然后重新抛出异常."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.state")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.state")
 
     from pdf_reader.file_hash import sha256 as sha256_func
 
@@ -163,8 +163,8 @@ def test_replace_pages_logs_error_and_reraises_on_failure(app_state, sample_pdf,
     with pytest.raises(Exception):
         app_state.replace_pages("/nonexistent/path/translated.pdf", [0], document_id)
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.ERROR]
-    assert len(records) >= 1, f"expected ERROR log, got: {[r.message for r in caplog.records]}"
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.state" and r.levelno == logging.ERROR]
+    assert len(records) >= 1, f"expected ERROR log, got: {[r.message for r in managed_caplog.records]}"
     assert "pages=" in records[0].message
     assert "replace pages failed" in records[0].message
     assert records[0].exc_info is not None
@@ -173,10 +173,10 @@ def test_replace_pages_logs_error_and_reraises_on_failure(app_state, sample_pdf,
 # --- translate flow logging ---
 
 
-def test_translate_thread_lifecycle_logging_debug_off(caplog):
+def test_translate_thread_lifecycle_logging_debug_off(managed_caplog):
     """debug off: run_translation logs [page=N] thread start, thread end at INFO."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.translate")
 
     events = [
         {"type": "progress_start", "stage": "layout_analysis"},
@@ -190,17 +190,17 @@ def test_translate_thread_lifecycle_logging_debug_off(caplog):
     with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_stream):
         list(run_translation(MagicMock(), "fake.pdf", flow_label="page=1"))
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
     messages = [r.message for r in records]
     assert all("[job=test-job]" in msg for msg in messages if "submit translate" in msg or "translate done" in msg)
     assert any("thread start" in msg for msg in messages), f"Got: {messages}"
     assert any("thread end" in msg for msg in messages), f"Got: {messages}"
 
 
-def test_translate_thread_exception_logging(caplog):
+def test_translate_thread_exception_logging(managed_caplog):
     """run_translation logs ERROR with exc_info on thread exception."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.translate")
 
     async def failing_stream(settings, file) -> None:
         yield {"type": "progress_start"}
@@ -210,30 +210,30 @@ def test_translate_thread_exception_logging(caplog):
         with pytest.raises(TranslationError, match="translation crash"):
             list(run_translation(MagicMock(), "fake.pdf", flow_label="page=1"))
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
-    assert len(records) >= 1, f"Got: {[r.message for r in caplog.records]}"
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
+    assert len(records) >= 1, f"Got: {[r.message for r in managed_caplog.records]}"
     assert "thread exception" in records[0].message
     assert records[0].exc_info is not None
 
 
-def test_translate_token_usage_not_visible_debug_off(caplog):
+def test_translate_token_usage_not_visible_debug_off(managed_caplog):
     """debug off: debug_trace.log_token_usage logs at DEBUG — not visible at INFO."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.debug_trace")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.debug_trace")
 
     debug_trace.log_token_usage({"main": {"total": 100}, "term": {"total": 50}})
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace"]
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.debug_trace"]
     assert len(records) == 0, f"expected no token_usage log at INFO, got: {[r.message for r in records]}"
 
 
-def test_translate_token_usage_visible_debug_on(caplog):
+def test_translate_token_usage_visible_debug_on(managed_caplog):
     """debug on: debug_trace.log_token_usage logs at DEBUG with token counts."""
-    caplog.set_level(logging.DEBUG, logger="pdf_reader.debug_trace")
+    managed_caplog.set_level(logging.DEBUG, logger="pdf_reader.debug_trace")
 
     debug_trace.log_token_usage({"main": {"total": 100}, "term": {"total": 50}})
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace" and r.levelno == logging.DEBUG]
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.debug_trace" and r.levelno == logging.DEBUG]
     assert len(records) >= 1, f"expected token_usage log, got: {[r.message for r in records]}"
     msg = records[0].message
     assert "main=100" in msg
@@ -243,10 +243,10 @@ def test_translate_token_usage_visible_debug_on(caplog):
 # --- sse_stream generate / generate_batch logging ---
 
 
-def test_generate_logging_info_messages(caplog, tmp_path):
+def test_generate_logging_info_messages(managed_caplog, tmp_path):
     """generate() produces [page=N] submit, thread start/end, translate done at INFO. Token usage not visible."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.translate")
 
     mock_result = MagicMock()
     events = [
@@ -287,7 +287,7 @@ def test_generate_logging_info_messages(caplog, tmp_path):
     with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_stream):
         list(generate(ctx))
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
     messages = [r.message for r in records]
     assert all("job=test-job" in msg for msg in messages if "submit translate" in msg or "translate done" in msg)
     assert any("page=1" in msg and "submit translate" in msg for msg in messages), f"Messages: {messages}"
@@ -295,17 +295,19 @@ def test_generate_logging_info_messages(caplog, tmp_path):
     assert any("page=1" in msg and "thread end" in msg for msg in messages), f"Messages: {messages}"
     assert any("translate done" in msg for msg in messages), f"Messages: {messages}"
 
-    token_records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace" and "Token usage" in r.message]
+    token_records = [
+        r for r in managed_caplog.records if r.name == "pdf_reader.debug_trace" and "Token usage" in r.message
+    ]
     assert len(token_records) == 0, (
         f"token_usage should not be visible at INFO, got: {[r.message for r in token_records]}"
     )
 
 
-def test_generate_batch_logging_info_messages(caplog, tmp_path):
+def test_generate_batch_logging_info_messages(managed_caplog, tmp_path):
     """generate_batch() produces [batch=N-M] submit, thread start/end, translate done at INFO.
     Token usage not visible."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.translate")
 
     mock_result = MagicMock()
     events = [
@@ -348,14 +350,16 @@ def test_generate_batch_logging_info_messages(caplog, tmp_path):
     with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_stream):
         list(generate_batch(ctx))
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.INFO]
     messages = [r.message for r in records]
     assert any("pages=2-5" in msg and "submit translate" in msg for msg in messages), f"Messages: {messages}"
     assert any("pages=2-5" in msg and "thread start" in msg for msg in messages), f"Messages: {messages}"
     assert any("pages=2-5" in msg and "thread end" in msg for msg in messages), f"Messages: {messages}"
     assert any("pages=2-5" in msg and "translate done" in msg for msg in messages), f"Messages: {messages}"
 
-    token_records = [r for r in caplog.records if r.name == "pdf_reader.debug_trace" and "Token usage" in r.message]
+    token_records = [
+        r for r in managed_caplog.records if r.name == "pdf_reader.debug_trace" and "Token usage" in r.message
+    ]
     assert len(token_records) == 0, (
         f"token_usage should not be visible at INFO, got: {[r.message for r in token_records]}"
     )
@@ -364,10 +368,10 @@ def test_generate_batch_logging_info_messages(caplog, tmp_path):
 # --- sse_stream error logging ---
 
 
-def test_generate_error_logging_context(caplog, tmp_path, mock_config):
+def test_generate_error_logging_context(managed_caplog, tmp_path, mock_config):
     """generate() generic error logs ERROR with [page=N], provider, model, lang, tmpdir, exc_info."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.translate")
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
@@ -400,8 +404,8 @@ def test_generate_error_logging_context(caplog, tmp_path, mock_config):
 
     list(generate(ctx))
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
-    assert len(records) == 1, f"expected 1 ERROR, got: {[r.message for r in caplog.records]}"
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
+    assert len(records) == 1, f"expected 1 ERROR, got: {[r.message for r in managed_caplog.records]}"
     msg = records[0].message
     assert "job=test-job" in msg
     assert "page=8" in msg
@@ -415,10 +419,10 @@ def test_generate_error_logging_context(caplog, tmp_path, mock_config):
     assert "sk-test-key" not in msg
 
 
-def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
+def test_generate_batch_error_logging_context(managed_caplog, tmp_path, mock_config):
     """generate_batch() generic error logs ERROR with [batch=N-M], provider, model, lang, tmpdir, exc_info."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.translate")
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
@@ -455,8 +459,8 @@ def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
 
     list(generate_batch(ctx))
 
-    records = [r for r in caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
-    assert len(records) == 1, f"expected 1 ERROR, got: {[r.message for r in caplog.records]}"
+    records = [r for r in managed_caplog.records if r.name == "pdf_reader.translate" and r.levelno == logging.ERROR]
+    assert len(records) == 1, f"expected 1 ERROR, got: {[r.message for r in managed_caplog.records]}"
     msg = records[0].message
     assert "job=test-job" in msg
     assert "pages=4-9" in msg
@@ -470,10 +474,10 @@ def test_generate_batch_error_logging_context(caplog, tmp_path, mock_config):
     assert "sk-test-key" not in msg
 
 
-def test_generate_error_logging_produces_sse_error_event(caplog, tmp_path, mock_config):
+def test_generate_error_logging_produces_sse_error_event(managed_caplog, tmp_path, mock_config):
     """generate() generic error still yields an SSE error event after logging."""
     setup_logging(False)
-    caplog.set_level(logging.INFO, logger="pdf_reader.translate")
+    managed_caplog.set_level(logging.INFO, logger="pdf_reader.translate")
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()

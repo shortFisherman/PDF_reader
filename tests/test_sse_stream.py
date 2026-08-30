@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import json
+import logging
 import tempfile
 import threading
 from collections.abc import AsyncIterator, Iterator
@@ -1105,3 +1106,81 @@ def test_generate_batch_uses_owned_workspace_boundaries(tmp_path):
     assert captured["marker_present"] is True
     assert str(settings.translation.output) == str(workspace / "output")
     assert not workspace.exists()
+
+
+def test_generate_uses_one_based_page_in_flow_label_and_glossary(tmp_path):
+    """单页翻译：0-based ctx.page=2 在 flow_label 与 finish_translation（glossary
+    字段）中统一显示为 1-based page=3。"""
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+
+    events = [{"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}}]
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    captured = {}
+
+    def fake_finish(result, replace_page, merge_glossary, page, job_id) -> None:
+        captured["page"] = page
+        captured["job_id"] = job_id
+
+    ctx = _make_ctx(page=2, cache_dir=cache_dir)
+
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)) as rt:
+        with patch("pdf_reader.sse_stream.debug_trace"):
+            with patch("pdf_reader.sse_stream.finish_translation", side_effect=fake_finish):
+                list(generate(ctx))
+
+    assert rt.call_args.kwargs["flow_label"] == "page=3"
+    assert captured["page"] == 3
+    assert captured["job_id"] == "test-job"
+
+
+def test_generate_batch_debug_session_and_glossary_pages_consistent(tmp_path):
+    """批量翻译：debug_session 收到 0-based 首页索引（内部 +1），glossary 字段收到
+    1-based 起始页，二者显示一致。"""
+    mock_result = MagicMock()
+    mock_result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    mock_result.dual_pdf_path = None
+    mock_result.auto_extracted_glossary_path = None
+
+    events = [{"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}}]
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_batch_ctx(from_page=2, to_page=3, cache_dir=cache_dir)
+
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)) as rt:
+        with patch("pdf_reader.sse_stream.debug_trace.debug_session") as ds:
+            with patch("pdf_reader.sse_stream.merge_glossary_only") as mg:
+                list(generate_batch(ctx))
+
+    assert rt.call_args.kwargs["flow_label"] == "pages=2-3"
+    assert ds.call_args.args[1] == 1
+    assert mg.call_args.args[2] == 2
+
+
+def test_generate_logs_temp_rmtree_failure_with_path_and_exception(tmp_path, caplog):
+    """临时目录删除失败：记录具体异常与路径，仍保持安全清理语义（不删除、返回 False）。"""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(cache_dir=cache_dir)
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
+        with patch("pdf_reader.sse_stream.run_translation", return_value=iter([{"type": "error", "error": "boom"}])):
+            with patch("pdf_reader.sse_stream.debug_trace"):
+                with patch("pdf_reader.sse_stream.shutil.rmtree", side_effect=OSError("locked")) as rmtree:
+                    with caplog.at_level(logging.WARNING, logger="pdf_reader.translate"):
+                        list(generate(ctx))
+
+    assert workspace.exists()
+    rmtree.assert_called_once_with(workspace)
+    assert "failed to remove temp workspace" in caplog.text
+    assert str(workspace) in caplog.text
+    assert "locked" in caplog.text
+    assert "cleanup deferred" in caplog.text

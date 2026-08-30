@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from pdf_reader.task_logging import (
+    STATUS_CANCELLING,
     STATUS_CREATED,
     STATUS_STARTED,
     task_context_from_indices,
@@ -145,19 +146,42 @@ class TranslationCoordinator:
             self._closed = True
             streams = list(self._streams.values())
             job = self._active_job
+            shutdown_ctx = (
+                task_context_from_indices(
+                    job.job_id,
+                    job.document_id,
+                    job.pdf_hash or "",
+                    job.page_indices,
+                    status=STATUS_CANCELLING,
+                )
+                if job is not None
+                else None
+            )
 
         deadline = time.monotonic() + max(0.0, timeout)
         for stream in streams:
             try:
                 stream.cancel()  # type: ignore[attr-defined]
             except Exception:
-                pass
+                task_log(
+                    logger,
+                    logging.ERROR,
+                    "stream cancel failed",
+                    task=shutdown_ctx,
+                    exc_info=True,
+                )
         for stream in streams:
             remaining = max(0.0, deadline - time.monotonic())
             try:
                 stream.join(timeout=remaining)  # type: ignore[attr-defined]
             except Exception:
-                pass
+                task_log(
+                    logger,
+                    logging.ERROR,
+                    "stream join failed",
+                    task=shutdown_ctx,
+                    exc_info=True,
+                )
         worker_joined = not any(getattr(stream, "is_alive", False) for stream in streams)
 
         while self._active_job is not None and time.monotonic() < deadline:

@@ -1,5 +1,30 @@
 # 更新日志
 
+## 未发布 — 日志工程化（统一日志管线、debug_trace 与前端错误上报）
+
+- 主日志永久常驻 `logs/pdf_reader.log`（`DATA_ROOT/logs`，单文件 128 KiB × 5 份轮转备份，
+  UTF-8；常规上限约 768 KiB），超过 14 天的编号轮转备份在启动与轮转后自动清理；统一托管
+  `pdf_reader`/`werkzeug`/`pdf2zh_next`/`babeldoc` 四个 logger；四个 logger 共用同一对
+  控制台 + 文件 handler 与同一个 `SafeFormatter`，第三方日志同样脱敏，不再可能经
+  root/lastResort 绕过脱敏或重复输出。
+- 主日志行格式改为 `ISO 时间、level、run_id、pid、thread、logger`，`run_id` 每次 setup
+  生命周期唯一；任务前缀 `[job=... doc=... hash=... page=N|pages=A-B status=...]` 保持不变。
+- `debug` 语义改为“详细诊断日志模式”：CLI/env/`[server].debug` 优先级不变，开启日志 DEBUG
+  级别与 `debug_trace` 会话；Flask debugger 与 reloader 始终关闭
+  （`app.run(debug=False, use_reloader=False)`），明确这是安全的详细诊断开关，不是无用的调试模式。
+- `debug_trace.log` 改为按文档缓存目录的有界轮转诊断文件（2MB × 3 份备份），翻译会话内按
+  `job_id` 过滤捕获项目与第三方日志，记录 start/end/elapsed 与失败 traceback；debug 关闭时
+  零 IO，不再生成 timestamp 无限历史文件。
+- 新增诊断边界：sys/threading 未捕获异常钩子、asyncio 事件循环异常处理、启动/关闭致命错误
+  记录、HTTP 500 完整 traceback、前端 `window.error`+`unhandledrejection` 采集
+  （`/api/client-errors` 仅 loopback、白名单字段、正文 ≤8KB、不记录 headers/cookie/prompt）。
+- 脱敏扩展至 `custom_system_prompt`/`system_prompt`/`user_prompt`/`prompt` 类字段值
+  （API Key、`sk-`、Bearer、`api_key` 原有规则不变）；第三方日志经同一 `SafeFormatter` 同样脱敏。
+- README 增加面向非专业用户的排障步骤（先看主日志 ERROR/Traceback/job_id，必要时短期开
+  debug，说明日志位置与轮转），并修复指向 `docs/engineering-improvement-plan-829.md` 与
+  `docs/pdf2zh-configuration-expansion-design.md` 的失效链接，改为链接到
+  `docs/completed improvements/` 下的真实文档；`docs/architecture.md` 同步当前日志架构事实。
+
 ## 未发布 — 配置能力扩展（第一批至第三批）
 
 - 新增 41 个支持键：`[model]` 的 `send_temperature`/`send_reasoning_effort` 发送开关；

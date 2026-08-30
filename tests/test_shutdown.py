@@ -228,6 +228,89 @@ class TestMainLifecycle:
         assert any("workers still running" in r.message for r in caplog.records)
         assert state.is_closed() is True
 
+    def test_main_logs_fatal_run_exception_and_still_closes_state(self, monkeypatch, tmp_path, caplog):
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        state = AppState(cache_dir)
+        coordinator = TranslationCoordinator()
+
+        def fake_create(settings) -> MagicMock:
+            app = MagicMock()
+            app.run.side_effect = RuntimeError("run boom")
+            app.config = {"translation_coordinator": coordinator, "app_state": state}
+            return app
+
+        monkeypatch.setattr(app_module, "create_app", fake_create)
+        monkeypatch.setattr(config, "CONFIG", _valid_config(cache_dir))
+        monkeypatch.setattr(config, "MODEL", "deepseek-chat")
+        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        with caplog.at_level(logging.ERROR, logger="pdf_reader.app"):
+            result = app_module.main([])
+
+        assert result != 0
+        assert "fatal error while running server" in caplog.text
+        assert "run boom" in caplog.text
+        assert any(r.exc_info is not None for r in caplog.records if "fatal error while running server" in r.message)
+        assert coordinator.closed is True
+        assert state.is_closed() is True
+
+    def test_main_keyboard_interrupt_not_logged_as_error(self, monkeypatch, tmp_path, caplog):
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        state = AppState(cache_dir)
+        coordinator = TranslationCoordinator()
+
+        def fake_create(settings) -> MagicMock:
+            app = MagicMock()
+            app.run.side_effect = KeyboardInterrupt
+            app.config = {"translation_coordinator": coordinator, "app_state": state}
+            return app
+
+        monkeypatch.setattr(app_module, "create_app", fake_create)
+        monkeypatch.setattr(config, "CONFIG", _valid_config(cache_dir))
+        monkeypatch.setattr(config, "MODEL", "deepseek-chat")
+        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        with caplog.at_level(logging.INFO, logger="pdf_reader.app"):
+            result = app_module.main([])
+
+        assert result == 130
+        assert any("KeyboardInterrupt" in r.message for r in caplog.records)
+        assert not any(r.levelno >= logging.ERROR for r in caplog.records if r.name == "pdf_reader.app")
+        assert coordinator.closed is True
+        assert state.is_closed() is True
+
+    def test_main_logs_startup_recovery_failure_and_still_closes_state(self, monkeypatch, tmp_path, caplog):
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        state = AppState(cache_dir)
+        coordinator = TranslationCoordinator()
+
+        def fake_create(settings) -> MagicMock:
+            app = MagicMock()
+            app.config = {"translation_coordinator": coordinator, "app_state": state}
+            return app
+
+        monkeypatch.setattr(app_module, "create_app", fake_create)
+        monkeypatch.setattr(
+            app_module.cache_ops,
+            "recover_orphan_temp_workspaces",
+            MagicMock(side_effect=RuntimeError("recovery boom")),
+        )
+        monkeypatch.setattr(config, "CONFIG", _valid_config(cache_dir))
+        monkeypatch.setattr(config, "MODEL", "deepseek-chat")
+        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        with caplog.at_level(logging.ERROR, logger="pdf_reader.app"):
+            result = app_module.main([])
+
+        assert result != 0
+        assert "fatal startup error" in caplog.text
+        assert "recovery boom" in caplog.text
+        assert coordinator.closed is True
+        assert state.is_closed() is True
+
     def test_coordinator_shutdown_tolerates_stream_exceptions(self):
         class _BadStream:
             def cancel(self) -> None:
