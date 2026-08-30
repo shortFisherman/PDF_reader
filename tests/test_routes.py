@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 from flask import Flask
 
+from pdf_reader.strict_glossary import StrictTranslationContext
+
 
 def test_index_route(test_client):
     resp = test_client.get("/")
@@ -57,15 +59,15 @@ def test_debug_trace_logger_exists():
 
 
 def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, monkeypatch):
-    """build_settings receives cumulative glossary path; merge happens after translation."""
+    """严格路径把 fresh effective glossary 传给 settings；翻译后仍执行旧合并回调。"""
     from pdf_reader.file_hash import sha256 as sha256_func
 
     # 1. Open PDF, create cumulative glossary
     app_state.open_pdf(str(sample_pdf), sha256_func)
     glossary_cache = app_state.glossary_cache_path
     assert glossary_cache is not None
-    cumulative_file = glossary_cache / "cumulative_glossary.csv"
-    with open(cumulative_file, "w", newline="", encoding="utf-8") as f:
+    effective_file = glossary_cache / "effective_glossary.csv"
+    with open(effective_file, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["source", "target"])
         w.writerow(["alpha", "\u963f\u5c14\u6cd5"])
@@ -87,8 +89,17 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     settings_call_kwargs = []
     merge_calls = []
 
-    def fake_build_settings(upstream, pdf_path, user_prompt=None, output_dir=None, glossary_paths=None, debug=None):  # noqa: ANN202
-        settings_call_kwargs.append({"glossary_paths": glossary_paths})
+    def fake_prepare(snapshot):  # noqa: ANN202
+        return StrictTranslationContext(
+            document_dir=snapshot.glossary_cache_path,
+            document_id=snapshot.document_id,
+            pdf_hash=snapshot.pdf_hash,
+            effective_glossary_path=effective_file,
+            effective_rows=(("alpha", "\u963f\u5c14\u6cd5"),),
+        )
+
+    def fake_build_settings(upstream, user_prompt, pages, context):  # noqa: ANN202
+        settings_call_kwargs.append({"glossary_paths": [str(context.effective_glossary_path)]})
         return MagicMock()
 
     async def fake_translate_stream(settings, file):  # noqa: ANN202
@@ -108,7 +119,8 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     def fake_merge(cumulative, auto):  # noqa: ANN202
         merge_calls.append((str(cumulative), str(auto)))
 
-    monkeypatch.setattr("pdf_reader.routes.build_settings", fake_build_settings)
+    monkeypatch.setattr("pdf_reader.routes.strict_glossary.prepare_strict_translation_context", fake_prepare)
+    monkeypatch.setattr("pdf_reader.routes.strict_glossary.build_strict_settings", fake_build_settings)
     monkeypatch.setattr("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_translate_stream)
     monkeypatch.setattr("pdf_reader.glossary_service.merge_glossary_csvs", fake_merge)
 
@@ -127,13 +139,13 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
         body = resp.data.decode("utf-8")
         assert '"type": "finish"' in body
 
-    # 7. Verify build_settings received cumulative glossary
+    # 7. Verify strict builder received only the effective glossary
     assert len(settings_call_kwargs) == 1
-    assert settings_call_kwargs[0]["glossary_paths"] == [str(cumulative_file)]
+    assert settings_call_kwargs[0]["glossary_paths"] == [str(effective_file)]
 
     # 8. Verify merge_glossary_csvs called with correct paths
     assert len(merge_calls) == 1
-    assert merge_calls[0] == (str(cumulative_file), str(auto_file))
+    assert merge_calls[0] == (str(glossary_cache / "cumulative_glossary.csv"), str(auto_file))
 
 
 def test_translate_page_out_of_range(app_state, sample_pdf):
@@ -332,7 +344,16 @@ def test_translate_batch_emits_batch_info_and_finish(app_state, sample_pdf, monk
     app_state.open_pdf(str(sample_pdf), sha256_func)
     page_count = app_state.page_count
 
-    def fake_build_settings(upstream, input_pdf, user_prompt=None, output_dir=None, glossary_paths=None, pages="1"):  # noqa: ANN202
+    def fake_prepare(snapshot):  # noqa: ANN202
+        return StrictTranslationContext(
+            document_dir=snapshot.glossary_cache_path,
+            document_id=snapshot.document_id,
+            pdf_hash=snapshot.pdf_hash,
+            effective_glossary_path=None,
+            effective_rows=(),
+        )
+
+    def fake_build_settings(upstream, user_prompt, pages, context):  # noqa: ANN202
         return MagicMock()
 
     async def fake_translate_stream(settings, file):  # noqa: ANN202
@@ -349,7 +370,8 @@ def test_translate_batch_emits_batch_info_and_finish(app_state, sample_pdf, monk
         mock_result.auto_extracted_glossary_path = None
         yield {"type": "finish", "stage": "generating_pdf", "translate_result": mock_result, "token_usage": {}}
 
-    monkeypatch.setattr("pdf_reader.routes.build_settings", fake_build_settings)
+    monkeypatch.setattr("pdf_reader.routes.strict_glossary.prepare_strict_translation_context", fake_prepare)
+    monkeypatch.setattr("pdf_reader.routes.strict_glossary.build_strict_settings", fake_build_settings)
     monkeypatch.setattr("pdf_reader.translation_orchestrator.do_translate_async_stream", fake_translate_stream)
     monkeypatch.setattr("pdf_reader.glossary_service.merge_glossary_csvs", lambda c, a: None)
 
@@ -511,9 +533,17 @@ def test_translate_context_uses_injected_settings_not_module_globals(app_state, 
     captured = {}
 
     with (
-        patch("pdf_reader.routes.build_settings", return_value=MagicMock()),
+        patch("pdf_reader.routes.strict_glossary.prepare_strict_translation_context") as prepare,
+        patch("pdf_reader.routes.strict_glossary.build_strict_settings", return_value=MagicMock()),
         patch("pdf_reader.routes.sse_stream.generate") as generate,
     ):
+        prepare.return_value = StrictTranslationContext(
+            document_dir=app_state.glossary_cache_path,
+            document_id="doc-id",
+            pdf_hash=app_state.pdf_hash or "",
+            effective_glossary_path=None,
+            effective_rows=(),
+        )
 
         def capture(ctx) -> object:
             captured["ctx"] = ctx

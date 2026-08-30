@@ -8,7 +8,8 @@ from pathlib import Path
 
 from pdf2zh_next import SettingsModel
 
-from pdf_reader import cache_ops, debug_trace, pdf_extraction
+from pdf_reader import cache_ops, debug_trace, pdf_extraction, strict_glossary
+from pdf_reader.strict_glossary import StrictTranslationContext
 from pdf_reader.task_logging import (
     STATUS_CANCELLING,
     STATUS_CLEANED,
@@ -77,6 +78,7 @@ class GenerateContext:
     debug: bool = False
     register_stream: Callable[[str, object], None] | None = None
     unregister_stream: Callable[[str], None] | None = None
+    strict_context: StrictTranslationContext | None = None
 
 
 @dataclass
@@ -103,6 +105,7 @@ class GenerateBatchContext:
     debug: bool = False
     register_stream: Callable[[str, object], None] | None = None
     unregister_stream: Callable[[str], None] | None = None
+    strict_context: StrictTranslationContext | None = None
 
 
 def format_batch_info(from_page: int, to_page: int, total: int) -> str:
@@ -231,6 +234,12 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
         stream = None
         outcome = "failed"
         try:
+            if ctx.strict_context is not None:
+                strict_glossary.validate_strict_context_identity(
+                    ctx.strict_context,
+                    ctx.task_ctx,
+                    ctx.glossary_cache_path,
+                )
             workspace = cache_ops.create_temp_workspace(ctx.cache_dir, job_id=ctx.job_id)
             tmpdir = workspace / "input"
             output_dir = workspace / "output"
@@ -243,6 +252,12 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                 token_usage_finish = None
 
                 single_page_pdf = ctx.extract_page(ctx.page, tmpdir, pdf_extraction.extract_single_page)
+                if ctx.strict_context is not None:
+                    strict_glossary.apply_active_terms_from_pdf(
+                        ctx.settings,
+                        single_page_pdf,
+                        ctx.strict_context.effective_rows,
+                    )
 
                 stream = run_translation(
                     ctx.settings,
@@ -385,6 +400,12 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
         stream = None
         outcome = "failed"
         try:
+            if ctx.strict_context is not None:
+                strict_glossary.validate_strict_context_identity(
+                    ctx.strict_context,
+                    ctx.task_ctx,
+                    ctx.glossary_cache_path,
+                )
             workspace = cache_ops.create_temp_workspace(ctx.cache_dir, job_id=ctx.job_id)
             tmpdir = workspace / "input"
             output_dir = workspace / "output"
@@ -402,6 +423,12 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
                 token_usage_finish = None
 
                 multi_page_pdf = ctx.extract_pages(ctx.page_indices, tmpdir, pdf_extraction.extract_pages)
+                if ctx.strict_context is not None:
+                    strict_glossary.apply_active_terms_from_pdf(
+                        ctx.settings,
+                        multi_page_pdf,
+                        ctx.strict_context.effective_rows,
+                    )
 
                 yield format_batch_info(ctx.from_page, ctx.to_page, len(ctx.page_indices))
 

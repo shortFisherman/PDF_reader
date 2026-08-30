@@ -83,6 +83,7 @@
 | `src/pdf_reader/candidate_store.py` | P0-02 候选术语存储 `term_candidates.json`（schema v1、观察合并、accept/reject 状态保护、legacy 合入迁移、严格校验、原子读写） |
 | `src/pdf_reader/legacy_migration.py` | P0-02 旧 `cumulative_glossary.csv` → 候选存储的幂等合入迁移（保留用户状态、备份不覆盖、失败原样） |
 | `src/pdf_reader/glossary_compiler.py` | P0-03 确定性有效词表编译：文档权威 > accepted 候选 > 全局优先级、输入锁内一致快照摘要、同级冲突 fail-closed、CSV + sidecar 原子成对提交、严格 sidecar 校验与 stale 检测 |
+| `src/pdf_reader/strict_glossary.py` | P0-04 严格正文术语路径：迁移→编译→验证的单一准备入口、活跃词条边界匹配与约束 Prompt 合成 |
 | `src/pdf_reader/logging_config.py` | 统一日志管线：同一对控制台 + `logs/pdf_reader.log` 轮转 handler 托管 `pdf_reader`/`werkzeug`/`pdf2zh_next`/`babeldoc`、ISO 元数据行格式与 run_id、sys/threading 未捕获异常钩子、reset 快照恢复 |
 | `src/pdf_reader/debug_trace.py` | 按任务的有界调试会话：`cache/<hash>/debug_trace.log`（2MB × 3，job 过滤，start/end/elapsed/traceback），debug 关闭时零 IO |
 | `templates/index.html` | 唯一 HTML 页面：打开区、双栏、工具栏、始终可见的“配置”按钮 |
@@ -100,7 +101,7 @@
 | `docs/governance/` | 文档治理、工具目录治理、依赖升级流程与许可证核验基线（非法律意见） |
 | `docs/`、`docs/archive/`、`docs/reports/` | 常青文档、历史归档与上游研究资料 |
 
-## 术语状态模型与缓存组成（P0-02/P0-03）
+## 术语状态模型与缓存组成（P0-02/P0-03/P0-04）
 
 P0-02 起，术语持久化按“用户决定”和“模型候选”两类语义分离，自动流程不得跨类写入：
 
@@ -177,6 +178,34 @@ P0-02 起，术语持久化按“用户决定”和“模型候选”两类语�
   严格校验后的行；CSV/sidecar 任一缺失或损坏都报错，只有两者都不存在时才
   返回空表（尚未编译）。
 
+严格正文路径（P0-04）：单页/批量路由先调用 `coordinator.start(...)` 原子占用
+任务槽，成功后才执行 `strict_glossary.prepare_strict_translation_context(snapshot)`
+（旧 `cumulative_glossary.csv` 幂等迁移只合入候选 → `compile_effective_glossary`
+→ `verify_effective_glossary`）；busy/shutdown 在任何严格术语准备写操作前返回
+HTTP 409。准备或设置构建失败时路由调用 `coordinator.fail(job_id)` 释放任务槽、
+返回 HTTP 500 `glossary_prepare_failed`，不调用上游，也不留下活动任务。该函数
+断言 `snapshot.glossary_cache_path.name == snapshot.pdf_hash`，并把 `document_id`、
+`pdf_hash` 与本次验证通过的有效词表快照封进 `StrictTranslationContext`；SSE
+生成器只消费该预构建上下文，并在抽取/上游前校验其身份与
+`task_ctx.document_id`/`task_ctx.pdf_hash`/`glossary_cache_path` 一致，不一致时
+安全失败；迟到任务不会重新编译或写入其他文档。`build_settings` 对正文固定
+`no_auto_extract_glossary=True`、`save_auto_extracted_glossary=False`（不再由
+`translation.auto_extract_glossary` 反转），`glossaries` 只来自本次 fresh 的
+`effective_glossary.csv`（零权威行时安全省略）。`generate`/`generate_batch` 在
+抽取真实输入 PDF 后调用 `strict_glossary.apply_active_terms_from_pdf`：本地匹配
+大小写不敏感、连续空白等价、英文 token 边界；`AD` 不命中
+`adherence`/`adverse`/`shadow`，不自动合并单复数/连字符/缩写全称；只把当前页/
+批次实际命中的活跃权威词条以 `[权威术语约束]` 块追加到 `custom_system_prompt`
+之后，用户 Prompt 保留在块前且块声明不可被页面 Prompt 覆盖；无命中不修改
+Prompt，源文本不可用时跳过块但有效词表仍经 `glossaries` 传入。约束块使用 JSON
+编码 source/target，并按 32 KiB UTF-8 确定性上限整行纳入、超限条目只报告省略
+数量；不记录正文、Prompt、异常原文、本地路径或凭据。
+
+输入冻结边界：`coordinator.start` 先于严格术语准备占位，因此当前翻译生产者从
+占位到 SSE 结束期间不能插入文档切换，也不会重新编译其他文档。未来 P1-04 术语
+编辑 API 必须沿用同一活动任务边界：活动翻译任务期间拒绝修改权威/候选输入，
+避免正在被 SSE 消费的 `StrictTranslationContext` 与磁盘输入之间出现未定义竞态。
+
 路径控制：文档级存储只接受 64 位小写十六进制 PDF 哈希目录名
 （`user_glossary.validate_document_dir`），文件名固定。自动合并入口
 `merge_glossary_csvs` 拒绝写入受保护文件名（`user_glossary.csv`、
@@ -219,7 +248,7 @@ P0-02 起，术语持久化按“用户决定”和“模型候选”两类语�
 - `GLOSSARY_PATH = PROJECT_ROOT/docs/glossary.csv`（由 `src/pdf_reader/paths.py` 派生），必须保持该路径；模块位于 `src/pdf_reader/` 时不因 `__file__` 变化而改变。
 - `ENGINE_REGISTRY` 用声明式 `EngineSpec` 注册 10 个 Provider，顺序为：`deepseek`、`zhipu`、`siliconflow`、`aliyun`、`gemini`、`groq`、`grok`、`modelscope`、`openai`、`openai_compatible`。
 - `resolve_engine()` 对未知 Provider 抛 `ConfigError`（不再回退 `openai_compatible`）；`build_engine_kwargs(spec, model_cfg)` 显式接收 `ModelRuntimeConfig`，按 `ENGINE_REGISTRY.field_map` 映射（含发送开关：OpenAI → 历史拼写 `openai_send_temprature`，Compatible/Aliyun → 各自 `send_temperature`；发送开关为 `False` 时省略以保持旧请求行为，`enable_json_mode=False` 等普通字段仍显式透传）。
-- `translation_settings.build_settings(upstream, input_pdf, ...)`：设置 `lang_in`/`lang_out`/`min_text_length`/`qps`/worker 与 term 字段/`no_auto_extract_glossary`+`save_auto_extracted_glossary`（由 `auto_extract_glossary` 映射）/`primary_font_family`；Prompt 优先级为页面非空 Prompt > `default_system_prompt` > 上游默认；`ignore_cache=True`；把非空的 `docs/glossary.csv` 与累积术语路径拼为 `glossaries`；`output` 由生成器设置；PDF 参数为 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，并把 `[pdf2zh]` 的 15 个字段显式传入（`formula_*` → 上游 `formular_*`）。
+- `translation_settings.build_settings(upstream, input_pdf, ...)`：设置 `lang_in`/`lang_out`/`min_text_length`/`qps`/worker 与 term 字段；正文固定 `no_auto_extract_glossary=True`、`save_auto_extracted_glossary=False`（P0-04，不再由 `auto_extract_glossary` 反转）；Prompt 优先级为页面非空 Prompt > `default_system_prompt` > 上游默认；`ignore_cache=True`；`glossaries` 只由调用方传入（严格正文路径只传 `effective_glossary.csv`，不再自动附加全局/累计 CSV）；`output` 由生成器设置；PDF 参数为 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，并把 `[pdf2zh]` 的 15 个字段显式传入（`formula_*` → 上游 `formular_*`）。
 
 ## 配置中心（config_editor 与 config-panel）
 
@@ -240,9 +269,9 @@ P0-02 起，术语持久化按“用户决定”和“模型候选”两类语�
 
 ## 单页翻译链
 
-1. `POST /api/translate/<page>`（零基页码）校验文档已打开、页码在范围内，解析累积术语路径，`build_settings()` 组装参数。
-2. 路由先取得冻结的文档快照，再调用协调器 `start(document_id, [page])` 原子占用任务槽；已有任务时返回 HTTP 409，且不构造 SSE 生成器、不创建任务工作区或后台线程。接受后构造带 `job_id` 和 finish/fail 回调的 `GenerateContext`；抽取、`replace_page` 与术语合并闭包都捕获快照中的 `document_id`。
-3. `generate()` 在 cache 根创建带前缀与标记的任务工作区（`input/` 抽取输入、`output/` 上游输出），在 `debug_trace.debug_session` 内先 `extract_single_page()` 抽取单页 PDF。
+1. `POST /api/translate/<page>`（零基页码）校验文档已打开、页码在范围内；路由先调用协调器 `start(document_id, [page])` 原子占用任务槽；busy/shutdown 在任何严格术语准备写操作前返回 HTTP 409。
+2. 占位成功后才执行 `strict_glossary.prepare_strict_translation_context(snapshot)`（旧累计迁移→有效词表编译→严格验证）并 `build_strict_settings()` 组装参数；失败时 `coordinator.fail(job_id)` 释放槽、返回 HTTP 500 `glossary_prepare_failed`、不调用上游。接受后构造带 `job_id` 和 finish/fail 回调的 `GenerateContext`；抽取、`replace_page` 与术语合并闭包都捕获快照中的 `document_id`，`strict_context` 携带本次预构建的有效词表身份与快照。
+3. `generate()` 先校验 `strict_context` 与 `task_ctx`/`glossary_cache_path` 身份一致，再在 cache 根创建带前缀与标记的任务工作区（`input/` 抽取输入、`output/` 上游输出），在 `debug_trace.debug_session` 内先 `extract_single_page()` 抽取单页 PDF，再用 `strict_glossary.apply_active_terms_from_pdf` 从该真实输入 PDF 匹配活跃权威词条并合成最终 `custom_system_prompt`。
 4. `run_translation()` 启动 daemon worker 线程运行上游异步翻译；`format_sse_event()` 把 `progress_start`/`progress_update`/`finish`/`error` 映射为 SSE；非 dict 心跳直接 yield 空串。
 5. 收到上游 `finish` 事件后保留 `translate_result` 与 token 用量，随后调用 `finish_translation()`：优先 `mono_pdf_path`，缺失时回退 `dual_pdf_path`，再调 `AppState.replace_page(..., expected_document_id)` 写入译文，并通过 `AppState.merge_glossary(..., expected_document_id)` 把自动术语并入累计文件。
 6. `replace_page()` 在锁内先比较预期身份，再经 `_commit_replacement()` 事务提交：所有页修改在从磁盘已提交的 `right.pdf` 重开的工作副本上完成 → 保存 `.tmp` → 关闭译文/工作文档 → 关闭旧右文档句柄 → `os.replace` 原子替换 → 重开右文档 → 更新翻译页集合。磁盘提交成功前不替换内存句柄和 `_translated_pages`；任意失败（open/delete/insert/save/close/`os.replace`）都会清理 `.tmp`、关闭泄漏句柄、恢复或保留可渲染的文档句柄，旧 `right.pdf` 保持不变。`merge_glossary()` 同样在锁内完成身份比较与合并回调；失配时两条边界都抛出 `StaleDocumentError`、记录 `[stale-result]` 警告且不修改当前文档。
@@ -252,8 +281,8 @@ P0-02 起，术语持久化按“用户决定”和“模型候选”两类语�
 ## 范围与全文翻译链
 
 1. `POST /api/translate-batch` 接收一基闭区间 `from`/`to`，校验均为整数、≥1、不越界且 `from ≤ to`。
-2. 路由换算零基 `page_indices`，使用同一协调器原子占槽，再从冻结快照构造带 `job_id` 的 `GenerateBatchContext`（抽取、`replace_pages` 与术语合并闭包都捕获 `document_id`），`pages` 参数按页数设为 `"1"` 或 `"1-N"`。
-3. `generate_batch()` 先发 `batch_info`，再抽取多页 PDF 一次性送入 `run_translation()`，之后逐事件转发 SSE。
+2. 路由先使用同一协调器原子占槽（busy/shutdown 同样在任何严格术语准备写操作前返回），占位成功后再执行与单页相同的 `strict_glossary.prepare_strict_translation_context` + `build_strict_settings`（同一严格设置构建函数；失败时 `coordinator.fail` 释放槽、500 `glossary_prepare_failed`），并换算零基 `page_indices`、从冻结快照构造带 `job_id` 的 `GenerateBatchContext`（抽取、`replace_pages` 与术语合并闭包都捕获 `document_id`），`pages` 参数按页数设为 `"1"` 或 `"1-N"`。
+3. `generate_batch()` 先校验 `strict_context` 身份一致，再发 `batch_info`，抽取多页 PDF 并从该真实输入 PDF 应用活跃权威词条，之后一次性送入 `run_translation()` 并逐事件转发 SSE。
 4. 完成后选 `mono_pdf_path`（回退 `dual_pdf_path`）调 `AppState.replace_pages(..., expected_document_id)` 经同一 `_commit_replacement()` 事务按序替换范围页，并只做一次受同一身份保护的 `merge_glossary_only()`。批量与单页遵循同一部分提交语义：PDF 提交失败时术语合并不执行；术语合并失败被包含后 PDF 提交保留、任务仍以 finished 结束。
 5. 全文翻译是浏览器行为：`onFullTranslateClick()` 调同一批处理端点提交 `1..pageCount`，不存在独立的全文章节端点。
 
@@ -363,7 +392,7 @@ debug 开启时，单页/批量翻译在 `debug_trace.debug_session(...)` 内把
 
 前端装配与翻译 UI 状态（P2-02）：`static/modules/translation-ui-controller.js` 是单页/批量共享的翻译 UI 状态机（idle → running → succeeded/failed/aborted → idle），集中 busy 控件禁用、进度条、stage/status 文本、成功/失败恢复、延时清理与 operation generation 迟到回调隔离；单页与批量差异（范围文案、完成后刷新页集合）通过 operation descriptor/callback 注入，`app.js` 不再复制两套 busy/progress/error DOM 逻辑。每次翻译操作创建 `AbortController` 并把 `signal` 传入 `translator.js` 的 fetch；新操作、成功打开新文档（session dispose）与页面卸载时 abort 浏览器请求并使旧回调失效；浏览器 abort 只终止客户端请求/消费，不是可靠的服务端取消确认，服务端生命周期仍由 SSE 断开与后端机制决定。`static/modules/reader-session.js` 把 zoom/alignment/intersection observer/settle gate/page 生命周期清理收束为幂等 `dispose` 边界：仅在新文档 open 成功、准备替换 DOM 时 dispose 旧 session，失败打开保留旧 session（409 语义不变）。
 
-错误契约（P2-05）：所有 API 4xx/5xx 返回顶层 `{"code": <stable_code>, "error": <safe_message>}`；`409` 保留 `translation_busy`、中文安全提示与 `active_job_id`（P0-02/P1-04 回归依赖），其余 400 分支使用稳定 code（`invalid_file_path`、`invalid_page`、`no_document_opened`、`page_out_of_range`、`invalid_side`、`invalid_page_numbers`、`invalid_page_range`），`403` 使用 `config_local_only`（配置中心 loopback 守卫）与 `client_errors_local_only`（前端错误上报 loopback 守卫），`404` 使用 `not_found`，`413` 使用 `payload_too_large`（前端错误上报正文超限），其它 HTTP 错误使用 `http_<status>`，`500` 固定为 `internal_error`。`routes.http_error` 处理 `HTTPException`（不吞成 500），`routes.internal_error` 记录完整异常（含 traceback）后只返回安全摘要。SSE 统一经 `sse_stream.format_sse_error(code, message)` 输出 `{"type":"error","code","error"}`；上游原始 error、`TranslationError` 消息、普通异常消息与“无翻译结果”均只进服务端日志，不返回浏览器。前端 `static/modules/dom.js` 提供 `showError()`（DOM 节点 + `textContent`），`app.js` 不再使用 `insertAdjacentHTML` 插入错误文本；`static/modules/translator.js` 对非 JSON 响应、网络异常与缺失错误字段使用固定安全 fallback。非 loopback host（非 `localhost`、`127/8`、`::1`）在 `app.main` 中、`app.run` 前输出安全 WARNING（不记录 API Key，不阻止启动）。
+错误契约（P2-05）：所有 API 4xx/5xx 返回顶层 `{"code": <stable_code>, "error": <safe_message>}`；`409` 保留 `translation_busy`、中文安全提示与 `active_job_id`（P0-02/P1-04 回归依赖），其余 400 分支使用稳定 code（`invalid_file_path`、`invalid_page`、`no_document_opened`、`page_out_of_range`、`invalid_side`、`invalid_page_numbers`、`invalid_page_range`），`403` 使用 `config_local_only`（配置中心 loopback 守卫）与 `client_errors_local_only`（前端错误上报 loopback 守卫），`404` 使用 `not_found`，`413` 使用 `payload_too_large`（前端错误上报正文超限），`500` 除 `glossary_prepare_failed`（P0-04 严格词表准备失败）外固定为 `internal_error`。`routes.http_error` 处理 `HTTPException`（不吞成 500），`routes.internal_error` 记录完整异常（含 traceback）后只返回安全摘要。SSE 统一经 `sse_stream.format_sse_error(code, message)` 输出 `{"type":"error","code","error"}`；上游原始 error、`TranslationError` 消息、普通异常消息与“无翻译结果”均只进服务端日志，不返回浏览器。前端 `static/modules/dom.js` 提供 `showError()`（DOM 节点 + `textContent`），`app.js` 不再使用 `insertAdjacentHTML` 插入错误文本；`static/modules/translator.js` 对非 JSON 响应、网络异常与缺失错误字段使用固定安全 fallback。非 loopback host（非 `localhost`、`127/8`、`::1`）在 `app.main` 中、`app.run` 前输出安全 WARNING（不记录 API Key，不阻止启动）。
 
 ## 测试、CI 与验证入口
 

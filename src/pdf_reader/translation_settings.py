@@ -24,14 +24,17 @@ def build_settings(
     spec = resolve_engine(model_cfg.provider)
     engine_kwargs = build_engine_kwargs(spec, model_cfg)
 
+    # P0-04 严格正文路径：正文翻译固定关闭上游自动术语提取与自动保存，
+    # 不再由 translation.auto_extract_glossary 反转；该配置在 P1-01 候选服务
+    # 落地前对正文保持惰性。glossaries 只由调用方传入本次 fresh 的有效词表。
     translation_kwargs = {
         "lang_in": translation_cfg.lang_in,
         "lang_out": translation_cfg.lang_out,
         "min_text_length": translation_cfg.min_text_length,
         "qps": translation_cfg.qps,
         "ignore_cache": True,
-        "no_auto_extract_glossary": not translation_cfg.auto_extract_glossary,
-        "save_auto_extracted_glossary": translation_cfg.auto_extract_glossary,
+        "no_auto_extract_glossary": True,
+        "save_auto_extracted_glossary": False,
     }
     if translation_cfg.pool_max_workers is not None:
         translation_kwargs["pool_max_workers"] = translation_cfg.pool_max_workers
@@ -51,13 +54,8 @@ def build_settings(
     prompt = (user_prompt or "").strip() or translation_cfg.default_system_prompt
     if prompt:
         translation_kwargs["custom_system_prompt"] = prompt
-    paths = []
-    if config.GLOSSARY_PATH.exists() and config.GLOSSARY_PATH.stat().st_size > 0:
-        paths.append(str(config.GLOSSARY_PATH))
     if glossary_paths:
-        paths.extend(glossary_paths)
-    if paths:
-        translation_kwargs["glossaries"] = ",".join(paths)
+        translation_kwargs["glossaries"] = ",".join(glossary_paths)
     if output_dir is not None:
         translation_kwargs["output"] = output_dir
 

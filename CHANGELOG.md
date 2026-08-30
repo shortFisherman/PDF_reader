@@ -1,5 +1,32 @@
 # 更新日志
 
+## 未发布 — P0-04 严格正文术语路径
+
+- 正文翻译固定关闭上游自动术语提取：`SettingsModel` 恒为
+  `no_auto_extract_glossary=true`、`save_auto_extracted_glossary=false`；
+  `translation.auto_extract_glossary` 在 P1-01 候选服务落地前对正文为惰性配置。
+- 每次单页/批量翻译前在路由层执行旧 `cumulative_glossary.csv` 幂等迁移（只合入
+  候选）→ 编译 `effective_glossary.csv` → 严格验证 fresh；任一失败返回 HTTP 500
+  `glossary_prepare_failed`，不调用上游。任务占位顺序为“先 `coordinator.start`，
+  成功后才做严格术语准备”；busy/shutdown 在任何准备写操作前返回 409，准备失败
+  时 `coordinator.fail` 释放任务槽。`glossaries` 只指向本次有效词表，零权威行时
+  安全省略；不再把全局/累计/auto candidate CSV 直接传给正文。
+- 新增 `src/pdf_reader/strict_glossary.py`：预构建 `StrictTranslationContext`
+  （携带 `document_id`/`pdf_hash` 身份边界，SSE 在抽取/上游前再次校验任务身份，
+  迟到任务不重新编译）、本地活跃词条匹配器（大小写不敏感、连续空白等价、英文
+  token 边界；`AD` 不命中
+  `adherence`/`adverse`/`shadow`；不自动合并单复数/连字符/缩写全称）与
+  `[权威术语约束]` Prompt 块（用户 Prompt 保留在前、块不可被覆盖；JSON 编码
+  source/target；32 KiB UTF-8 确定性上限、整行纳入、超限只报告省略数量；不记录
+  正文/Prompt/异常原文/本地路径/凭据）。
+- 单页与批量共用同一严格设置构建函数；SSE 生成器在抽取真实输入 PDF 后应用活跃
+  权威词条到最终 `custom_system_prompt`，无命中不修改 Prompt。
+- 兼容说明：`auto_extract_glossary` 键仍被接受但不再影响正文；自动候选收集暂停，
+  旧累计词表只会作为候选保留，不会自动升级为权威。P0-05 输出合规验证/重试/提交
+  门尚未实施，因此本变更不宣称“最终译文一定合规”。
+- 文档同步：`docs/architecture.md`、`docs/governance/glossary-upstream-boundary.md`、
+  `README.md`、`config.example.toml` 更新严格路径事实与用户可见兼容说明。
+
 ## 未发布 — 日志工程化（统一日志管线、debug_trace 与前端错误上报）
 
 - 主日志永久常驻 `logs/pdf_reader.log`（`DATA_ROOT/logs`，单文件 128 KiB × 5 份轮转备份，

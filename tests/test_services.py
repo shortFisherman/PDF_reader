@@ -273,8 +273,8 @@ def test_build_settings_new_translation_defaults(mock_config):
     assert translation.pool_max_workers is None
     assert translation.term_qps is None
     assert translation.term_pool_max_workers is None
-    assert translation.no_auto_extract_glossary is False
-    assert translation.save_auto_extracted_glossary is True
+    assert translation.no_auto_extract_glossary is True
+    assert translation.save_auto_extracted_glossary is False
     assert translation.primary_font_family is None
     assert translation.custom_system_prompt is None
 

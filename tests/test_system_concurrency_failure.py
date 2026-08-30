@@ -50,6 +50,7 @@ from pdf_reader import cache_ops, config, sse_stream, translation_orchestrator
 from pdf_reader.file_hash import sha256
 from pdf_reader.routes import register_routes
 from pdf_reader.state import AppState
+from pdf_reader.strict_glossary import StrictTranslationContext
 from pdf_reader.translation_coordinator import TranslationCoordinator
 
 pytestmark = pytest.mark.system
@@ -137,6 +138,17 @@ def system_app(tmp_path, monkeypatch, mock_config):
     app.config["app_state"] = AppState(cache_dir)
     app.config["translation_coordinator"] = TranslationCoordinator()
     register_routes(app)
+
+    def fake_prepare(snapshot):  # noqa: ANN202
+        return StrictTranslationContext(
+            document_dir=snapshot.glossary_cache_path,
+            document_id=snapshot.document_id,
+            pdf_hash=snapshot.pdf_hash,
+            effective_glossary_path=None,
+            effective_rows=(),
+        )
+
+    monkeypatch.setattr("pdf_reader.routes.strict_glossary.prepare_strict_translation_context", fake_prepare)
     yield app
     app.config["app_state"]._close_docs()
 

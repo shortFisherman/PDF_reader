@@ -122,14 +122,14 @@ qps = 4
 | 429 / 限流 | 降 `qps`，同时降 `pool_max_workers`（8→4→1 逐级降） | 不要继续调大；等配额恢复再试 |
 | 超时频繁 | 先降 `qps`/`pool_max_workers`，或增大 `model.timeout` | `timeout` 仅 `aliyun`/`openai`/`openai_compatible` 支持，其它 provider 设置会被忽略 |
 | 速度慢但无 429 | 逐级 1→4→8 | 每级观察是否出现限流或超时 |
-| 费用增长过快 | 降 `qps`；或关闭自动术语（`auto_extract_glossary = false`） | 自动术语会额外调用模型，换取术语一致性和累计术语表；关闭后请求更少，但自动术语一致性收益消失 |
+| 费用增长过快 | 降 `qps` | 正文翻译已固定关闭上游自动术语提取；候选收集暂停期间 `auto_extract_glossary` 不额外调用模型 |
 
 ### 其它常用参数怎么选
 
 | 参数 | 默认 | 怎么选 |
 |---|---|---|
 | `translation.min_text_length` | `5` | 短标题/图注被漏翻可尝试 `2`；噪声碎片太多可尝试 `10`；一次只小幅调整 |
-| `translation.auto_extract_glossary` | `true` | 保持默认；关闭会减少术语提取请求，但失去自动累计术语和一致性收益；不会关闭正文翻译 |
+| `translation.auto_extract_glossary` | `true` | 当前对正文为惰性配置：正文恒走严格路径并关闭上游自动提取；自动候选收集在 P1-01 前暂停 |
 | `translation.primary_font_family` | `auto` | 只有字体视觉明显不合适才改 `serif`/`sans-serif`/`script` |
 | `translation.default_system_prompt` | 省略 | 只有希望每次任务固定附加翻译指令时才设置；页面非空 Prompt 仍优先 |
 | `model.timeout` | provider 默认 | 仅 `aliyun`/`openai`/`openai_compatible` 生效；调大只允许更久等待，不会让模型变快；其它 provider 设置被忽略 |
@@ -156,6 +156,12 @@ $env:MODEL_API_KEY = 'your-api-key'
 - 前端文档缓存仍只按原 PDF 哈希保存；累计术语表继续跨模型/配置复用。
 - 每次翻译固定跳过上游请求缓存（`ignore_cache=true`），但不会影响本前端按 PDF 哈希复用的译文页面。
 - 页面 Prompt 优先级：非空页面 Prompt > `translation.default_system_prompt` > 上游默认提示词。
+- 正文翻译固定关闭上游自动术语提取（`no_auto_extract_glossary=true`、
+  `save_auto_extracted_glossary=false`），`translation.auto_extract_glossary`
+  当前不改变正文行为；自动候选收集暂停，直到候选服务落地。
+- 每次单页/批量翻译前先对当前文档执行旧累计术语幂等迁移（只合入候选）、编译并
+  严格验证 `effective_glossary.csv`；正文 `glossaries` 只指向该有效词表。当前页/
+  批次实际命中的权威词条会追加为不可被页面 Prompt 覆盖的强制约束块。
 
 API Key 不应提交到 Git。
 
@@ -184,6 +190,9 @@ API Key 不应提交到 Git。
 |---|---|
 | `right.pdf` | 该文档的译文工作副本（首次打开时复制源文件，翻译后原子替换） |
 | `cumulative_glossary.csv` | 该文档的累计术语表 |
+| `term_candidates.json` | 自动候选/拒绝/接受状态存储（候选不会直接进入正文） |
+| `user_glossary.csv` | 该文档的用户权威术语（用户确认后才约束正文） |
+| `effective_glossary.csv` | 每次正文翻译前编译并验证的只读有效词表 |
 | `reading_progress.json` | 阅读进度 |
 | `debug_trace.log` | 仅详细诊断日志模式产生：按文档保存的有界轮转调试轨迹（2MB × 3 备份，按 job 过滤） |
 

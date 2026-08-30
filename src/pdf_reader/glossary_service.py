@@ -8,6 +8,7 @@ logger = logging.getLogger("pdf_reader.glossary")
 
 
 def resolve_glossary_paths(cache_path: Path | None) -> list[str] | None:
+    """兼容期旧入口；P0-04 后正文不再使用，严格路径只接受 fresh effective_glossary.csv。"""
     if cache_path is None:
         result = None
     else:

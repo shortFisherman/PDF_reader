@@ -17,7 +17,7 @@ from flask import (
 )
 from werkzeug.exceptions import HTTPException
 
-from pdf_reader import config, config_editor, glossary_service, sse_stream
+from pdf_reader import config, config_editor, glossary_service, sse_stream, strict_glossary
 from pdf_reader.file_hash import sha256
 from pdf_reader.pdf_renderer import render_page
 from pdf_reader.task_logging import STATUS_STARTED, task_context_from_indices, task_log
@@ -27,7 +27,6 @@ from pdf_reader.translation_coordinator import (
     TranslationCoordinator,
     TranslationJob,
 )
-from pdf_reader.translation_settings import build_settings
 
 logger = logging.getLogger("pdf_reader.routes")
 client_logger = logging.getLogger("pdf_reader.client")
@@ -226,13 +225,6 @@ def translate_page(page: int):
     user_prompt = (data.get("prompt") or "").strip() or None
 
     app_settings = _get_settings()
-    glossary_paths = glossary_service.resolve_glossary_paths(snapshot.glossary_cache_path)
-    settings_model = build_settings(
-        app_settings.upstream,
-        "",
-        user_prompt,
-        glossary_paths=glossary_paths,
-    )
     coordinator = _get_coordinator()
     try:
         job = coordinator.start(snapshot.document_id, [page], pdf_hash=snapshot.pdf_hash)
@@ -253,6 +245,25 @@ def translate_page(page: int):
     except CoordinatorShutdownError:
         logger.info("rejected translate request during coordinator shutdown")
         return translation_busy_response(None)
+    try:
+        strict_ctx = strict_glossary.prepare_strict_translation_context(snapshot)
+        settings_model = strict_glossary.build_strict_settings(
+            app_settings.upstream,
+            user_prompt,
+            "1",
+            strict_ctx,
+        )
+    except Exception as exc:
+        coordinator.fail(job.job_id)
+        stage = getattr(exc, "stage", "settings")
+        cause_type = getattr(exc, "cause_type", type(exc).__name__)
+        logger.error(
+            "strict glossary prepare failed stage=%s cause=%s doc=%s",
+            stage,
+            cause_type,
+            snapshot.pdf_hash[:12],
+        )
+        return error_response("术语词表准备失败，请查看服务端日志", 500, "glossary_prepare_failed")
     ctx = sse_stream.GenerateContext(
         settings=settings_model,
         job_id=job.job_id,
@@ -267,7 +278,9 @@ def translate_page(page: int):
         ),
         glossary_cache_path=snapshot.glossary_cache_path,
         page=page,
-        glossary_paths=glossary_paths,
+        glossary_paths=(
+            [str(strict_ctx.effective_glossary_path)] if strict_ctx.effective_glossary_path is not None else None
+        ),
         cache_dir=app_settings.cache_dir,
         provider=app_settings.model_provider,
         model=app_settings.model,
@@ -276,6 +289,7 @@ def translate_page(page: int):
         debug=app_settings.debug,
         register_stream=coordinator.register_stream,
         unregister_stream=coordinator.unregister_stream,
+        strict_context=strict_ctx,
         task_ctx=task_context_from_indices(
             job.job_id,
             snapshot.document_id,
@@ -334,14 +348,6 @@ def translate_batch():
     pages_str = f"1-{k}" if k > 1 else "1"
 
     app_settings = _get_settings()
-    glossary_paths = glossary_service.resolve_glossary_paths(snapshot.glossary_cache_path)
-    settings_model = build_settings(
-        app_settings.upstream,
-        "",
-        user_prompt,
-        glossary_paths=glossary_paths,
-        pages=pages_str,
-    )
     coordinator = _get_coordinator()
     try:
         job = coordinator.start(snapshot.document_id, page_indices, pdf_hash=snapshot.pdf_hash)
@@ -362,6 +368,25 @@ def translate_batch():
     except CoordinatorShutdownError:
         logger.info("rejected batch request during coordinator shutdown")
         return translation_busy_response(None)
+    try:
+        strict_ctx = strict_glossary.prepare_strict_translation_context(snapshot)
+        settings_model = strict_glossary.build_strict_settings(
+            app_settings.upstream,
+            user_prompt,
+            pages_str,
+            strict_ctx,
+        )
+    except Exception as exc:
+        coordinator.fail(job.job_id)
+        stage = getattr(exc, "stage", "settings")
+        cause_type = getattr(exc, "cause_type", type(exc).__name__)
+        logger.error(
+            "strict glossary prepare failed stage=%s cause=%s doc=%s",
+            stage,
+            cause_type,
+            snapshot.pdf_hash[:12],
+        )
+        return error_response("术语词表准备失败，请查看服务端日志", 500, "glossary_prepare_failed")
     ctx = sse_stream.GenerateBatchContext(
         settings=settings_model,
         job_id=job.job_id,
@@ -378,7 +403,9 @@ def translate_batch():
             glossary_service.merge_after_translate,
         ),
         glossary_cache_path=snapshot.glossary_cache_path,
-        glossary_paths=glossary_paths,
+        glossary_paths=(
+            [str(strict_ctx.effective_glossary_path)] if strict_ctx.effective_glossary_path is not None else None
+        ),
         cache_dir=app_settings.cache_dir,
         provider=app_settings.model_provider,
         model=app_settings.model,
@@ -387,6 +414,7 @@ def translate_batch():
         debug=app_settings.debug,
         register_stream=coordinator.register_stream,
         unregister_stream=coordinator.unregister_stream,
+        strict_context=strict_ctx,
         task_ctx=task_context_from_indices(
             job.job_id,
             snapshot.document_id,

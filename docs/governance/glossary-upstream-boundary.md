@@ -19,12 +19,15 @@ BabelDOC 0.6.2 `SharedContextCrossSplitPart.get_glossaries_for_translation(auto_
 | true | 不存在 | 用户词表（回退） |
 | false | 存在或不存在 | 用户词表 + 自动词表（如存在） |
 
-本项目 `translation_settings.build_settings()` 当前映射：
+本项目 `translation_settings.build_settings()` 在 P0-04 后的严格正文映射：
 
 | `translation.auto_extract_glossary` | `no_auto_extract_glossary` | `save_auto_extracted_glossary` | `glossaries` |
 |---|---|---|---|
-| true | false | true | 全局 + 文档累计 CSV（逗号连接） |
-| false | true | false | 同上（用户词表仍直接传入） |
+| true（正文惰性） | true | false | 调用方传入的 `effective_glossary.csv`（零权威行时省略） |
+| false | true | false | 同上 |
+
+`translation.auto_extract_glossary` 不再反转正文开关；正文恒为严格路径。
+自动候选收集暂时停产，P1-01 候选服务落地前该配置不产生候选。
 
 真实转换链还有一个已核验的上游缺口：pdf2zh-next 2.9.0 `create_babeldoc_config`
 只转发 `auto_extract_glossary`，不把 `save_auto_extracted_glossary` 传给 BabelDOC，
@@ -37,11 +40,14 @@ BabelDOC 0.6.2 `SharedContextCrossSplitPart.get_glossaries_for_translation(auto_
 
 ## 2. 边界决策
 
-后续严格正文路径（P0-04）与候选解耦（P1-01）按以下边界执行：
+严格正文路径（P0-04）与候选解耦（P1-01）按以下边界执行：
 
-- 严格正文路径在项目自己的调用边界关闭上游自动提取：
-  `auto_extract_glossary=false` → `no_auto_extract_glossary=true`、
-  `save_auto_extracted_glossary=false`，只把用户权威词表经受支持的 `glossaries` 传入正文。
+- 严格正文路径已在项目调用边界关闭上游自动提取：正文 SettingsModel 恒为
+  `no_auto_extract_glossary=true`、`save_auto_extracted_glossary=false`，只把本次
+  fresh 的 `effective_glossary.csv` 经受支持的 `glossaries` 传入正文。路由先
+  `coordinator.start` 占位再准备词表，busy/shutdown 不触发任何准备写操作；SSE
+  在抽取/上游前校验 `StrictTranslationContext` 与任务身份一致，约束块有 32 KiB
+  UTF-8 上限且整行纳入。
 - 自动候选由项目侧独立候选服务产出，只写候选存储；用户确认前不得进入正文有效词表，
   也不改变正文翻译的词表选择。
 - 允许使用并持续核验的上游边界：`SettingsModel` 的 `glossaries` /
@@ -77,7 +83,7 @@ BabelDOC 0.6.2 `SharedContextCrossSplitPart.get_glossaries_for_translation(auto_
 
 ## 5. 剩余问题
 
-- P0-04 严格正文路径尚未实施，当前生产行为保持不变（auto-on 仍可能让用户术语
-  不直接进入正文）；本文件只固定事实、红灯与边界决策。
+- P0-05 合规验证/重试/提交门尚未实施；“SettingsModel 传入了有效词表与约束块”
+  不等于“最终译文一定合规”，不得宣称输出已验证。
 - P0-01 验收要求的上游契约测试与仓库守卫已可执行；条目台账的“已完成”状态需在
   实现提交后由主 Agent 更新。

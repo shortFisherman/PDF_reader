@@ -244,7 +244,8 @@ def test_settings_assignment_compatibility(mock_config, monkeypatch):
     assert settings.translation.lang_in == "en"
     assert settings.translation.lang_out == "zh"
     assert settings.translation.ignore_cache is True
-    assert settings.translation.save_auto_extracted_glossary is True
+    assert settings.translation.no_auto_extract_glossary is True
+    assert settings.translation.save_auto_extracted_glossary is False
     assert settings.translation.glossaries == "/tmp/g.csv"
     assert settings.translation.output == "C:/tmp/out"
     settings.translation.output = "C:/tmp/changed"
@@ -256,20 +257,15 @@ def test_settings_assignment_compatibility(mock_config, monkeypatch):
     assert settings.basic.debug is False
 
 
-def test_build_settings_auto_extract_glossary_on_off_mapping(mock_config, monkeypatch, tmp_path):
-    """固定 build_settings 的 auto_extract_glossary → 上游三个翻译字段映射。"""
+def test_build_settings_strict_path_forces_auto_extract_off_for_both_config_values(mock_config, monkeypatch, tmp_path):
+    """P0-04：正文 SettingsModel 恒为严格路径，auto_extract_glossary 不能绕过。"""
     global_csv = tmp_path / "global_terms.csv"
     global_csv.write_text("source,target\nGlobal Term,全局术语\n", encoding="utf-8")
     monkeypatch.setattr(config, "GLOSSARY_PATH", global_csv)
     user_csv = tmp_path / "user_terms.csv"
     user_csv.write_text("source,target\nUser Term,用户术语\n", encoding="utf-8")
-    expected_glossaries = f"{global_csv},{user_csv}"
 
-    cases = (
-        (True, False, True),
-        (False, True, False),
-    )
-    for auto_extract, expected_no_auto, expected_save in cases:
+    for auto_extract in (True, False):
         translation = config.TranslationRuntimeConfig(
             lang_in="en",
             lang_out="zh",
@@ -281,9 +277,10 @@ def test_build_settings_auto_extract_glossary_on_off_mapping(mock_config, monkey
             glossary_paths=[str(user_csv)],
         )
 
-        assert settings.translation.no_auto_extract_glossary is expected_no_auto
-        assert settings.translation.save_auto_extracted_glossary is expected_save
-        assert settings.translation.glossaries == expected_glossaries
+        assert settings.translation.no_auto_extract_glossary is True
+        assert settings.translation.save_auto_extracted_glossary is False
+        # 严格路径只接受调用方传入的有效词表，绝不自动附加全局/累计 CSV。
+        assert settings.translation.glossaries == str(user_csv)
 
 
 def test_auto_extract_flags_reach_babeldoc_config_and_user_glossaries(
@@ -291,11 +288,11 @@ def test_auto_extract_flags_reach_babeldoc_config_and_user_glossaries(
     monkeypatch,
     tmp_path,
 ):
-    """真实转换链：auto_extract_glossary → BabelDOC config，用户词表在两种开关下都加载。
+    """真实转换链：严格正文 SettingsModel 到达 BabelDOC 时自动提取恒关闭。
 
     pdf2zh-next 2.9.0 的 create_babeldoc_config 不把 save_auto_extracted_glossary
-    转发给 BabelDOC，因此 BabelDOC 侧恒为默认 True；auto-off 时自动词表不存在，
-    实际不会写自动词表文件。升级依赖时必须重新核对该转发缺口。
+    转发给 BabelDOC，因此 BabelDOC 侧仍为默认 True；但 no_auto_extract_glossary
+    恒为 True，自动词表不存在，实际不会写自动词表文件。升级依赖时必须重新核对该缺口。
     """
     from pdf2zh_next.high_level import create_babeldoc_config
 
@@ -306,11 +303,7 @@ def test_auto_extract_flags_reach_babeldoc_config_and_user_glossaries(
     user_csv.write_text("source,target\nUser Term,用户术语\n", encoding="utf-8")
     pdf = config.Pdf2zhRuntimeConfig(translate_table_text=False)
 
-    cases = (
-        (True, True),
-        (False, False),
-    )
-    for auto_extract, expected_auto in cases:
+    for auto_extract in (True, False):
         translation = config.TranslationRuntimeConfig(
             lang_in="en",
             lang_out="zh",
@@ -324,14 +317,11 @@ def test_auto_extract_flags_reach_babeldoc_config_and_user_glossaries(
         with patch("pdf2zh_next.high_level.get_translator", return_value=object()):
             babeldoc_cfg = create_babeldoc_config(settings, Path("dummy.pdf"))
 
-        assert babeldoc_cfg.auto_extract_glossary is expected_auto
+        assert babeldoc_cfg.auto_extract_glossary is False
         assert babeldoc_cfg.save_auto_extracted_glossary is True
         user_glossaries = babeldoc_cfg.shared_context_cross_split_part.user_glossaries
-        assert [g.name for g in user_glossaries] == ["global_terms", "user_terms"]
-        assert {(e.source, e.target) for g in user_glossaries for e in g.entries} == {
-            ("Global Term", "全局术语"),
-            ("User Term", "用户术语"),
-        }
+        assert [g.name for g in user_glossaries] == ["user_terms"]
+        assert {(e.source, e.target) for g in user_glossaries for e in g.entries} == {("User Term", "用户术语")}
 
 
 def test_babeldoc_falls_back_to_pool_only_when_term_pool_is_none():

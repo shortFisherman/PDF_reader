@@ -6,6 +6,7 @@ from flask import Flask
 
 from pdf_reader.file_hash import sha256
 from pdf_reader.routes import register_routes
+from pdf_reader.strict_glossary import StrictTranslationContext
 from pdf_reader.translation_coordinator import TranslationCoordinator
 
 pytestmark = pytest.mark.integration
@@ -23,12 +24,26 @@ def _make_app(app_state, sample_pdf) -> Flask:
     return app
 
 
+def _strict_context(snapshot) -> StrictTranslationContext:
+    return StrictTranslationContext(
+        document_dir=snapshot.glossary_cache_path,
+        document_id=snapshot.document_id,
+        pdf_hash=snapshot.pdf_hash,
+        effective_glossary_path=None,
+        effective_rows=(),
+    )
+
+
 def test_overlapping_single_and_batch_requests_accept_only_one(app_state, sample_pdf):
     app = _make_app(app_state, sample_pdf)
     coordinator = app.config["translation_coordinator"]
 
     with (
-        patch("pdf_reader.routes.build_settings", return_value=MagicMock()),
+        patch(
+            "pdf_reader.routes.strict_glossary.prepare_strict_translation_context",
+            return_value=_strict_context(app_state.translation_snapshot()),
+        ),
+        patch("pdf_reader.routes.strict_glossary.build_strict_settings", return_value=MagicMock()),
         patch("pdf_reader.routes.sse_stream.generate", return_value=iter([""])) as generate_single,
         patch("pdf_reader.routes.sse_stream.generate_batch") as generate_batch,
     ):
@@ -57,7 +72,11 @@ def test_busy_request_does_not_create_stream_or_temp_workspace(app_state, sample
     active_job = coordinator.start(snapshot.document_id, [0])
 
     with (
-        patch("pdf_reader.routes.build_settings", return_value=MagicMock()),
+        patch(
+            "pdf_reader.routes.strict_glossary.prepare_strict_translation_context",
+            return_value=_strict_context(app_state.translation_snapshot()),
+        ),
+        patch("pdf_reader.routes.strict_glossary.build_strict_settings", return_value=MagicMock()),
         patch("pdf_reader.routes.sse_stream.generate") as generate_single,
         patch("pdf_reader.cache_ops.create_temp_workspace") as create_workspace,
     ):
@@ -113,7 +132,13 @@ def test_single_route_coordinator_start_logs_truncated_context(app_state, sample
     app = _make_app(app_state, sample_pdf)
     snapshot = app_state.translation_snapshot()
 
-    with patch("pdf_reader.routes.build_settings", return_value=MagicMock()):
+    with (
+        patch(
+            "pdf_reader.routes.strict_glossary.prepare_strict_translation_context",
+            return_value=_strict_context(app_state.translation_snapshot()),
+        ),
+        patch("pdf_reader.routes.strict_glossary.build_strict_settings", return_value=MagicMock()),
+    ):
         with patch("pdf_reader.routes.sse_stream.generate", return_value=iter([""])):
             with app.test_client() as client:
                 with caplog.at_level(logging.INFO, logger="pdf_reader.translate"):
@@ -129,7 +154,13 @@ def test_batch_route_coordinator_start_logs_truncated_context(app_state, sample_
     app = _make_app(app_state, sample_pdf)
     snapshot = app_state.translation_snapshot()
 
-    with patch("pdf_reader.routes.build_settings", return_value=MagicMock()):
+    with (
+        patch(
+            "pdf_reader.routes.strict_glossary.prepare_strict_translation_context",
+            return_value=_strict_context(app_state.translation_snapshot()),
+        ),
+        patch("pdf_reader.routes.strict_glossary.build_strict_settings", return_value=MagicMock()),
+    ):
         with patch("pdf_reader.routes.sse_stream.generate_batch", return_value=iter([""])):
             with app.test_client() as client:
                 with caplog.at_level(logging.INFO, logger="pdf_reader.translate"):

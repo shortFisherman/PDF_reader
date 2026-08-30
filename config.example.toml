@@ -414,10 +414,11 @@ lang_out = "zh"
 # 不了解就保持注释，不要猜阈值/并发值。
 # -----------------------------------------------------------------------------
 
-# 自动提取术语并保存/合并到当前文档累计术语表。
-# 类型：布尔值 true/false；默认 true（等价于当前固定行为）。
-# true → 上游 no_auto_extract_glossary=False + save_auto_extracted_glossary=True；
-# false → 关闭自动提取，也不保存自动术语。
+# 自动提取术语并保存/合并到当前文档累计术语表（兼容保留项）。
+# 类型：布尔值 true/false；默认 true。
+# P0-04 起正文翻译恒为严格路径：no_auto_extract_glossary=True +
+# save_auto_extracted_glossary=False，本键不再反转正文开关；自动候选收集在
+# P1-01 候选服务落地前暂停。保留此键仅为兼容旧配置，避免启动期删除报错。
 # auto_extract_glossary = true
 
 # 译文主字体。
@@ -549,8 +550,11 @@ debug = false
 # - 自定义 Prompt：页面中的 Prompt 输入框按翻译任务传入 custom_system_prompt；
 #   优先级：非空页面 Prompt > translation.default_system_prompt > 上游默认提示词；
 #   空白输入会回落到 default_system_prompt（未配置时保留上游默认）。
-# - 累计术语表：每个文档缓存目录中的 cumulative_glossary.csv 会自动参与后续翻译。
-# - 全局术语表：固定读取 PROJECT_ROOT/docs/glossary.csv；目前没有 TOML 路径字段。
+# - 权威术语：docs/glossary.csv（全局）与 cache/<hash>/user_glossary.csv（文档）
+#   以及用户接受后的候选，经编译生成 effective_glossary.csv 参与后续翻译。
+# - 旧累计术语表：cumulative_glossary.csv 只做幂等迁移为候选，不再直接传给正文。
+# - 严格正文路径：每次翻译前迁移→编译→验证有效词表；当前页实际命中的权威词条
+#   会追加为不可被页面 Prompt 覆盖的强制约束块。
 # =============================================================================
 
 
@@ -563,6 +567,10 @@ debug = false
 #   TranslationSettings.ignore_cache = true
 #     每次调用都跳过上游翻译缓存；不影响本前端 cache_dir 中保存的译文和阅读进度。
 #     用户点击翻译/重译时始终按当前模型、Prompt、术语表与设置重新调用上游。
+#   TranslationSettings.no_auto_extract_glossary = true
+#   TranslationSettings.save_auto_extracted_glossary = false
+#     P0-04 严格正文路径固定关闭上游自动术语提取；glossaries 只指向本次验证过的
+#     effective_glossary.csv，不再自动附加全局/累计 CSV。
 #   PDFSettings.no_dual = true
 #     上游只产出单语译文 PDF；本前端自己把原文和译文并排显示。
 #   PDFSettings.only_include_translated_page = true
