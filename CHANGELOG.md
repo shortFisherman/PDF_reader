@@ -1,5 +1,11 @@
 # 更新日志
 
+## 2026-08-30 — P3 工程改进收口
+
+- 工程改进清单（`docs/engineering-improvement-plan-829.md`）P3-01 至 P3-07 全部收口：P3-01 `2d63a0a`；P3-02 `54dae14`+`8652530`；P3-03 `6f6e79a`；P3-04 `6cf2af2`；P3-05 `f5c567e`+`f1638a3`（验收补强 `1ca789d`）；P3-06 `5282484`+`60cd77f`；P3-07 `5981217`（许可证与上游契约闭环由 `6cf2af2`/`5282484`/`60cd77f` 提供）。各条目状态、完成日期、验证证据与剩余风险已逐项记录。
+- 同步收口长期文档：`docs/architecture.md` 核验基线更新到实现树 `1ca789d`（测试基线仍为 597 个 Python 测试，后续文档收口不改变实现）；`docs/roadmap.md` 移除“继续 P3 还是体验改进”的过时开放问题，并明确工程改进收口不等于授权新的产品方向。
+- 最终实现树 `1ca789d` 上完整验证全绿：597 个 Python 测试；coverage line 94.8%、branch 88.3%；secret scan、Ruff lint/format、mypy、ESLint 与六套前端测试全过。定向验收：P3-02 205 passed 且 `python -m pdf_reader --help` 真实执行；P3-03 `npm test` 与 `npm run lint:js`；P3-06 定向 22、关键回归 74；P3-07 治理/密钥/版本/许可证/上游/文档组合 61；P3-05 worker 回收定向 3、相关回归 82 且同进程无 `translate-*` 残留线程。验收前后 cache（3 文件/112,503,805 B）与 logs（2 文件/3,750,478 B）逐文件 path/bytes/SHA256 不变。
+
 ## 2026-08-30 — P3-06 上游契约与文档治理
 
 - 新增离线上游契约测试 `tests/test_upstream_contract.py`：固定 pdf2zh-next 2.9.0 / babeldoc 0.6.2

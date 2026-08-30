@@ -5,6 +5,7 @@
 > 建立日期：2026-08-29  
 > 审计基线：`0c98cd2`  
 > 当前原则：保持本机、单用户、单文档、单体应用边界；优先消除数据损坏风险，再改善结构观感。
+> 实现收口：2026-08-30，P0、P1、P2、P3 全部条目已完成；最终实现树 `1ca789d`（本文档收口提交为前置 HEAD）。
 
 ## 1. 如何使用这份清单
 
@@ -88,15 +89,15 @@
 | P2-05 | P2 | 统一错误响应、脱敏和前端安全渲染 | `已完成` | 无 |
 | P2-06 | P2 | 增加任务级日志上下文和可诊断性 | `已完成` | P0-02 |
 | P2-07 | P2 | 统一项目根路径与测试文件隔离 | `已完成` | 建议早于 P2-01 |
-| P3-01 | P3 | 清理仓库临时文件和忽略规则 | `待处理` | 无 |
-| P3-02 | P3 | 整理 Python 导入期副作用与应用入口 | `待处理` | 建议随 P2-01 |
-| P3-03 | P3 | 整理前端测试夹具和历史诊断脚本 | `待处理` | P2-02/P2-03 |
-| P3-04 | P3 | 修正包元数据、许可证和发布边界 | `待处理` | P2-01/P2-04 |
-| P3-05 | P3 | 缓存生命周期和优雅关闭 | `待处理` | P0-02/P1-01 |
-| P3-06 | P3 | 持续校验文档、代码和上游版本 | `待处理` | 持续事项 |
-| P3-07 | P3 | 工具目录、密钥扫描和环境版本治理 | `待处理` | P0-03/P2-04 |
+| P3-01 | P3 | 清理仓库临时文件和忽略规则 | `已完成` | 无 |
+| P3-02 | P3 | 整理 Python 导入期副作用与应用入口 | `已完成` | 建议随 P2-01 |
+| P3-03 | P3 | 整理前端测试夹具和历史诊断脚本 | `已完成` | P2-02/P2-03 |
+| P3-04 | P3 | 修正包元数据、许可证和发布边界 | `已完成` | P2-01/P2-04 |
+| P3-05 | P3 | 缓存生命周期和优雅关闭 | `已完成` | P0-02/P1-01 |
+| P3-06 | P3 | 持续校验文档、代码和上游版本 | `已完成` | 持续事项 |
+| P3-07 | P3 | 工具目录、密钥扫描和环境版本治理 | `已完成` | P0-03/P2-04 |
 
-建议实际执行顺序：先完成 P0-03 这个低耦合阻断项，再完成 P0-01、P0-02；随后按 P1-01 至 P1-04 收紧任务和持久化边界。`src/` 迁移应排在这些可靠性工作之后。
+执行状态：P0、P1、P2、P3 全部条目已收口，完成日期、完成提交、验证证据与剩余问题以各小节和第 11 节完成记录为准；最终实现树为 `1ca789d`，完整验证基线见第 8 节各条目。本清单当前没有待执行顺序。
 
 ---
 
@@ -585,117 +586,119 @@ PDF_reader/
 
 ### P3-01 清理仓库临时文件和忽略规则
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：`.git-rewrite/` 是历史重写临时状态却被跟踪；缓存目录忽略规则部分依赖目录内部约定。
+- 状态：`已完成`
+- 完成日期：2026-08-30
+- 完成提交：`2d63a0a`
+- 验证证据：`2d63a0a` 将 `.git-rewrite/` 历史重写临时状态移出 Git 跟踪并强化 `.gitignore`（显式忽略 `.pytest_cache/`、`.ruff_cache/` 等本地缓存），新增 `tests/test_repo_hygiene.py` 固定跟踪/忽略边界；主模型在最终实现树 `1ca789d` 上独立复验工作区干净，完整 `scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"` 全绿：597 个 Python 测试，coverage line 94.8%/branch 88.3%，secret scan、Ruff lint/format、mypy、ESLint 与六套前端测试全过。
+- 剩余问题：无已知阻断问题
 
 #### 目标与验收
 
-- [ ] 确认 `.git-rewrite/` 不含仍需保留的项目数据后，从 Git 跟踪中移除并加入 `.gitignore`。
-- [ ] 显式忽略 `.pytest_cache/`、`.ruff_cache/` 和其他确定的本地缓存。
-- [ ] 不删除用户的 `cache/`、日志或虚拟环境内容；只调整版本控制范围。
-- [ ] `git status` 在正常运行和测试后保持整洁。
+- [x] 确认 `.git-rewrite/` 不含仍需保留的项目数据后，从 Git 跟踪中移除并加入 `.gitignore`。
+- [x] 显式忽略 `.pytest_cache/`、`.ruff_cache/` 和其他确定的本地缓存。
+- [x] 不删除用户的 `cache/`、日志或虚拟环境内容；只调整版本控制范围。
+- [x] `git status` 在正常运行和测试后保持整洁。
 
 ### P3-02 整理 Python 导入期副作用与应用入口
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：`create_app` 仍读取 `config` 模块级全局值（如 `config.DEBUG`、`config.CACHE_DIR`），未做到完全显式注入；`main()`/`__main__.py` 统一入口与导入期不解析 CLI 已在 P2 期间落实，其余验收边界仍需独立变更复核。
+- 状态：`已完成`
+- 完成日期：2026-08-30
+- 完成提交：`54dae14` + `8652530`
+- 验证证据：`54dae14` 引入不可变 `AppSettings` 并注入 `create_app`，CLI 解析仅留在 `main()`/`__main__.py`，导入应用模块不读取命令行、不启动服务器；`8652530` 为验收修复（统一入口安全默认、路由/SSE 只消费注入配置）。主模型独立验收：P3-02 定向 205 passed，并真实执行 `python -m pdf_reader --help` 验证 CLI 入口；最终实现树 `1ca789d` 完整验证全绿（597 个 Python 测试，coverage line 94.8%/branch 88.3%，secret scan、Ruff lint/format、mypy、ESLint 与六套前端测试）。
+- 剩余问题：无已知阻断问题
 
 #### 目标与验收
 
-- [ ] 导入应用模块不会读取命令行或启动服务器。
-- [ ] CLI 解析位于 `main()` / `__main__.py`。
-- [ ] `create_app(settings)` 尽可能显式接收配置，而不是依赖可变模块全局值。
-- [ ] 测试直接调用真实 CLI 入口，不复制实现代码。
+- [x] 导入应用模块不会读取命令行或启动服务器。
+- [x] CLI 解析位于 `main()` / `__main__.py`。
+- [x] `create_app(settings)` 尽可能显式接收配置，而不是依赖可变模块全局值。
+- [x] 测试直接调用真实 CLI 入口，不复制实现代码。
 
 ### P3-03 整理前端测试夹具和历史诊断脚本
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：部分生产模块包含 `__TEST_*` 分支；部分测试通过字符串替换 `export` 和 `new Function` 执行；历史 RED 阶段脚本与正式套件同目录。
+- 状态：`已完成`
+- 完成日期：2026-08-30
+- 完成提交：`6f6e79a`
+- 验证证据：`6f6e79a` 将正式前端套件改为真实 ESM 导入（新增 `static/modules/app-controller.js`，测试专用导出与生产行为边界明确），历史诊断脚本与夹具迁入 `tests/history/` 并从正式测试/ESLint 排除，`tests/README.md` 同步实际命令。主模型独立验收：`npm test` 与 `npm run lint:js` 通过；最终实现树 `1ca789d` 完整验证全绿（597 个 Python 测试，coverage line 94.8%/branch 88.3%，secret scan、Ruff lint/format、mypy、ESLint 与六套前端测试）。
+- 剩余问题：历史诊断脚本有意保留在 `tests/history` 并排除正式测试/lint，仅作追溯，不进入正式套件与 CI。
 
 #### 目标与验收
 
-- [ ] 正式测试直接导入 ES Module，不通过源码字符串改写运行。
-- [ ] 测试专用导出与生产行为边界明确。
-- [ ] 历史诊断脚本移入明确的 `tests/history/` 或 `docs/archive/`，且不进入正式测试。
-- [ ] `tests/README.md` 与实际命令一致。
+- [x] 正式测试直接导入 ES Module，不通过源码字符串改写运行。
+- [x] 测试专用导出与生产行为边界明确。
+- [x] 历史诊断脚本移入明确的 `tests/history/` 或 `docs/archive/`，且不进入正式测试。
+- [x] `tests/README.md` 与实际命令一致。
 
 ### P3-04 修正包元数据、许可证和发布边界
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：`package.json` 的入口、模块类型和许可证字段与实际浏览器 ES Modules/仓库文件不完全一致；根目录没有明确 LICENSE 文件。
+- 状态：`已完成`
+- 完成日期：2026-08-30
+- 完成提交：`6cf2af2`
+- 验证证据：`6cf2af2` 新增根目录 `LICENSE`（标准完整 GNU AGPL v3 官方文本，SHA256 由 `tests/test_license_governance.py` 固定），`pyproject.toml`/`package.json`/`package-lock.json` 统一 `AGPL-3.0-only`，新增 `docs/governance/license.md`（四种使用/分发场景与发布前核验清单）与许可证治理测试；主模型在最终实现树 `1ca789d` 上复验许可证/包元数据/上游契约闭环（含 P3-07 组合 61 中的许可证部分）与完整验证全绿。
+- 剩余问题：许可证记录不是法律意见，重新分发或网络部署前仍需按实际场景单独核验（见 `docs/governance/license.md`）。
 
 #### 目标与验收
 
-- [ ] 删除无意义的 `main: index.js`，或改为真实用途说明。
-- [ ] Node 模块类型与测试方式一致。
-- [ ] 明确本项目自身许可证，并核验 pdf2zh-next/BabelDOC 的 AGPL 影响。
-- [ ] README、包元数据和 LICENSE 一致。
-- [ ] 在重新分发或部署前单独完成许可证核验；本条不构成法律意见。
+- [x] 删除无意义的 `main: index.js`，或改为真实用途说明。
+- [x] Node 模块类型与测试方式一致。
+- [x] 明确本项目自身许可证，并核验 pdf2zh-next/BabelDOC 的 AGPL 影响。
+- [x] README、包元数据和 LICENSE 一致。
+- [x] 在重新分发或部署前单独完成许可证核验；本条不构成法律意见。
 
 ### P3-05 缓存生命周期和优雅关闭
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：缓存会长期增长；应用没有正式关闭当前 PyMuPDF 文档、等待任务和清理孤儿临时目录的生命周期入口。
+- 状态：`已完成`
+- 完成日期：2026-08-30
+- 完成提交：`f5c567e` + `f1638a3`；验收发现的测试 worker 回收补强 `1ca789d`
+- 验证证据：`f5c567e` 新增 `cache_ops.py`/`scripts/cache_manage.py`/`AppState.close()`/协调器 `shutdown` 与 `tests/test_cache_ops.py`/`tests/test_shutdown.py`；`f1638a3` 为验收修复（恢复边界、PID 探测与测试收紧）；`1ca789d` 确定性释放 join-timeout 测试 worker。主模型独立验收：worker 回收定向 3 passed、相关回归 82 passed，且同进程无 `translate-*` 残留线程；最终实现树 `1ca789d` 完整验证全绿（597 个 Python 测试，coverage line 94.8%/branch 88.3%，secret scan、Ruff lint/format、mypy、ESLint 与六套前端测试）。
+- 剩余问题：对真正不响应协作式取消的上游不强杀，worker 未确认退出时保守保留带标记 workspace 供启动恢复，不误删 `right.pdf`、术语表或文档缓存。
 
 #### 目标与验收
 
-- [ ] 记录缓存组成、可删除范围和不能删除的用户数据。
-- [ ] 提供只读统计或明确的手动清理命令，不默认自动删除译文。
-- [ ] 正常关闭时关闭 PDF 句柄并处理 active job。
-- [ ] 启动时可识别并安全处理上次崩溃留下的临时文件，但不误删有效 `right.pdf` 或术语表。
+- [x] 记录缓存组成、可删除范围和不能删除的用户数据。
+- [x] 提供只读统计或明确的手动清理命令，不默认自动删除译文。
+- [x] 正常关闭时关闭 PDF 句柄并处理 active job。
+- [x] 启动时可识别并安全处理上次崩溃留下的临时文件，但不误删有效 `right.pdf` 或术语表。
 
 ### P3-06 持续校验文档、代码和上游版本
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：架构文档当前质量很高，但上游事件协议、SettingsModel 和依赖版本会变化；CHANGELOG 中也存在少量历史行数描述过期。
+- 状态：`已完成`
+- 完成日期：2026-08-30
+- 完成提交：`5282484` + `60cd77f`
+- 验证证据：`5282484` 新增 `tests/test_upstream_contract.py`（固定版本、SettingsModel 消费字段、事件映射、workspace/output 注入、取消与 join 所有权）与 `tests/test_documentation_governance.py` 及 `docs/governance/documentation.md`/`dependency-upgrade.md`；`60cd77f` 为验收修复（契约与易腐数字策略收紧）。主模型独立验收：P3-06 定向 22 passed、关键回归 74 passed；最终实现树 `1ca789d` 完整验证全绿（597 个 Python 测试，coverage line 94.8%/branch 88.3%，secret scan、Ruff lint/format、mypy、ESLint 与六套前端测试）。
+- 剩余问题：BabelDOC `TranslateResult` 仍是 0.6.2 的私有深层路径（`babeldoc.format.pdf.translation_config.TranslateResult`），升级上游必须先跑契约并按契约更新适配。
 
 #### 持续要求
 
-- [ ] 架构行为变化时同一变更更新 `docs/architecture.md`。
-- [ ] 产品意图变化才更新 `docs/project.md`。
-- [ ] 未授权候选方向只进入 `docs/roadmap.md`。
-- [ ] 升级 pdf2zh-next/BabelDOC 前核对事件类型、设置字段、输出路径和取消行为。
-- [ ] 为关键上游契约保留最小适配测试。
-- [ ] 不把历史行数、测试数等易过期数字当作长期事实；若记录，注明核验基线。
+- [x] 架构行为变化时同一变更更新 `docs/architecture.md`。
+- [x] 产品意图变化才更新 `docs/project.md`。
+- [x] 未授权候选方向只进入 `docs/roadmap.md`。
+- [x] 升级 pdf2zh-next/BabelDOC 前核对事件类型、设置字段、输出路径和取消行为。
+- [x] 为关键上游契约保留最小适配测试。
+- [x] 不把历史行数、测试数等易过期数字当作长期事实；若记录，注明核验基线。
 
 ### P3-07 工具目录、密钥扫描和环境版本治理
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：仓库含 `.agents/`、`.codex/`、`.comet/`、`.opencode/`、`openspec/` 等 AI/工作流目录；这些目录的保留理由和事实来源优先级尚未集中说明。README 声明 Node 22，实际开发环境可能使用其他版本；密钥主要依赖 `.gitignore` 和人工纪律。
+- 状态：`已完成`
+- 完成日期：2026-08-30
+- 完成提交：`5981217`（它引用的许可证与上游契约闭环由 `6cf2af2`、`5282484`、`60cd77f` 提供）
+- 验证证据：`5981217` 新增 `scripts/secret_scan.py`（接入 verify/CI）、`docs/governance/tool-directories.md`/`dependency-upgrade.md`、`.github/dependabot.yml` 与 `tests/test_secret_scan.py`/`tests/test_repo_governance.py`/`tests/test_verify_script.py`；许可证与上游契约基线由 P3-04/P3-06 提交闭环。主模型独立验收：治理/密钥/版本/许可证/上游/文档组合 61 passed；最终实现树 `1ca789d` 完整验证全绿（597 个 Python 测试，coverage line 94.8%/branch 88.3%，secret scan、Ruff lint/format、mypy、ESLint 与六套前端测试）。
+- 剩余问题：secret scanner 只扫 Git 跟踪内容且规则偏高可信，不代替本地秘密管理（`config.toml`/`.env` 仍须本地保管）；本机验证环境为 Node 24，支持下限与 CI 为 Node 22（verify 强制 >=22）。
 
 #### 目标与验收
 
-- [ ] 为每个 AI/工作流目录记录职责、是否必须跟踪、谁负责生成以及能否安全重建。
-- [ ] 删除确认不再使用的工具遗留时，以独立变更完成，不和业务代码重构混合。
-- [ ] 保持 `config.toml`、`.env`、API Key 和用户 PDF 不被 Git 跟踪。
-- [ ] 视仓库公开和协作风险决定是否加入 gitleaks 或等价密钥扫描；若加入，应进入 CI。
-- [ ] 明确 Python 和 Node 的支持版本范围，并让 README、CI 与本地验证提示一致。
-- [ ] 建立依赖升级方式，可以使用定期人工核验或 Dependabot；升级上游翻译依赖时必须运行契约测试。
+- [x] 为每个 AI/工作流目录记录职责、是否必须跟踪、谁负责生成以及能否安全重建。
+- [x] 删除确认不再使用的工具遗留时，以独立变更完成，不和业务代码重构混合。
+- [x] 保持 `config.toml`、`.env`、API Key 和用户 PDF 不被 Git 跟踪。
+- [x] 视仓库公开和协作风险决定是否加入 gitleaks 或等价密钥扫描；若加入，应进入 CI。
+- [x] 明确 Python 和 Node 的支持版本范围，并让 README、CI 与本地验证提示一致。
+- [x] 建立依赖升级方式，可以使用定期人工核验或 Dependabot；升级上游翻译依赖时必须运行契约测试。
 
 ---
 
 ## 9. 关于根目录是否“不专业”的结论
+
+> 本节为审计时（2026-08-29）的判断与依据，保留作历史追溯；所列工程问题已由 P2-01/P2-04 等条目收口。
 
 根目录平铺 Python 文件不等于不专业。对于一个小型脚本应用，它甚至可能比多层目录更容易理解。当前真正的工程问题不是视觉上平铺，而是：
 
@@ -757,6 +760,14 @@ PDF_reader/
 
 | 日期 | 编号 | 状态 | 提交 | 说明 |
 |---|---|---|---|---|
+| 2026-08-30 | P0–P3 收口 | 已完成 | `1ca789d`（最终实现树） | 全部 23 个条目完成；完整 `scripts/verify.ps1` 597 个 Python 测试、coverage line 94.8%/branch 88.3%、secret scan/Ruff/mypy/ESLint 与六套前端全绿；cache/logs 逐文件 path/bytes/SHA256 前后不变。 |
+| 2026-08-30 | P3-07 | 已完成 | `5981217` | 密钥扫描、工具目录与版本/依赖治理接入 verify/CI；许可证与上游契约闭环由 `6cf2af2`/`5282484`/`60cd77f` 提供；治理/密钥/版本/许可证/上游/文档组合 61 passed。 |
+| 2026-08-30 | P3-06 | 已完成 | `5282484` + `60cd77f` | 上游最小契约与文档治理测试/文档落地；定向 22、关键回归 74 passed。 |
+| 2026-08-30 | P3-05 | 已完成 | `f5c567e` + `f1638a3`（测试 worker 回收补强 `1ca789d`） | 缓存生命周期、孤儿工作区恢复与优雅关闭；worker 回收定向 3、相关回归 82 passed，同进程无 `translate-*` 残留线程。 |
+| 2026-08-30 | P3-04 | 已完成 | `6cf2af2` | 根 LICENSE、AGPL-3.0-only 元数据与许可证治理文档/测试闭环。 |
+| 2026-08-30 | P3-03 | 已完成 | `6f6e79a` | 前端正式套件改真实 ESM 导入，历史诊断脚本迁入 `tests/history` 并排除正式测试/lint。 |
+| 2026-08-30 | P3-02 | 已完成 | `54dae14` + `8652530` | 不可变 `AppSettings` 注入 `create_app`、入口副作用收敛；定向 205 passed，`python -m pdf_reader --help` 真实执行。 |
+| 2026-08-30 | P3-01 | 已完成 | `2d63a0a` | 移除被跟踪的 `.git-rewrite/` 历史重写状态并强化忽略规则；`git status` 干净。 |
 | 2026-08-29 | P1-05 | 已完成 | `c92d053` | `start.bat` 改为最小安全策略：检测到 5000 被占用时只报告 PID 与排查命令并以非零退出，彻底移除 `taskkill /F`；正常路径仍激活仓库 `venv` 并运行 `python app.py`，`venv` 缺失时给出创建/安装提示并非零退出。新增 `tests/test_start_bat.py`（4 个用例）以 fake netstat/taskkill/python 验证占用拒绝、无冲突启动、venv 缺失与源码无终止命令；完整验证 273 个 Python 测试与全部前端测试通过。 |
 | 2026-08-29 | P1-04 | 已完成 | `b2df768` | 新增 16 个系统级并发与故障回归用例，穿过真实 Flask route、SSE generator、单任务协调器、真实 worker 线程、AppState 与磁盘边界，仅外部翻译引擎使用受控 fake；固定「先 PDF、后术语表」的部分提交语义；单页/批量提交失败、SSE 断开、join timeout、临时/输出目录与 PDF 保存失败均有最终文件、身份、任务与资源清理断言；完整验证 269 个 Python 测试与全部前端测试通过。 |
 | 2026-08-29 | P1-03 | 已完成 | `577da48` | 术语合并改为模块级互斥锁 + 同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交；打开临时文件、`os.fsync` 中途写入与 `os.replace` 提交失败均保留旧 CSV 并清理临时文件；损坏或错误表头累计文件中止合并保留旧文件；新增 13 个术语表回归测试（含真实合并路径的迟到身份拒绝与并发不丢更新）。 |

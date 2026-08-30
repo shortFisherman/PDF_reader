@@ -4,11 +4,11 @@
 
 ## 核验基线
 
-- 核验日期：2026-08-30；代码基线 commit：`6cf2af2`（P3-06 前置 HEAD）；本文件随 P3-06 更新，补充上游最小契约与文档治理事实。
+- 核验日期：2026-08-30；实现基线 commit：`1ca789d`（P3 实现树，文档收口提交为前置 HEAD）；本文件随 P3 工程改进收口更新基线，实现未改变。
 - 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml`、`tests/test_upstream_contract.py` 和测试收集结果。
 - 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2。
-- 测试基线：`pytest --collect-only -q` 收集到 597 个 Python 测试（P3-06 核验值，2026-08-30，代码基线 `6cf2af2` 工作区 + P3-06 提交与验收修复提交，含上游契约与文档治理用例）；`package.json` 的 `test:frontend` 定义六个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller）。
-- 基线说明：任何新的架构核对都应以当前源码、锁定文件和测试命令为准；测试数量等易腐数字以本行基线为准。
+- 测试基线：`pytest --collect-only -q` 收集到 597 个 Python 测试（2026-08-30，最终实现树 `1ca789d` 核验值，含上游契约、文档治理与全部 P0–P3 用例）；`package.json` 的 `test:frontend` 定义六个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller）。
+- 基线说明：任何新的架构核对都应以当前源码、锁定文件和测试命令为准；后续文档收口提交只更新文档、不改变实现，测试数量等易腐数字以本行基线为准。
 
 ## 系统总览
 
@@ -82,7 +82,7 @@
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
 | `tests/test_upstream_contract.py` | P3-06 上游最小契约：固定版本、SettingsModel 消费字段/引擎字段映射、事件映射与未知事件忽略、输出路径与 mono→dual/glossary、协作式取消与 join/is_alive 所有权（离线确定性 fake） |
 | `tests/test_documentation_governance.py` | P3-06 文档治理：常青文档职责边界、链接可解析、上游契约命令一致、易腐数字基线 |
-| `tests/` | 36 个 pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证与 P3-06 上游契约/文档治理用例）与前端 `.mjs` 测试运行器 |
+| `tests/` | 36 个 pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证、P3-05 缓存与关闭、P3-06 上游契约/文档治理、P3-07 密钥扫描与仓库治理用例）与前端 `.mjs` 测试运行器 |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `scripts/secret_scan.py` | 高可信密钥扫描：只扫 Git 跟踪内容，占位示例放行，不输出 secret 值 |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
@@ -239,7 +239,7 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
 
-覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（P3-06 核验值，2026-08-30，代码基线 `6cf2af2` 工作区 + 本提交变更，`scripts/verify.ps1` 输出）：全局 line 94.8%、branch 88.3%，五个关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
+覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-08-30，最终实现树 `1ca789d`，`scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"` 输出）：全局 line 94.8%、branch 88.3%，五个关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
 
 测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
 
