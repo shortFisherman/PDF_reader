@@ -365,6 +365,13 @@ def test_schema_qps_and_pool_max_workers_allow_large_values():
     term_pool = config_editor.FIELDS_BY_PATH["translation.term_pool_max_workers"]
     assert "术语" in term_qps.description and "仅影响术语提取" in term_qps.description
     assert "术语" in term_pool.description and "仅影响术语提取" in term_pool.description
+    assert "留空（推荐）" in pool.description and "自动跟随 qps" in pool.description
+    assert "留空（推荐）" in term_qps.description and "自动跟随主翻译 qps" in term_qps.description
+    assert "留空（推荐）" in term_pool.description and "自动跟随主翻译线程池" in term_pool.description
+    assert "0 仅用于兼容旧配置" in term_pool.description
+    assert "0" not in term_pool.suggestions
+    assert term_pool.suggestions == ("1", "2", "4", "8")
+    assert term_pool.minimum == 0
 
 
 def test_qps_and_pool_max_workers_148_can_be_saved(editor_client):

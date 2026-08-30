@@ -683,7 +683,10 @@ def _parse_translation_runtime_config(translation_cfg: dict) -> TranslationRunti
         "[translation]",
         minimum=1,
     )
-    # 上游 2.9.0：term_pool_max_workers 为 0 时跟随 pool_max_workers，因此允许 0。
+    # 公开语义：0 表示“跟随主 pool”，因此允许 0。PDF2ZH/BabelDOC 2.9.0/0.6.2
+    # 仅在 None 时回退（high_level.py 会把 0 原样传给 BabelDOC，0 最终触发
+    # PriorityThreadPoolExecutor 报错）；build_settings 在适配边界把 0 规范化为
+    # None/省略，这里不拒绝 0。
     term_pool_max_workers = _optional_non_bool_int(
         translation_cfg,
         "term_pool_max_workers",

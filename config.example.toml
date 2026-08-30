@@ -376,8 +376,16 @@ lang_out = "zh"
 # term_qps = 4
 
 # 术语提取线程池大小。
-# 类型：可选非布尔整数；省略（默认）时跟随 pool_max_workers；
-# 显式 0 在上游 2.9.0 中同样表示跟随 pool_max_workers（已按源码核对）。
+# 类型：可选非布尔整数；省略（默认）时跟随 pool_max_workers；显式 0 在本项目
+# 同样表示跟随 pool_max_workers。
+#
+# 兼容说明（PDF2ZH/BabelDOC 2.9.0/0.6.2）：
+#   pdf2zh-next 2.9.0 的字段描述声称 0 也表示跟随 pool_max_workers，但其
+#   high_level.py 会把 0 原样传给 BabelDOC 0.6.2；BabelDOC 的 TranslationConfig
+#   只在值为 None 时回退到 pool_max_workers，0 会进入 PriorityThreadPoolExecutor
+#   并报 max_workers must be greater than 0。
+#   因此本项目保留 0 的公开语义，并在 build_settings 边界把 0 规范化为省略，
+#   让最终 BabelDOC 配置真正得到“跟随主 pool”的正数；正整数仍原样传递。
 # 与 term_qps 一样只控制自动术语提取，通常不需要设置；不了解就保持注释。
 # term_pool_max_workers = 4
 

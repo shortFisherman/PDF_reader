@@ -288,8 +288,8 @@ FIELD_SPECS: list[FieldSpec] = [
         name="主翻译最大线程数",
         group="optional",
         control="int",
-        description="主翻译最多同时工作的线程/worker 数；留空时上游跟随 qps；增大只在请求较慢且 QPS 允许时"
-        "可能提高吞吐；>100 可保存，但风险较高。",
+        description="主翻译最多同时工作的线程/worker 数；留空（推荐）时自动跟随 qps；增大只在请求较慢且 QPS "
+        "允许时可能提高吞吐；>100 可保存，但风险较高。",
         default=None,
         suggestions=("2", "4", "8"),
         minimum=1,
@@ -299,7 +299,8 @@ FIELD_SPECS: list[FieldSpec] = [
         name="术语提取每秒启动请求数",
         group="optional",
         control="int",
-        description="术语提取请求每秒最多启动的数量（仅影响术语提取，不影响主翻译）；留空使用上游默认。",
+        description="术语提取请求每秒最多启动的数量（仅影响术语提取，不影响主翻译）；"
+        "留空（推荐）时自动跟随主翻译 qps。",
         default=None,
         suggestions=("1", "2", "4"),
         minimum=1,
@@ -309,9 +310,10 @@ FIELD_SPECS: list[FieldSpec] = [
         name="术语提取最大线程数",
         group="optional",
         control="int",
-        description="术语提取最多同时工作的线程/worker 数（仅影响术语提取）；0 表示跟随 pool_max_workers。",
+        description="术语提取最多同时工作的线程/worker 数（仅影响术语提取）；留空（推荐）时自动跟随主翻译线程池；"
+        "填写正整数可单独限制。0 仅用于兼容旧配置，效果与留空相同，不必主动填写。",
         default=None,
-        suggestions=("0", "2", "4"),
+        suggestions=("1", "2", "4", "8"),
         minimum=0,
     ),
     FieldSpec(

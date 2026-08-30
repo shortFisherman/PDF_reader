@@ -37,8 +37,14 @@ def build_settings(
         translation_kwargs["pool_max_workers"] = translation_cfg.pool_max_workers
     if translation_cfg.term_qps is not None:
         translation_kwargs["term_qps"] = translation_cfg.term_qps
-    if translation_cfg.term_pool_max_workers is not None:
-        translation_kwargs["term_pool_max_workers"] = translation_cfg.term_pool_max_workers
+    # PDF2ZH/BabelDOC 2.9.0/0.6.2 契约不一致：pdf2zh_next 文档宣称 0 表示跟随
+    # pool_max_workers，但 high_level.py 会把 0 原样传给 BabelDOC
+    # TranslationConfig，而 BabelDOC 只在值为 None 时回退；0 最终会进入
+    # PriorityThreadPoolExecutor 并报 max_workers must be greater than 0。
+    # 本项目保留 0 的公开语义，在这里把 0 规范化为省略，正整数照常传递。
+    term_pool_max_workers = translation_cfg.term_pool_max_workers
+    if term_pool_max_workers is not None and term_pool_max_workers > 0:
+        translation_kwargs["term_pool_max_workers"] = term_pool_max_workers
     if translation_cfg.primary_font_family is not None:
         translation_kwargs["primary_font_family"] = translation_cfg.primary_font_family
     # 页面任务 Prompt（非空）> translation.default_system_prompt > 上游默认。

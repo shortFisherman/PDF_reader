@@ -287,7 +287,7 @@ def test_build_settings_translation_fields_map_through(mock_config):
         qps=7,
         pool_max_workers=3,
         term_qps=2,
-        term_pool_max_workers=0,
+        term_pool_max_workers=2,
         auto_extract_glossary=False,
         primary_font_family="serif",
         default_system_prompt="/no_think default prompt",
@@ -297,11 +297,50 @@ def test_build_settings_translation_fields_map_through(mock_config):
     assert settings.translation.qps == 7
     assert settings.translation.pool_max_workers == 3
     assert settings.translation.term_qps == 2
-    assert settings.translation.term_pool_max_workers == 0
+    assert settings.translation.term_pool_max_workers == 2
     assert settings.translation.no_auto_extract_glossary is True
     assert settings.translation.save_auto_extracted_glossary is False
     assert settings.translation.primary_font_family == "serif"
     assert settings.translation.custom_system_prompt == "/no_think default prompt"
+
+
+def test_build_settings_term_pool_max_workers_zero_is_normalized_to_follow(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    translation = config.TranslationRuntimeConfig(
+        lang_in="en",
+        lang_out="zh",
+        pool_max_workers=3,
+        term_pool_max_workers=0,
+    )
+    settings = build_settings(_upstream(translation=translation), "dummy.pdf")
+    assert settings.translation.term_pool_max_workers is None
+    assert "term_pool_max_workers" not in settings.translation.model_fields_set
+
+
+def test_build_settings_term_pool_max_workers_none_is_omitted(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    translation = config.TranslationRuntimeConfig(
+        lang_in="en",
+        lang_out="zh",
+        pool_max_workers=3,
+        term_pool_max_workers=None,
+    )
+    settings = build_settings(_upstream(translation=translation), "dummy.pdf")
+    assert settings.translation.term_pool_max_workers is None
+    assert "term_pool_max_workers" not in settings.translation.model_fields_set
+
+
+def test_build_settings_term_pool_max_workers_positive_passes_through(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    translation = config.TranslationRuntimeConfig(
+        lang_in="en",
+        lang_out="zh",
+        pool_max_workers=3,
+        term_pool_max_workers=2,
+    )
+    settings = build_settings(_upstream(translation=translation), "dummy.pdf")
+    assert settings.translation.term_pool_max_workers == 2
+    assert "term_pool_max_workers" in settings.translation.model_fields_set
 
 
 def test_build_settings_page_prompt_overrides_default_prompt(mock_config):

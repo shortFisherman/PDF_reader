@@ -205,7 +205,7 @@ const SCHEMA = [
         name: '主翻译最大线程数',
         group: 'optional',
         control: 'int',
-        description: '主翻译最多同时工作的线程数；>100 可保存但风险高。',
+        description: '主翻译最多同时工作的线程数；留空（推荐）时自动跟随 qps；>100 可保存但风险高。',
         default: null,
         suggestions: ['2', '4', '8'],
         options: [],
@@ -352,6 +352,7 @@ const tick = () => new Promise(r => setTimeout(r, 0));
     const poolField = jsdomWindow.document.querySelector('.config-field[data-path="translation.pool_max_workers"]');
     check(qpsField.querySelector('input').max === '', 'qps input has no max limit');
     check(poolField.querySelector('input').max === '', 'pool_max_workers input has no max limit');
+    check(poolField.querySelector('.config-desc').textContent.includes('留空（推荐）时自动跟随 qps'), 'pool description recommends blank auto-follow');
     panel.dispose();
 }
 
@@ -495,8 +496,8 @@ const tick = () => new Promise(r => setTimeout(r, 0));
     const banner = jsdomWindow.document.querySelector('.config-env-banner');
     check(banner && banner.classList.contains('hidden') === false, 'env banner visible when MODEL_API_KEY set');
     check(banner.textContent.includes('环境变量 MODEL_API_KEY'), 'env banner mentions environment variable');
-    const apiKey = jsdomWindow.document.querySelector('#cfg-model-api_key');
-    check(apiKey.placeholder.includes('环境变量已设置'), 'api key placeholder explains env priority');
+    const secretInput = jsdomWindow.document.querySelector('#cfg-model-api_key');
+    check(secretInput.placeholder.includes('环境变量已设置'), 'api key placeholder explains env priority');
 
     const provider = jsdomWindow.document.querySelector('#cfg-model-provider');
     const sendTemp = jsdomWindow.document.querySelector('#cfg-model-send_temperature');
@@ -611,8 +612,8 @@ const tick = () => new Promise(r => setTimeout(r, 0));
         windowObj: jsdomWindow,
     });
     await panel.open();
-    const apiKey = jsdomWindow.document.querySelector('#cfg-model-api_key');
-    check(apiKey.placeholder.includes('请先修正'), 'empty env override placeholder asks to fix env var');
+    const secretInput = jsdomWindow.document.querySelector('#cfg-model-api_key');
+    check(secretInput.placeholder.includes('请先修正'), 'empty env override placeholder asks to fix env var');
     await panel.save();
     errorText = jsdomWindow.document.querySelector('.config-error').textContent;
     check(errorText.includes('环境变量 MODEL_API_KEY'), 'empty env override blocks save with env hint');

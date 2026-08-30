@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pdf2zh_next
 import pytest
+from babeldoc.format.pdf.translation_config import TranslationConfig as BabelDOCTranslationConfig
 from pdf2zh_next import SettingsModel
 from pdf2zh_next.config.model import BasicSettings, PDFSettings, TranslationSettings
 
@@ -228,6 +229,50 @@ def test_settings_assignment_compatibility(mock_config, monkeypatch):
     assert settings.pdf.only_include_translated_page is True
     assert settings.pdf.watermark_output_mode == "no_watermark"
     assert settings.basic.debug is False
+
+
+def test_babeldoc_falls_back_to_pool_only_when_term_pool_is_none():
+    """BabelDOC 0.6.2 真实契约：None 跟随 pool_max_workers，0 不会。"""
+
+    def make_config(term_pool_max_workers: int | None) -> BabelDOCTranslationConfig:
+        return BabelDOCTranslationConfig(
+            translator=None,
+            input_file="dummy.pdf",
+            lang_in="en",
+            lang_out="zh",
+            doc_layout_model=None,
+            pool_max_workers=3,
+            term_pool_max_workers=term_pool_max_workers,
+        )
+
+    assert make_config(None).term_pool_max_workers == 3
+    assert make_config(0).term_pool_max_workers == 0
+
+
+def test_term_pool_zero_reaches_babeldoc_as_followed_positive(mock_config, monkeypatch):
+    """真实 high_level → BabelDOC 路径：0 被省略后最终得到跟随后的正数。
+
+    只 stub get_translator 的联网健康检查；SettingsModel → BabelDOCConfig
+    转换与 BabelDOC 回退逻辑均为真实上游代码。
+    """
+    from pdf2zh_next.high_level import create_babeldoc_config
+
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    translation = config.TranslationRuntimeConfig(
+        lang_in="en",
+        lang_out="zh",
+        pool_max_workers=3,
+        term_pool_max_workers=0,
+    )
+    pdf = config.Pdf2zhRuntimeConfig(translate_table_text=False)
+    settings = build_settings(_upstream(translation=translation, pdf=pdf), "dummy.pdf")
+    assert settings.translation.term_pool_max_workers is None
+
+    with patch("pdf2zh_next.high_level.get_translator", return_value=object()):
+        babeldoc_config = create_babeldoc_config(settings, Path("dummy.pdf"))
+
+    assert babeldoc_config.term_pool_max_workers == 3
+    assert babeldoc_config.pool_max_workers == 3
 
 
 def test_engine_registry_field_map_matches_upstream_settings_classes():
