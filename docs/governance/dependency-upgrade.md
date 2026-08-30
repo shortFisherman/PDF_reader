@@ -39,6 +39,10 @@
        回退与 `auto_extracted_glossary_path` 适配不变；
      - 取消/流式：`do_translate_async_stream(settings, file)` 调用方式、协作式取消、迟到事件丢弃与
        `join`/`is_alive` 所有权接口不变。
+     - 最小深层契约（0.6.2）：`babeldoc.format.pdf.translation_config.TranslateResult` 是私有路径
+       （`pdf2zh_next` 顶层不公开该结果类型），承载 `mono_pdf_path` / `dual_pdf_path` /
+       `auto_extracted_glossary_path` 三个输出字段；升级 BabelDOC 时若该路径不可用，必须先核对
+       mono/dual/glossary 适配与 `tests/test_upstream_contract.py` 的构造 helper，再更新契约。
    - 若契约变化，先更新适配代码与测试，再合并依赖升级，禁止“先升级再观察”。
 
 ## 升级记录

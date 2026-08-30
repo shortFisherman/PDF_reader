@@ -7,7 +7,7 @@
 - 核验日期：2026-08-30；代码基线 commit：`6cf2af2`（P3-06 前置 HEAD）；本文件随 P3-06 更新，补充上游最小契约与文档治理事实。
 - 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml`、`tests/test_upstream_contract.py` 和测试收集结果。
 - 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2。
-- 测试基线：`pytest --collect-only -q` 收集到 594 个 Python 测试（P3-06 核验值，2026-08-30，代码基线 `6cf2af2` 工作区 + 本提交变更，含上游契约与文档治理用例）；`package.json` 的 `test:frontend` 定义六个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller）。
+- 测试基线：`pytest --collect-only -q` 收集到 597 个 Python 测试（P3-06 核验值，2026-08-30，代码基线 `6cf2af2` 工作区 + P3-06 提交与验收修复提交，含上游契约与文档治理用例）；`package.json` 的 `test:frontend` 定义六个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller）。
 - 基线说明：任何新的架构核对都应以当前源码、锁定文件和测试命令为准；测试数量等易腐数字以本行基线为准。
 
 ## 系统总览

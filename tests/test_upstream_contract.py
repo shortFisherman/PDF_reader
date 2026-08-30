@@ -14,18 +14,18 @@ import threading
 import tomllib
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pdf2zh_next
 import pytest
-from babeldoc.format.pdf.translation_config import TranslateResult
 from pdf2zh_next import SettingsModel
 from pdf2zh_next.config.model import BasicSettings, PDFSettings, TranslationSettings
 
 from pdf_reader import cache_ops, config
 from pdf_reader.sse_stream import GenerateContext, format_sse_event, generate
 from pdf_reader.translation_lifecycle import finish_translation
-from pdf_reader.translation_orchestrator import TranslationError, run_translation
+from pdf_reader.translation_orchestrator import TranslationError, TranslationStream, run_translation
 from pdf_reader.translation_settings import build_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -77,6 +77,36 @@ def _make_real_ctx(tmp_path: Path, settings: SettingsModel, extract_page=None) -
         glossary_paths=None,
         cache_dir=cache_dir,
         extract_page=extract_page or MagicMock(return_value=Path("/fake/page.pdf")),
+    )
+
+
+def _make_translate_result(
+    mono_pdf_path: str | Path | None = None,
+    dual_pdf_path: str | Path | None = None,
+    auto_extracted_glossary_path: str | Path | None = None,
+) -> Any:
+    """构造上游 finish 事件的结果对象（babeldoc 0.6.2 最小深层契约）。
+
+    pdf2zh_next 顶层不公开 TranslateResult；本项目只依赖
+    babeldoc.format.pdf.translation_config.TranslateResult 的
+    mono_pdf_path/dual_pdf_path/auto_extracted_glossary_path 三个输出字段。
+    该路径是私有 API：升级 babeldoc 时若不可导入，必须先核对 mono/dual/glossary
+    输出适配与 docs/governance/dependency-upgrade.md 记录的最小深层契约再更新本测试，
+    不得降级为无字段校验的 SimpleNamespace 式占位。
+    """
+    try:
+        from babeldoc.format.pdf.translation_config import TranslateResult
+    except ImportError as exc:
+        pytest.fail(
+            "babeldoc 0.6.2 的 TranslateResult 深层契约路径已不可用"
+            f"（pdf2zh_next 顶层也不公开该类型）：{exc}；"
+            "本项目依赖其 mono_pdf_path/dual_pdf_path/auto_extracted_glossary_path 输出字段，"
+            "必须先核对 mono/dual/glossary 适配与 dependency-upgrade.md 最小深层契约再更新测试。"
+        )
+    return TranslateResult(
+        mono_pdf_path=mono_pdf_path,
+        dual_pdf_path=dual_pdf_path,
+        auto_extracted_glossary_path=auto_extracted_glossary_path,
     )
 
 
@@ -216,9 +246,8 @@ def test_uncommitted_event_types_are_ignored_not_crashed():
 def test_workspace_output_injection_and_unknown_event_ignore_with_real_settings(tmp_path, mock_config, monkeypatch):
     monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
     settings = build_settings("dummy.pdf")
-    result = TranslateResult(
+    result = _make_translate_result(
         mono_pdf_path=str(tmp_path / "mono.pdf"),
-        dual_pdf_path=None,
         auto_extracted_glossary_path=str(tmp_path / "auto.csv"),
     )
     captured = {}
@@ -252,8 +281,7 @@ def test_workspace_output_injection_and_unknown_event_ignore_with_real_settings(
 
 
 def test_finish_result_dual_fallback_and_glossary_path_with_real_upstream_result(tmp_path):
-    result = TranslateResult(
-        mono_pdf_path=None,
+    result = _make_translate_result(
         dual_pdf_path=str(tmp_path / "dual.pdf"),
         auto_extracted_glossary_path=Path(tmp_path / "auto.csv"),
     )
@@ -297,17 +325,30 @@ def test_cooperative_cancel_discards_late_events_and_worker_exits():
 
 
 def test_cancel_does_not_force_kill_non_cooperative_worker():
+    release = threading.Event()
+    stream: TranslationStream | None = None
+    threads_before = {thread.ident for thread in threading.enumerate()}
+
     async def stuck_stream(settings, file) -> AsyncIterator[dict]:
         yield {"type": "progress_start", "stage": "layout_analysis"}
-        await asyncio.sleep(3600)
+        while not release.wait(0.01):
+            await asyncio.sleep(0)
 
-    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_stream):
-        stream = run_translation(MagicMock(), "fake.pdf")
-        assert isinstance(next(stream), dict)
-        stream.cancel()
-        stream.join(timeout=0.2)
+    try:
+        with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_stream):
+            stream = run_translation(MagicMock(), "fake.pdf")
+            assert isinstance(next(stream), dict)
+            stream.cancel()
+            stream.join(timeout=0.2)
 
-    assert stream.is_alive, "协作式取消不得强制 kill 不响应取消的上游环节"
+        assert stream.is_alive, "协作式取消不得强制 kill 不响应取消的上游环节"
+    finally:
+        release.set()
+        if stream is not None:
+            stream.join(timeout=5.0)
+            assert not stream.is_alive, "释放 gate 后 worker 应在有界时间内退出"
+            leaked = [t.name for t in threading.enumerate() if t.ident not in threads_before]
+            assert not leaked, f"测试结束后仍残留本测试创建的线程：{leaked}"
 
 
 def test_worker_exception_surfaces_as_translation_error():
