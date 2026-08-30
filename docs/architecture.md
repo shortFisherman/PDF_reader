@@ -44,9 +44,9 @@
 
 - 契约测试入口：`tests/test_upstream_contract.py`（离线、确定性，全部使用 fake 上游流，不联网、不运行真实翻译、不需要 API Key）；升级 pdf2zh-next/BabelDOC 前必须运行（命令见 [依赖升级流程](governance/dependency-upgrade.md)）。
 - 固定版本：pdf2zh-next 2.9.0 与 babeldoc 0.6.2 同时受 `pyproject.toml`/`requirements.lock` 与安装元数据约束；babeldoc 是传递依赖，只由 `requirements.lock` 固定。
-- SettingsModel 消费面：`basic.debug=False`；`translation` 的 `lang_in`/`lang_out`/`min_text_length`/`qps`/`pool_max_workers`/`term_qps`/`term_pool_max_workers`/`no_auto_extract_glossary`（由 `auto_extract_glossary` 反转）/`ignore_cache=True`/`save_auto_extracted_glossary`/`primary_font_family`/`output`（由 SSE 生成器赋值注入）/`glossaries`（逗号连接）/`custom_system_prompt`（页面 Prompt > `default_system_prompt` > 上游默认）；`pdf` 的 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，以及 `[pdf2zh]` 已开放的 15 个字段（含项目正确拼写 `formula_*` → 上游历史拼写 `formular_*`）；`translate_engine_settings` 按 `ENGINE_REGISTRY` 的字段映射构造，发送开关按 Provider 映射（OpenAI 使用历史拼写 `openai_send_temprature`，Aliyun/Compatible 使用各自字段）。
+- SettingsModel 消费面：`basic.debug=False`；`translation` 的 `lang_in`/`lang_out`/`min_text_length`/`qps`/`pool_max_workers`/`term_qps`/`term_pool_max_workers`/`ignore_cache=True`/`primary_font_family`/`output`（由 SSE 生成器按 attempt 赋值注入）/`custom_system_prompt`（页面 Prompt > `default_system_prompt` > 上游默认）；正文恒为 `no_auto_extract_glossary=True`、`save_auto_extracted_glossary=False`（P0-04，不再由 `translation.auto_extract_glossary` 反转）；`glossaries` 由严格正文路径传入本次 fresh 的单个 `effective_glossary.csv`（零权威行时省略，不再逗号连接多文件）。`pdf` 的 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，以及 `[pdf2zh]` 已开放的 15 个字段（含项目正确拼写 `formula_*` → 上游历史拼写 `formular_*`）；`translate_engine_settings` 按 `ENGINE_REGISTRY` 的字段映射构造，发送开关按 Provider 映射（OpenAI 使用历史拼写 `openai_send_temprature`，Aliyun/Compatible 使用各自字段）。
 - 事件适配边界：本项目只承诺 `progress_start`、`progress_update`、`finish`、`error` 四种上游事件的映射；`progress_end` 等未承诺事件与未知事件被忽略（`format_sse_event` 返回 `None`），worker 空闲心跳（空串）原样透传为 SSE 空行。
-- 输出路径边界：`settings.translation.output` 在生成器中注入为任务工作区 `output/` 目录；`finish` 结果的 `mono_pdf_path` 优先、缺失时回退 `dual_pdf_path`，`auto_extracted_glossary_path` 直接交给术语合并。
+- 输出路径边界：`settings.translation.output` 在生成器中注入为任务工作区 `output/` 目录；术语合规重试使用独立 `attempt-2/output/` 目录与 `SettingsModel` 深拷贝，避免污染首次产物。`finish` 结果的 `mono_pdf_path` 优先、缺失时回退 `dual_pdf_path`，`auto_extracted_glossary_path` 直接交给术语合并（仅验证通过后）。
 - 取消/流式边界：`do_translate_async_stream(settings, file)` 按两个位置参数调用；`TranslationStream` 的协作式取消、迟到事件丢弃（`late_result_dropped`）、`join(timeout)` 与 `is_alive` 所有权接口是升级契约的一部分。
 
 ## 仓库结构与文件职责
@@ -73,7 +73,7 @@
 | `src/pdf_reader/translation_settings.py` | `build_settings(upstream, ...)` 显式接收 `UpstreamRuntimeConfig` 组装 pdf2zh-next `SettingsModel` |
 | `src/pdf_reader/translation_orchestrator.py` | `TranslationStream`：daemon worker 线程 + asyncio 循环（含事件循环异常处理）+ 事件队列 + 协作式取消；`run_translation()` 工厂 |
 | `src/pdf_reader/translation_coordinator.py` | 单槽 `TranslationCoordinator`：线程安全的 active job、任务身份、409 互斥与 finish/fail/cancel 幂等释放 |
-| `src/pdf_reader/sse_stream.py` | SSE 格式化、`generate()` / `generate_batch()`、`STAGE_LABELS`、worker 退出确认后的任务工作区清理 |
+| `src/pdf_reader/sse_stream.py` | SSE 格式化、`generate()` / `generate_batch()`、P0-05 提交门（提交前术语合规验证、一次整页/整批有界重试、独立 attempt 目录、`glossary_compliance_failed`/`glossary_verification_unavailable`）、`STAGE_LABELS`、worker 退出确认后的任务工作区清理 |
 | `src/pdf_reader/translation_lifecycle.py` | `finish_translation()` / `merge_glossary_only()`：译文持久化与术语合并 |
 | `src/pdf_reader/glossary_service.py` | 累积术语路径解析与合并入口 |
 | `src/pdf_reader/glossary_merger.py` | 术语多数投票合并：模块级互斥锁 + cumulative 路径共享锁（与迁移同快照）+ 同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交（BOM 安全读写） |
@@ -84,6 +84,7 @@
 | `src/pdf_reader/legacy_migration.py` | P0-02 旧 `cumulative_glossary.csv` → 候选存储的幂等合入迁移（保留用户状态、备份不覆盖、失败原样） |
 | `src/pdf_reader/glossary_compiler.py` | P0-03 确定性有效词表编译：文档权威 > accepted 候选 > 全局优先级、输入锁内一致快照摘要、同级冲突 fail-closed、CSV + sidecar 原子成对提交、严格 sidecar 校验与 stale 检测 |
 | `src/pdf_reader/strict_glossary.py` | P0-04 严格正文术语路径：迁移→编译→验证的单一准备入口、活跃词条边界匹配与约束 Prompt 合成 |
+| `src/pdf_reader/terminology_compliance.py` | P0-05 独立验证模块：纯文本判定核心 `verify_translated_text`（规范化 + 逐条 pass/fail/unknown）与 PyMuPDF 提取包装 `verify_translated_pdf`（路径/页数/提取异常/空文本边界，委托纯函数）、有界确定性重试纠错块合成 |
 | `src/pdf_reader/logging_config.py` | 统一日志管线：同一对控制台 + `logs/pdf_reader.log` 轮转 handler 托管 `pdf_reader`/`werkzeug`/`pdf2zh_next`/`babeldoc`、ISO 元数据行格式与 run_id、sys/threading 未捕获异常钩子、reset 快照恢复 |
 | `src/pdf_reader/debug_trace.py` | 按任务的有界调试会话：`cache/<hash>/debug_trace.log`（2MB × 3，job 过滤，start/end/elapsed/traceback），debug 关闭时零 IO |
 | `templates/index.html` | 唯一 HTML 页面：打开区、双栏、工具栏、始终可见的“配置”按钮 |
@@ -192,14 +193,49 @@ HTTP 409。准备或设置构建失败时路由调用 `coordinator.fail(job_id)`
 `no_auto_extract_glossary=True`、`save_auto_extracted_glossary=False`（不再由
 `translation.auto_extract_glossary` 反转），`glossaries` 只来自本次 fresh 的
 `effective_glossary.csv`（零权威行时安全省略）。`generate`/`generate_batch` 在
-抽取真实输入 PDF 后调用 `strict_glossary.apply_active_terms_from_pdf`：本地匹配
-大小写不敏感、连续空白等价、英文 token 边界；`AD` 不命中
+抽取真实输入 PDF 后调用 `strict_glossary.resolve_active_terms_from_pdf`（兼容
+入口 `apply_active_terms_from_pdf` 保留给既有调用/测试）：本地匹配大小写不
+敏感、连续空白等价、英文 token 边界；`AD` 不命中
 `adherence`/`adverse`/`shadow`，不自动合并单复数/连字符/缩写全称；只把当前页/
 批次实际命中的活跃权威词条以 `[权威术语约束]` 块追加到 `custom_system_prompt`
 之后，用户 Prompt 保留在块前且块声明不可被页面 Prompt 覆盖；无命中不修改
-Prompt，源文本不可用时跳过块但有效词表仍经 `glossaries` 传入。约束块使用 JSON
+Prompt（available+empty 零成本跳过合规门），源文本不可用时解析结果为
+unavailable，由 P0-05 提交门在调用上游前拒绝（有效词表仍经 `glossaries` 传入
+仅描述词表输入，不构成验证通过声明）。约束块使用 JSON
 编码 source/target，并按 32 KiB UTF-8 确定性上限整行纳入、超限条目只报告省略
 数量；不记录正文、Prompt、异常原文、本地路径或凭据。
+
+术语合规提交门（P0-05）：`generate`/`generate_batch` 在 `replace_page`/
+`replace_pages` 之前对最终候选译文 PDF 做项目侧验证。验证输入是“当前页/批次
+实际命中”的活跃权威 source→target（与送入 Prompt 的活跃词条同一份）；从
+`translate_result` 选择 `mono_pdf_path`（缺失时回退 `dual_pdf_path`），用
+PyMuPDF 提取译文文本。实现分两层：提取包装 `verify_translated_pdf` 只处理
+路径/页数/提取异常/空文本边界，纯文本判定核心 `verify_translated_text` 负责
+规范化空白/断行（CJK 相邻字符间空白移除、其余连续空白折叠为单空格）与逐条
+判定。英文→中文默认范围下，对每个活跃 target 做精确检查：纯 ASCII
+词形 target 按英文 token 边界匹配，其余按规范化精确子串匹配；不做任何 PDF
+字符串替换。任何 FAIL 使整体 FAIL；无 FAIL 但出现无法提取/缺页/空文本/页数
+不符时整体 UNKNOWN（fail-closed，绝不伪称通过）；全部命中才 PASS。无活跃词条
+时完全跳过验证与重试成本。源侧同样 fail-closed：`resolve_active_terms_from_pdf`
+显式区分 available/unavailable——rows 为空（`no_rows`）或源文本成功且无命中
+（`no_hits`）为 available+empty 并零成本跳过验证；源 PDF 打不开/抽取异常
+（`source_extraction_failed`）或抽取文本为空且存在 effective rows
+（`empty_source_text`）为 unavailable，单页/batch 在调用上游前发
+`glossary_verification_unavailable`，不 `run_translation`、不 replace、不 merge、
+job failed，绝不把源侧不可用误当“无活跃术语”。首次 FAIL 在同一
+job/document identity 下复用同一
+输入 PDF、严格上下文、活跃词条与 task identity 做 1 次整页/整批有界重试，不
+启动第二个 coordinator job；重试 Settings 是独立深拷贝，输出目录为
+`attempt-2/output/`，最终 system prompt 在原权威约束块之后追加确定性、有界的
+`[术语合规纠错]` 块（16 KiB UTF-8 上限，整行纳入、超限只报告省略数量，不截断
+映射半行，不丢失原权威块）。首次/重试 worker 均各自 register/unregister 并
+在最终清理前确认退出。只有 PASS 才提交（单页 `finish_translation`、批量
+`replace_pages` + `merge_glossary_only`）；FAIL/UNKNOWN 路径不提交、不 merge
+任何自动词表、旧 `right.pdf` 字节不变。最终 FAIL 发稳定 SSE
+`glossary_compliance_failed`，无法可靠提取/验证发
+`glossary_verification_unavailable`，之后 job 以 failed 释放且不再发 finish；
+上游普通失败仍保持 `translation_error`。合规日志只记录 job/page/attempt/
+数量/状态/稳定短码，不记录术语正文、target、译文路径或异常原文。
 
 输入冻结边界：`coordinator.start` 先于严格术语准备占位，因此当前翻译生产者从
 占位到 SSE 结束期间不能插入文档切换，也不会重新编译其他文档。未来 P1-04 术语
@@ -271,9 +307,9 @@ Prompt，源文本不可用时跳过块但有效词表仍经 `glossaries` 传入
 
 1. `POST /api/translate/<page>`（零基页码）校验文档已打开、页码在范围内；路由先调用协调器 `start(document_id, [page])` 原子占用任务槽；busy/shutdown 在任何严格术语准备写操作前返回 HTTP 409。
 2. 占位成功后才执行 `strict_glossary.prepare_strict_translation_context(snapshot)`（旧累计迁移→有效词表编译→严格验证）并 `build_strict_settings()` 组装参数；失败时 `coordinator.fail(job_id)` 释放槽、返回 HTTP 500 `glossary_prepare_failed`、不调用上游。接受后构造带 `job_id` 和 finish/fail 回调的 `GenerateContext`；抽取、`replace_page` 与术语合并闭包都捕获快照中的 `document_id`，`strict_context` 携带本次预构建的有效词表身份与快照。
-3. `generate()` 先校验 `strict_context` 与 `task_ctx`/`glossary_cache_path` 身份一致，再在 cache 根创建带前缀与标记的任务工作区（`input/` 抽取输入、`output/` 上游输出），在 `debug_trace.debug_session` 内先 `extract_single_page()` 抽取单页 PDF，再用 `strict_glossary.apply_active_terms_from_pdf` 从该真实输入 PDF 匹配活跃权威词条并合成最终 `custom_system_prompt`。
-4. `run_translation()` 启动 daemon worker 线程运行上游异步翻译；`format_sse_event()` 把 `progress_start`/`progress_update`/`finish`/`error` 映射为 SSE；非 dict 心跳直接 yield 空串。
-5. 收到上游 `finish` 事件后保留 `translate_result` 与 token 用量，随后调用 `finish_translation()`：优先 `mono_pdf_path`，缺失时回退 `dual_pdf_path`，再调 `AppState.replace_page(..., expected_document_id)` 写入译文，并通过 `AppState.merge_glossary(..., expected_document_id)` 把自动术语并入累计文件。
+3. `generate()` 先校验 `strict_context` 与 `task_ctx`/`glossary_cache_path` 身份一致，再在 cache 根创建带前缀与标记的任务工作区（`input/` 抽取输入、`output/` 首次上游输出、`attempt-2/output/` 重试输出），在 `debug_trace.debug_session` 内先 `extract_single_page()` 抽取单页 PDF，再用 `strict_glossary.resolve_active_terms_from_pdf` 解析活跃权威词条并 `apply_resolved_active_terms` 合成最终 `custom_system_prompt`；rows 为空或源文本无命中为 available+empty（零成本跳过合规门），源 PDF 打不开/抽取异常/文本为空且存在 effective rows 为 unavailable，在调用上游前发 `glossary_verification_unavailable`、不 `run_translation`、不提交、job failed。
+4. 每次尝试用 `run_translation()` 启动 daemon worker 线程运行上游异步翻译；`format_sse_event()` 把 `progress_start`/`progress_update`/`finish`/`error` 映射为 SSE；非 dict 心跳直接 yield 空串。有活跃词条时最多尝试 2 次：首次收到 `finish` 后先做 P0-05 合规验证，FAIL 时以同一 job/输入 PDF/严格上下文/task identity 复用独立 Settings 深拷贝与 `attempt-2/output/` 重试 1 次（Prompt 追加 `[术语合规纠错]` 块），PASS 才继续；UNKNOWN 直接 `glossary_verification_unavailable` 且不提交。
+5. 验证通过（或无活跃词条）后调用 `finish_translation()`：优先 `mono_pdf_path`，缺失时回退 `dual_pdf_path`，再调 `AppState.replace_page(..., expected_document_id)` 写入译文，并通过 `AppState.merge_glossary(..., expected_document_id)` 把自动术语并入累计文件；FAIL/UNKNOWN 路径不 replace、不 merge，旧 `right.pdf` 不变。
 6. `replace_page()` 在锁内先比较预期身份，再经 `_commit_replacement()` 事务提交：所有页修改在从磁盘已提交的 `right.pdf` 重开的工作副本上完成 → 保存 `.tmp` → 关闭译文/工作文档 → 关闭旧右文档句柄 → `os.replace` 原子替换 → 重开右文档 → 更新翻译页集合。磁盘提交成功前不替换内存句柄和 `_translated_pages`；任意失败（open/delete/insert/save/close/`os.replace`）都会清理 `.tmp`、关闭泄漏句柄、恢复或保留可渲染的文档句柄，旧 `right.pdf` 保持不变。`merge_glossary()` 同样在锁内完成身份比较与合并回调；失配时两条边界都抛出 `StaleDocumentError`、记录 `[stale-result]` 警告且不修改当前文档。
 7. 当前部分提交语义（由 `tests/test_system_concurrency_failure.py` 固定）：`finish_translation()` 严格按「PDF 提交 → 术语合并」顺序执行两个独立文件提交。PDF 提交（`replace_page`）失败时异常向上传播，术语合并不执行，任务以 failed 释放并输出 SSE `error`；术语合并失败被 `merge_after_translate` 捕获并记录 WARNING，不向上传播——此时 PDF 提交保留、旧术语表不变，任务仍以 finished 释放并输出 SSE `finish`。两者是同一任务内两个独立文件的部分提交，不存在跨 `right.pdf` 与累计术语表的全局事务。
 8. 生成器最后发 `progress:100/finish` SSE；成功路径调用 `finish(job_id)`，上游错误、普通异常调用 `fail(job_id)`，消费者断开（GeneratorExit）调用 `cancel(job_id)`。所有退出路径都经 `finally`：先向 worker 请求协作式取消并 `join(timeout=30.0)`，只在 worker 确认退出后整体清理任务工作区（join timeout 时整体保留并记 WARNING），再幂等释放任务；Response close 另有未开始迭代时的兜底释放。
@@ -282,8 +318,8 @@ Prompt，源文本不可用时跳过块但有效词表仍经 `glossaries` 传入
 
 1. `POST /api/translate-batch` 接收一基闭区间 `from`/`to`，校验均为整数、≥1、不越界且 `from ≤ to`。
 2. 路由先使用同一协调器原子占槽（busy/shutdown 同样在任何严格术语准备写操作前返回），占位成功后再执行与单页相同的 `strict_glossary.prepare_strict_translation_context` + `build_strict_settings`（同一严格设置构建函数；失败时 `coordinator.fail` 释放槽、500 `glossary_prepare_failed`），并换算零基 `page_indices`、从冻结快照构造带 `job_id` 的 `GenerateBatchContext`（抽取、`replace_pages` 与术语合并闭包都捕获 `document_id`），`pages` 参数按页数设为 `"1"` 或 `"1-N"`。
-3. `generate_batch()` 先校验 `strict_context` 身份一致，再发 `batch_info`，抽取多页 PDF 并从该真实输入 PDF 应用活跃权威词条，之后一次性送入 `run_translation()` 并逐事件转发 SSE。
-4. 完成后选 `mono_pdf_path`（回退 `dual_pdf_path`）调 `AppState.replace_pages(..., expected_document_id)` 经同一 `_commit_replacement()` 事务按序替换范围页，并只做一次受同一身份保护的 `merge_glossary_only()`。批量与单页遵循同一部分提交语义：PDF 提交失败时术语合并不执行；术语合并失败被包含后 PDF 提交保留、任务仍以 finished 结束。
+3. `generate_batch()` 先校验 `strict_context` 身份一致，再发 `batch_info`，抽取多页 PDF 并用 `strict_glossary.resolve_active_terms_from_pdf` 解析活跃权威词条；rows 为空或源文本无命中为 available+empty，源 PDF 打不开/抽取异常/文本为空且存在 effective rows 为 unavailable（在调用上游前发 `glossary_verification_unavailable`、不 `run_translation`、不提交、job failed）。batch 首版采用整批原子验证与整批有界重试（最多 1 次）：把整批译文 PDF 视为一个原子单元，页数与批次大小不符、空白文本或不可提取一律 `glossary_verification_unavailable`；任一活跃 target 未命中即 FAIL 并整批重试，重试输出独立于 `attempt-2/output/`，不产生页级部分提交。
+4. 整批验证通过（或无活跃词条）后选 `mono_pdf_path`（回退 `dual_pdf_path`）调 `AppState.replace_pages(..., expected_document_id)` 经同一 `_commit_replacement()` 事务按序替换范围页，并只做一次受同一身份保护的 `merge_glossary_only()`；FAIL/UNKNOWN 路径不 replace、不 merge。批量与单页遵循同一部分提交语义：PDF 提交失败时术语合并不执行；术语合并失败被包含后 PDF 提交保留、任务仍以 finished 结束。
 5. 全文翻译是浏览器行为：`onFullTranslateClick()` 调同一批处理端点提交 `1..pageCount`，不存在独立的全文章节端点。
 
 ## 状态、缓存与持久化
@@ -344,7 +380,7 @@ Prompt，源文本不可用时跳过块但有效词表仍经 `glossaries` 传入
 | `GET /api/config` | 返回配置中心 schema + 当前值 + revision（API Key 脱敏）；仅 loopback 来源可访问，否则 403 `config_local_only` |
 | `PUT /api/config` | 白名单校验并原子保存 config.toml（revision 乐观并发）；成功返回 `restart_required=true`；仅 loopback 来源可访问，否则 403 `config_local_only` |
 
-Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不计入上述路由表。SSE 事件类型包括 `batch_info`、`progress`（含 stage/stage_current/stage_total）、`error`、`finish`，以及空行心跳。
+Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不计入上述路由表。SSE 事件类型包括 `batch_info`、`progress`（含 stage/stage_current/stage_total，重试阶段为 `glossary_retry`）、`error`、`finish`，以及空行心跳。P0-05 提交门错误码稳定为：`glossary_compliance_failed`（重试后仍不合规，不提交、job failed）与 `glossary_verification_unavailable`（源 PDF 或译文缺路径/打不开/缺页/空文本/不可提取，不提交、job failed）；上游普通失败仍为 `translation_error`，项目内部异常仍为 `internal_error`。两者之后都不再发 `finish`。有活跃术语时按 attempt 分配明确进度窗口：attempt1 progress 钳制 0..95（上游 `finish`=95）、attempt2 progress 钳制 95..99（上游 `finish`=99，`glossary_retry` 阶段 `stage_current=2/2`）、最终验证通过提交=100，全序列单调不倒退；无活跃词条路径保持既有事件字节不变。
 
 互斥响应：active job 存在时，新的单页/批量翻译请求以及 `/api/open` 返回 HTTP 409，JSON 至少包含 `error`（明确中文提示）、稳定 `code="translation_busy"` 和 `active_job_id`。前端已有的非 2xx JSON 错误路径会直接显示服务端提示。
 

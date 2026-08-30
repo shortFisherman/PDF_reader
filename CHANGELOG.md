@@ -1,5 +1,47 @@
 # 更新日志
 
+## 未发布 — P0-05 术语合规验证、重试与提交门
+
+- 新增 `src/pdf_reader/terminology_compliance.py`：独立验证模块，拆分为纯文本
+  判定核心 `verify_translated_text` 与 PyMuPDF 提取包装
+  `verify_translated_pdf`。纯函数负责规范化（CJK 相邻字符间空白移除、其余
+  连续空白折叠为单空格）与逐条 pass/fail/unknown（纯 ASCII 词形按英文 token
+  边界，其余按规范化精确子串）；包装只处理 `mono_pdf_path`（缺失时
+  `dual_pdf_path`）、页数、提取异常与空文本边界并委托纯函数；空白文本、
+  打不开、缺页、不可提取一律 UNKNOWN，不做 PDF 字符串替换。
+- 源侧可用性门：`strict_glossary` 新增 `ActiveTermsResult` 与
+  `resolve_active_terms_from_pdf`，显式区分 available/unavailable——rows 为空
+  （`no_rows`）或源文本成功且无命中（`no_hits`）为 available+empty 并零成本
+  跳过验证；源 PDF 打不开/抽取异常（`source_extraction_failed`）或抽取文本为
+  空且存在 effective rows（`empty_source_text`）为 unavailable，单页/batch 在
+  调用上游前发 `glossary_verification_unavailable`，不 `run_translation`、不
+  replace、不 merge、job failed，不再把源侧不可用误当“无活跃术语”。
+- `generate()` / `generate_batch()` 在 `replace_page` / `replace_pages` 之前
+  增加提交门：验证通过才提交译文并合并自动词表；失败路径旧 `right.pdf` 完全
+  不动、不 merge 任何 auto glossary。batch 首版采用整批原子验证与整批有界重试，
+  不产生页级部分提交。
+- 首次不合规最多在同一 job/document identity、同一输入 PDF、同一严格上下文与
+  task identity 下整页/整批重试 1 次，不启动第二个 coordinator job；重试使用
+  `SettingsModel` 深拷贝与独立 `attempt-2/output/` 目录，最终 system prompt 在
+  原权威约束块之后追加确定性、有界（16 KiB UTF-8）的 `[术语合规纠错]` 块，
+  整行纳入、超限只报告省略数量、不截断映射半行、不丢失原权威块。首次/重试
+  worker 均正确 register/unregister/关闭，任务工作区在 worker 确认退出后整体
+  清理。
+- 生命周期/SSE：首次 FAIL 可发 `glossary_retry` progress 状态；最终失败分别发
+  稳定错误码 `glossary_compliance_failed` 或 `glossary_verification_unavailable`，
+  之后 job 以 failed 释放且不再发 finish；上游普通失败仍保持 `translation_error`。
+  有活跃术语时按 attempt 分配明确进度窗口：attempt1 progress 钳制 0..95
+  （上游 `finish`=95）、attempt2 progress 钳制 95..99（上游 `finish`=99，
+  `glossary_retry` 阶段 `stage_current=2/2`）、最终验证通过提交=100，全序列
+  单调不倒退；无活跃词条路径保持既有事件字节不变。合规日志只记录
+  job/page/attempt/数量/状态/稳定短码，不记录术语正文、target、译文路径或
+  异常原文。
+- 无活跃权威词条时完全跳过验证与重试成本；`/api/stages` 与前端 fallback 增加
+  `glossary_retry` 阶段标签。
+- 文档同步：`README.md`、`docs/architecture.md`、
+  `docs/governance/glossary-upstream-boundary.md` 更新“验证通过才提交”、一次
+  整批重试、unknown 拒绝与零活跃词条零开销语义；不宣称模型输出绝对可靠。
+
 ## 未发布 — P0-04 严格正文术语路径
 
 - 正文翻译固定关闭上游自动术语提取：`SettingsModel` 恒为

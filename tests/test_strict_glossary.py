@@ -18,14 +18,17 @@ from pdf_reader.sse_stream import GenerateBatchContext, GenerateContext, generat
 from pdf_reader.state import DocumentSnapshot
 from pdf_reader.strict_glossary import (
     MAX_AUTHORITATIVE_BLOCK_UTF8_BYTES,
+    ActiveTermsResult,
     StrictGlossaryError,
     StrictTranslationContext,
     apply_active_terms_from_pdf,
     apply_active_terms_to_settings,
+    apply_resolved_active_terms,
     build_strict_settings,
     compose_custom_system_prompt,
     match_active_terms,
     prepare_strict_translation_context,
+    resolve_active_terms_from_pdf,
     validate_strict_context_identity,
 )
 from pdf_reader.task_logging import TaskContext
@@ -287,6 +290,65 @@ def test_apply_active_terms_from_pdf_missing_file_keeps_prompt(tmp_path):
     assert settings.translation.custom_system_prompt == "base"
 
 
+def test_resolve_active_terms_rows_empty_available_without_opening_pdf(tmp_path):
+    result = resolve_active_terms_from_pdf(tmp_path / "missing.pdf", [])
+    assert isinstance(result, ActiveTermsResult)
+    assert result.available is True
+    assert result.active_terms == ()
+    assert result.reason == "no_rows"
+
+
+def test_resolve_active_terms_success_hit_and_no_hit(tmp_path):
+    pdf_path = tmp_path / "source.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "AD appears; XTCS not.")
+    doc.save(str(pdf_path))
+    doc.close()
+
+    hit = resolve_active_terms_from_pdf(
+        pdf_path,
+        [("AD", "阿尔茨海默病"), ("TCS", "外用糖皮质激素")],
+    )
+    assert hit.available is True
+    assert hit.active_terms == (("AD", "阿尔茨海默病"),)
+    assert hit.reason == "ok"
+
+    miss = resolve_active_terms_from_pdf(pdf_path, [("NOPE", "不存在的译法")])
+    assert miss.available is True
+    assert miss.active_terms == ()
+    assert miss.reason == "no_hits"
+
+
+def test_resolve_active_terms_unavailable_missing_file(tmp_path):
+    result = resolve_active_terms_from_pdf(tmp_path / "missing.pdf", [("AD", "阿尔茨海默病")])
+    assert result.available is False
+    assert result.active_terms == ()
+    assert result.reason == "source_extraction_failed"
+
+
+def test_resolve_active_terms_unavailable_empty_source_text(tmp_path):
+    pdf_path = tmp_path / "blank.pdf"
+    doc = pymupdf.open()
+    doc.new_page()
+    doc.save(str(pdf_path))
+    doc.close()
+    result = resolve_active_terms_from_pdf(pdf_path, [("AD", "阿尔茨海默病")])
+    assert result.available is False
+    assert result.reason == "empty_source_text"
+
+
+def test_apply_resolved_active_terms_updates_prompt_only_when_active():
+    settings = MagicMock()
+    settings.translation.custom_system_prompt = "base"
+    assert apply_resolved_active_terms(settings, [("AD", "阿尔茨海默病")]) == (("AD", "阿尔茨海默病"),)
+    assert settings.translation.custom_system_prompt.startswith("base")
+    assert '"AD"' in settings.translation.custom_system_prompt
+
+    settings.translation.custom_system_prompt = "unchanged"
+    assert apply_resolved_active_terms(settings, []) == ()
+    assert settings.translation.custom_system_prompt == "unchanged"
+
+
 def test_source_text_and_prompt_are_not_logged(tmp_path, managed_caplog):
     import logging
 
@@ -385,8 +447,20 @@ def test_generate_uses_prebuilt_context_without_recompiling_or_writing_other_doc
     )
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
+    source_pdf = tmp_path / "source.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "AD appears here.")
+    doc.save(str(source_pdf))
+    doc.close()
+    translated_pdf = tmp_path / "translated.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_font(fontname="china-s")
+    page.insert_text((72, 72), "阿尔茨海默病", fontname="china-s")
+    doc.save(str(translated_pdf))
+    doc.close()
     result = MagicMock()
-    result.mono_pdf_path = str(tmp_path / "translated.pdf")
+    result.mono_pdf_path = str(translated_pdf)
     result.dual_pdf_path = None
     result.auto_extracted_glossary_path = None
     events = [{"type": "finish", "stage": "generating_pdf", "translate_result": result, "token_usage": {}}]
@@ -403,7 +477,7 @@ def test_generate_uses_prebuilt_context_without_recompiling_or_writing_other_doc
         page=0,
         glossary_paths=None,
         cache_dir=cache_dir,
-        extract_page=MagicMock(return_value=Path("/fake/page.pdf")),
+        extract_page=MagicMock(return_value=source_pdf),
         strict_context=context,
         task_ctx=TaskContext(
             job_id="late-job",

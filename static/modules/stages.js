@@ -3,6 +3,7 @@ const FALLBACK_LABELS = {
     translating: '正在翻译…',
     generating_pdf: '正在生成译文…',
     generating_pdf_bilingual: '正在生成译文…',
+    glossary_retry: '术语合规检查未通过，正在重试…',
     finish: '翻译完成',
 };
 

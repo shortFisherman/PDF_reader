@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Never
 from unittest.mock import MagicMock
@@ -13,11 +14,17 @@ from pdf_reader import config
 from pdf_reader.strict_glossary import StrictGlossaryError
 from pdf_reader.user_glossary import UserGlossaryStore
 
+_CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]")
+
 
 def _pdf_with_text(tmp_path: Path, text: str, name: str = "source.pdf") -> Path:
     pdf_path = tmp_path / name
     doc = pymupdf.open()
-    doc.new_page().insert_text((72, 72), text)
+    page = doc.new_page()
+    font = "china-s" if _CJK.search(text) else "helv"
+    if font == "china-s":
+        page.insert_font(fontname="china-s")
+    page.insert_text((72, 72), text, fontname=font)
     doc.save(str(pdf_path))
     doc.close()
     return pdf_path
@@ -50,6 +57,7 @@ def test_single_page_fake_upstream_captures_strict_settings_and_final_prompt(
     monkeypatch,
 ):
     pdf_path = _pdf_with_text(tmp_path, "AD appears in adherence, adverse and shadow.")
+    translated_pdf = _pdf_with_text(tmp_path, "阿尔茨海默病", name="translated.pdf")
     try:
         opened = _open_pdf(test_client, pdf_path)
         document_dir = config.CACHE_DIR / opened["hash"]
@@ -59,7 +67,7 @@ def test_single_page_fake_upstream_captures_strict_settings_and_final_prompt(
 
         def fake_run(settings, file, flow_label="", task_ctx=None):  # noqa: ANN202
             captured["settings"] = settings
-            return iter(_finish_events(pdf_path))
+            return iter(_finish_events(translated_pdf))
 
         monkeypatch.setattr("pdf_reader.sse_stream.run_translation", fake_run)
         resp = test_client.post("/api/translate/0", json={"prompt": "page prompt"}, buffered=False)
@@ -86,6 +94,7 @@ def test_batch_fake_upstream_uses_same_strict_builder(
     monkeypatch,
 ):
     pdf_path = _pdf_with_text(tmp_path, "TCS is on the page; AD is not.")
+    translated_pdf = _pdf_with_text(tmp_path, "外用糖皮质激素", name="translated.pdf")
     try:
         opened = _open_pdf(test_client, pdf_path)
         document_dir = config.CACHE_DIR / opened["hash"]
@@ -95,7 +104,7 @@ def test_batch_fake_upstream_uses_same_strict_builder(
 
         def fake_run(settings, file, flow_label="", task_ctx=None):  # noqa: ANN202
             captured["settings"] = settings
-            return iter(_finish_events(pdf_path))
+            return iter(_finish_events(translated_pdf))
 
         monkeypatch.setattr("pdf_reader.sse_stream.run_translation", fake_run)
         resp = test_client.post(

@@ -186,6 +186,91 @@ def test_format_sse_event_finish():
     assert format_sse_event(evt) == EXPECTED_FINISH_PROGRESS_SSE
 
 
+def test_format_sse_event_finish_without_min_progress_keeps_old_95_bytes():
+    evt = {"type": "finish", "stage": "generating_pdf", "translate_result": None, "token_usage": {}}
+    assert format_sse_event(evt) == EXPECTED_FINISH_PROGRESS_SSE
+    assert '"progress": 95' in format_sse_event(evt)
+
+
+def test_format_sse_event_attempt1_window_clamps_to_0_95():
+    start = format_sse_event(
+        {
+            "type": "progress_start",
+            "stage": "layout_analysis",
+            "overall_progress": 0,
+            "stage_current": 0,
+            "stage_total": 0,
+        },
+        min_progress=0,
+        max_progress=95,
+    )
+    update = format_sse_event(
+        {
+            "type": "progress_update",
+            "stage": "translating",
+            "overall_progress": 100,
+            "stage_current": 1,
+            "stage_total": 2,
+        },
+        min_progress=0,
+        max_progress=95,
+    )
+    finish = format_sse_event(
+        {"type": "finish", "stage": "generating_pdf", "translate_result": None, "token_usage": {}},
+        min_progress=0,
+        max_progress=95,
+    )
+    assert '"progress": 0' in start
+    assert '"progress": 95' in update
+    assert '"progress": 95' in finish
+    assert '"stage": "generating_pdf"' in finish
+
+
+def test_format_sse_event_attempt2_window_clamps_to_95_99():
+    start = format_sse_event(
+        {
+            "type": "progress_start",
+            "stage": "layout_analysis",
+            "overall_progress": 0,
+            "stage_current": 0,
+            "stage_total": 0,
+        },
+        min_progress=95,
+        max_progress=99,
+    )
+    update = format_sse_event(
+        {
+            "type": "progress_update",
+            "stage": "translating",
+            "overall_progress": 100,
+            "stage_current": 1,
+            "stage_total": 2,
+        },
+        min_progress=95,
+        max_progress=99,
+    )
+    finish = format_sse_event(
+        {"type": "finish", "stage": "generating_pdf", "translate_result": None, "token_usage": {}},
+        min_progress=95,
+        max_progress=99,
+    )
+    assert '"progress": 95' in start
+    assert '"progress": 99' in update
+    assert '"progress": 99' in finish
+    assert '"stage": "generating_pdf"' in finish
+
+
+def test_format_sse_event_without_min_progress_preserves_raw_update():
+    evt = {
+        "type": "progress_update",
+        "stage": "translating",
+        "overall_progress": 100,
+        "stage_current": 1,
+        "stage_total": 2,
+    }
+    assert '"progress": 100' in format_sse_event(evt)
+
+
 def test_format_sse_event_error():
     evt = {"type": "error", "error": "test error"}
     assert format_sse_event(evt) == EXPECTED_ERROR_SSE

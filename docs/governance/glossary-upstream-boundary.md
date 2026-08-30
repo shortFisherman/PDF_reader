@@ -50,6 +50,18 @@ BabelDOC 0.6.2 `SharedContextCrossSplitPart.get_glossaries_for_translation(auto_
   UTF-8 上限且整行纳入。
 - 自动候选由项目侧独立候选服务产出，只写候选存储；用户确认前不得进入正文有效词表，
   也不改变正文翻译的词表选择。
+- 提交门（P0-05）在项目边界验证最终候选译文：`replace_page`/`replace_pages`
+  前用 PyMuPDF 提取译文文本，对当前页/批次活跃权威 source→target 做精确 target
+  检查。源侧同样 fail-closed：rows 为空或源文本成功且无命中才视为
+  available+empty 并零成本跳过验证；源 PDF 打不开/抽取异常/文本为空且存在
+  effective rows 为 unavailable，在调用上游前返回
+  `glossary_verification_unavailable`，不 `run_translation`、不提交、不 merge。
+  首次不合规只整页/整批重试 1 次（同一 job/输入/严格上下文/task identity，
+  独立 `attempt-2/output/` 目录与 Settings 深拷贝，Prompt 追加有界纠错块），
+  重试通过才提交；无法可靠提取/缺页/空文本返回
+  `glossary_verification_unavailable`，重试仍不合规返回
+  `glossary_compliance_failed`，两者都不提交、不 merge、不修改旧 `right.pdf`。
+  无活跃词条时零验证/重试成本。验证不做 PDF 字符串替换，也不宣称模型绝对可靠。
 - 允许使用并持续核验的上游边界：`SettingsModel` 的 `glossaries` /
   `no_auto_extract_glossary` / `save_auto_extracted_glossary`（及对应的 BabelDOC
   `TranslationConfig` 字段）、翻译事件、mono/dual/glossary 输出路径。
@@ -83,7 +95,9 @@ BabelDOC 0.6.2 `SharedContextCrossSplitPart.get_glossaries_for_translation(auto_
 
 ## 5. 剩余问题
 
-- P0-05 合规验证/重试/提交门尚未实施；“SettingsModel 传入了有效词表与约束块”
-  不等于“最终译文一定合规”，不得宣称输出已验证。
+- P0-05 提交门已实施，但精确 target 检查只做规范化后子串/词边界匹配，可能拒绝
+  语义等价但字形/标点不同的合法译法（宁可重试或拒绝，不误报通过）；batch 首版
+  是整批原子验证与整批重试，单页违规会触发整批成本，逐页定位留待 P1-05 统一
+  单页/批量术语生命周期与失败语义。
 - P0-01 验收要求的上游契约测试与仓库守卫已可执行；条目台账的“已完成”状态需在
   实现提交后由主 Agent 更新。

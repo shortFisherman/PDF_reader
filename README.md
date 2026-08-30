@@ -162,6 +162,15 @@ $env:MODEL_API_KEY = 'your-api-key'
 - 每次单页/批量翻译前先对当前文档执行旧累计术语幂等迁移（只合入候选）、编译并
   严格验证 `effective_glossary.csv`；正文 `glossaries` 只指向该有效词表。当前页/
   批次实际命中的权威词条会追加为不可被页面 Prompt 覆盖的强制约束块。
+- 术语合规提交门（P0-05）：`replace_page`/`replace_pages` 之前会从候选译文 PDF
+  提取文本并精确检查当前页/批次活跃权威术语的 target 是否出现；首次不合规最多
+  用同一任务重试 1 次，重试通过才提交。重试仍不合规返回
+  `glossary_compliance_failed`，无法可靠提取/缺页/空文本返回
+  `glossary_verification_unavailable`，两者都不写入 `right.pdf` 也不合并自动
+  词表。源 PDF 打不开/抽取异常/文本为空且存在有效权威词条时同样在调用上游前
+  返回 `glossary_verification_unavailable`，不调用上游、不提交；仅当权威词条为
+  空或源文本成功且无命中时才视为无活跃术语，完全跳过验证与重试。模型仍可能
+  偶发漏译或变体，本项目不宣称模型输出绝对可靠，验证是尽力而为的第二道门。
 
 API Key 不应提交到 Git。
 

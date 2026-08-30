@@ -95,7 +95,9 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
             document_id=snapshot.document_id,
             pdf_hash=snapshot.pdf_hash,
             effective_glossary_path=effective_file,
-            effective_rows=(("alpha", "\u963f\u5c14\u6cd5"),),
+            # 源 PDF 为空页；rows 置空使源侧解析 available+empty，保持本用例聚焦
+            # “严格 builder 收到 effective glossary”与旧合并回调。
+            effective_rows=(),
         )
 
     def fake_build_settings(upstream, user_prompt, pages, context):  # noqa: ANN202
@@ -178,17 +180,22 @@ def test_get_stages(test_client):
     resp = test_client.get("/api/stages")
     assert resp.status_code == 200
     data = json.loads(resp.data)
-    assert len(data) == 5
+    assert len(data) == 6
     assert data["layout_analysis"] == "\u6b63\u5728\u5206\u6790\u7248\u9762\u2026"
     assert data["translating"] == "\u6b63\u5728\u7ffb\u8bd1\u2026"
     assert data["generating_pdf"] == "\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026"
     assert data["generating_pdf_bilingual"] == "\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026"
+    assert (
+        data["glossary_retry"]
+        == "\u672f\u8bed\u5408\u89c4\u68c0\u67e5\u672a\u901a\u8fc7\uff0c\u6b63\u5728\u91cd\u8bd5\u2026"
+    )
     assert data["finish"] == "\u7ffb\u8bd1\u5b8c\u6210"
     assert data == {
         "layout_analysis": "\u6b63\u5728\u5206\u6790\u7248\u9762\u2026",
         "translating": "\u6b63\u5728\u7ffb\u8bd1\u2026",
         "generating_pdf": "\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026",
         "generating_pdf_bilingual": "\u6b63\u5728\u751f\u6210\u8bd1\u6587\u2026",
+        "glossary_retry": "\u672f\u8bed\u5408\u89c4\u68c0\u67e5\u672a\u901a\u8fc7\uff0c\u6b63\u5728\u91cd\u8bd5\u2026",
         "finish": "\u7ffb\u8bd1\u5b8c\u6210",
     }
 

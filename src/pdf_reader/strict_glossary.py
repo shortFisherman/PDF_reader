@@ -79,6 +79,22 @@ class StrictTranslationContext:
     effective_rows: tuple[tuple[str, str], ...]
 
 
+@dataclass(frozen=True)
+class ActiveTermsResult:
+    """源侧活跃术语解析结果（P0-05 提交门输入）。
+
+    ``available=True`` 表示可以进入正文翻译：rows 为空（``reason="no_rows"``）、
+    源文本成功且无命中（``reason="no_hits"``）或命中（``reason="ok"``）。源 PDF
+    打不开/抽取异常（``reason="source_extraction_failed"``）或抽取文本为空且
+    存在 effective rows（``reason="empty_source_text"``）时为 ``available=False``，
+    调用方必须在调用上游前 fail closed，不得当作“无活跃术语”跳过合规门。
+    """
+
+    available: bool
+    active_terms: tuple[tuple[str, str], ...] = ()
+    reason: str = ""
+
+
 def prepare_strict_translation_context(
     snapshot: DocumentSnapshot,
     global_glossary: Path | None = None,
@@ -281,6 +297,44 @@ def apply_active_terms_to_settings(
         settings.translation.custom_system_prompt = compose_custom_system_prompt(base, active)
         logger.debug("strict glossary: %d active authoritative terms appended", len(active))
     return active
+
+
+def resolve_active_terms_from_pdf(
+    pdf_path: str | Path,
+    rows: Sequence[tuple[str, str]],
+) -> ActiveTermsResult:
+    """解析真实抽取源 PDF 的活跃权威词条，显式区分 available/unavailable。
+
+    这是 P0-05 生产路径使用的可区分 API：unavailable（源 PDF 打不开、抽取
+    异常或文本为空且存在 effective rows）时不得被降级为“无活跃术语”。
+    """
+    if not rows:
+        return ActiveTermsResult(available=True, active_terms=(), reason="no_rows")
+    try:
+        source_text = extract_source_text(pdf_path)
+    except Exception:
+        return ActiveTermsResult(available=False, active_terms=(), reason="source_extraction_failed")
+    if not _normalize(source_text):
+        return ActiveTermsResult(available=False, active_terms=(), reason="empty_source_text")
+    active = match_active_terms(source_text, rows)
+    return ActiveTermsResult(
+        available=True,
+        active_terms=active,
+        reason="ok" if active else "no_hits",
+    )
+
+
+def apply_resolved_active_terms(
+    settings: SettingsModel,
+    active_terms: Sequence[tuple[str, str]],
+) -> tuple[tuple[str, str], ...]:
+    """把已解析的活跃词条合成最终 ``custom_system_prompt``；无命中不修改 Prompt。"""
+    resolved = tuple(active_terms)
+    if resolved:
+        base = settings.translation.custom_system_prompt
+        settings.translation.custom_system_prompt = compose_custom_system_prompt(base, resolved)
+        logger.debug("strict glossary: %d active authoritative terms appended", len(resolved))
+    return resolved
 
 
 def apply_active_terms_from_pdf(
