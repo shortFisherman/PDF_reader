@@ -33,6 +33,19 @@
      - `SettingsModel` 消费字段：`translation` 的 `lang_in`/`lang_out`/`ignore_cache`/`output`/`glossaries`/
        `save_auto_extracted_glossary`/`custom_system_prompt`，`pdf` 的 `pages`/`no_dual`/
        `only_include_translated_page`/`watermark_output_mode`，以及 `ENGINE_REGISTRY` 全部引擎字段映射；
+     - 发送开关与 transform 契约（2.9.0 基线）：OpenAI 发送温度开关必须仍是历史拼写
+       `openai_send_temprature`；`OpenAICompatibleSettings`/`AliyunDashScopeSettings` 的
+       `send_temperature`/`send_reasoning_effort` 经 `transform()` 后必须进入 OpenAI 请求字段；
+       DeepSeek v4 的 thinking transform 自动设置 reasoning 发送；`OpenAITranslator.options`
+       必须真实携带 `temperature`/`reasoning_effort`（不联网契约测试锁定）；
+     - PDFSettings 深层字段与默认（15 个）：`split_short_lines`、`short_line_split_factor`、
+       `skip_clean`、`disable_rich_text_translate`、`enhance_compatibility`、
+       `translate_table_text`、`skip_scanned_detection`、`ocr_workaround`、
+       `auto_enable_ocr_workaround`、`no_merge_alternating_line_numbers`、
+       `skip_formula_offset_calculation`、`non_formula_line_iou_threshold`、
+       `figure_table_protection_threshold`、`formular_font_pattern`、`formular_char_pattern`
+       必须存在且默认与 2.9.0 一致（本项目 `formula_*` 映射到历史拼写）；`term_pool_max_workers=0`
+       的“跟随 pool_max_workers”语义需重新核对源码与测试；
      - 事件适配：`progress_start`/`progress_update`/`finish`/`error` 映射不变，未承诺事件（如
        `progress_end`）与未知事件保持忽略，心跳（空串）透传；
      - 输出路径：`settings.translation.output` 注入任务工作区 `output/`，`mono_pdf_path`→`dual_pdf_path`

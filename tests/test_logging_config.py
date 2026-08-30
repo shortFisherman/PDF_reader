@@ -1,6 +1,5 @@
 import logging
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -244,22 +243,3 @@ class TestApiKeyNeverLogged:
 
         for record in caplog.records:
             assert "sk-secret-test-123" not in record.message, f"API key leaked in debug_trace: {record.message}"
-
-    def test_settings_summary_excludes_api_key(self, monkeypatch):
-        """_settings_summary 输出 provider/model/lang/cache_dir/dpi，不含 api_key"""
-        monkeypatch.setattr(config, "MODEL_API_KEY", "sk-secret-test-123")
-        monkeypatch.setattr(config, "MODEL_PROVIDER", "deepseek")
-        monkeypatch.setattr(config, "MODEL", "deepseek-v4-flash")
-        monkeypatch.setattr(config, "TRANSLATION_LANG_IN", "en")
-        monkeypatch.setattr(config, "TRANSLATION_LANG_OUT", "zh")
-        monkeypatch.setattr(config, "CACHE_DIR", Path("/tmp/cache"))
-        monkeypatch.setattr(config, "DPI", 300)
-
-        from pdf_reader.translation_settings import _settings_summary
-
-        summary = _settings_summary()
-
-        assert "sk-secret-test-123" not in summary
-        assert "provider=deepseek" in summary
-        assert "model=deepseek-v4-flash" in summary
-        assert "lang=en->zh" in summary

@@ -33,6 +33,23 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PINNED_VERSIONS = {"pdf2zh-next": "2.9.0", "babeldoc": "0.6.2"}
 
 
+def _upstream(
+    model: config.ModelRuntimeConfig | None = None,
+    translation: config.TranslationRuntimeConfig | None = None,
+    pdf: config.Pdf2zhRuntimeConfig | None = None,
+) -> config.UpstreamRuntimeConfig:
+    return config.UpstreamRuntimeConfig(
+        model=model
+        or config.ModelRuntimeConfig(
+            provider="openai",
+            api_key="sk-test-key",
+            model="gpt-4o-mini",
+        ),
+        translation=translation or config.TranslationRuntimeConfig(lang_in="en", lang_out="zh"),
+        pdf=pdf or config.Pdf2zhRuntimeConfig(),
+    )
+
+
 def _pyproject_pins() -> dict[str, str]:
     with open(REPO_ROOT / "pyproject.toml", "rb") as fh:
         project = tomllib.load(fh)["project"]
@@ -146,8 +163,15 @@ def test_settings_model_and_consumed_nested_fields_exist():
     for field in (
         "lang_in",
         "lang_out",
+        "min_text_length",
+        "qps",
+        "pool_max_workers",
+        "term_qps",
+        "term_pool_max_workers",
+        "no_auto_extract_glossary",
         "ignore_cache",
         "save_auto_extracted_glossary",
+        "primary_font_family",
         "output",
         "glossaries",
         "custom_system_prompt",
@@ -155,7 +179,28 @@ def test_settings_model_and_consumed_nested_fields_exist():
         assert field in translation_fields, f"TranslationSettings 缺少字段 {field}（build_settings/generate 依赖）"
 
     pdf_fields = PDFSettings.model_fields
-    for field in ("pages", "no_dual", "only_include_translated_page", "watermark_output_mode"):
+    for field in (
+        "pages",
+        "no_dual",
+        "no_mono",
+        "only_include_translated_page",
+        "watermark_output_mode",
+        "split_short_lines",
+        "short_line_split_factor",
+        "skip_clean",
+        "disable_rich_text_translate",
+        "enhance_compatibility",
+        "translate_table_text",
+        "skip_scanned_detection",
+        "ocr_workaround",
+        "auto_enable_ocr_workaround",
+        "no_merge_alternating_line_numbers",
+        "skip_formula_offset_calculation",
+        "non_formula_line_iou_threshold",
+        "figure_table_protection_threshold",
+        "formular_font_pattern",
+        "formular_char_pattern",
+    ):
         assert field in pdf_fields, f"PDFSettings 缺少字段 {field}（build_settings 依赖）"
 
     assert "debug" in BasicSettings.model_fields, "BasicSettings 缺少 debug 字段"
@@ -163,7 +208,12 @@ def test_settings_model_and_consumed_nested_fields_exist():
 
 def test_settings_assignment_compatibility(mock_config, monkeypatch):
     monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
-    settings = build_settings("dummy.pdf", output_dir="C:/tmp/out", glossary_paths=["/tmp/g.csv"])
+    settings = build_settings(
+        _upstream(),
+        "dummy.pdf",
+        output_dir="C:/tmp/out",
+        glossary_paths=["/tmp/g.csv"],
+    )
 
     assert settings.translation.lang_in == "en"
     assert settings.translation.lang_out == "zh"
@@ -245,7 +295,7 @@ def test_uncommitted_event_types_are_ignored_not_crashed():
 
 def test_workspace_output_injection_and_unknown_event_ignore_with_real_settings(tmp_path, mock_config, monkeypatch):
     monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
-    settings = build_settings("dummy.pdf")
+    settings = build_settings(_upstream(), "dummy.pdf")
     result = _make_translate_result(
         mono_pdf_path=str(tmp_path / "mono.pdf"),
         auto_extracted_glossary_path=str(tmp_path / "auto.csv"),
@@ -359,3 +409,173 @@ def test_worker_exception_surfaces_as_translation_error():
     with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", failing_stream):
         with pytest.raises(TranslationError, match="contract engine failure"):
             list(run_translation(MagicMock(), "fake.pdf"))
+
+
+def test_openai_send_temperature_uses_historical_temprature_spelling():
+    """OpenAI 上游字段是历史拼写 openai_send_temprature，升级依赖前必须先核对。"""
+    from pdf2zh_next.config.translate_engine_model import OpenAISettings
+
+    spec = config.PROVIDER_INDEX["openai"]
+    assert spec.field_map["send_temperature"] == "openai_send_temprature"
+    assert "openai_send_temprature" in OpenAISettings.model_fields
+
+
+def test_openai_send_switches_reach_translator_request_options(mock_config, monkeypatch):
+    """transform 后的 OpenAITranslator.options 必须真实包含 temperature/reasoning_effort。"""
+    from pdf2zh_next.translator.translator_impl.openai import OpenAITranslator
+
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    model_cfg = config.ModelRuntimeConfig(
+        provider="openai",
+        api_key="sk-test-key",
+        model="gpt-4o-mini",
+        temperature="0.7",
+        send_temperature=True,
+        reasoning_effort="high",
+        send_reasoning_effort=True,
+    )
+    settings = build_settings(_upstream(model=model_cfg), "dummy.pdf")
+    settings.validate_settings()
+
+    translator = OpenAITranslator(settings, MagicMock())
+    assert translator.options["temperature"] == 0.7
+    assert translator.options["reasoning_effort"] == "high"
+
+
+def test_send_switches_off_preserve_old_request_options(mock_config, monkeypatch):
+    """开关默认关闭时，旧行为不变：请求 options 不含 temperature/reasoning_effort。"""
+    from pdf2zh_next.translator.translator_impl.openai import OpenAITranslator
+
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    settings = build_settings(_upstream(), "dummy.pdf")
+    settings.validate_settings()
+
+    translator = OpenAITranslator(settings, MagicMock())
+    assert "temperature" not in translator.options
+    assert "reasoning_effort" not in translator.options
+
+
+def test_openai_compatible_send_switches_transform_into_openai_request_fields(
+    mock_config,
+    monkeypatch,
+):
+    from pdf2zh_next.config.translate_engine_model import OpenAISettings
+    from pdf2zh_next.translator.translator_impl.openai import OpenAITranslator
+
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    model_cfg = config.ModelRuntimeConfig(
+        provider="openai_compatible",
+        api_key="sk-test-key",
+        model="custom-model",
+        base_url="https://example.com/v1",
+        temperature="0.2",
+        send_temperature=True,
+        reasoning_effort="low",
+        send_reasoning_effort=True,
+    )
+    settings = build_settings(_upstream(model=model_cfg), "dummy.pdf")
+    assert settings.translate_engine_settings.openai_compatible_send_temperature is True
+    settings.validate_settings()
+    assert isinstance(settings.translate_engine_settings, OpenAISettings)
+    assert settings.translate_engine_settings.openai_send_temprature is True
+    assert settings.translate_engine_settings.openai_send_reasoning_effort is True
+
+    translator = OpenAITranslator(settings, MagicMock())
+    assert translator.options["temperature"] == 0.2
+    assert translator.options["reasoning_effort"] == "low"
+
+
+def test_aliyun_send_temperature_transform_into_openai_request_options(mock_config, monkeypatch):
+    from pdf2zh_next.config.translate_engine_model import OpenAISettings
+    from pdf2zh_next.translator.translator_impl.openai import OpenAITranslator
+
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    model_cfg = config.ModelRuntimeConfig(
+        provider="aliyun",
+        api_key="sk-test-key",
+        model="qwen-plus-latest",
+        temperature="0.5",
+        send_temperature=True,
+    )
+    settings = build_settings(_upstream(model=model_cfg), "dummy.pdf")
+    assert settings.translate_engine_settings.aliyun_dashscope_send_temperature is True
+    settings.validate_settings()
+    assert isinstance(settings.translate_engine_settings, OpenAISettings)
+    assert settings.translate_engine_settings.openai_send_temprature is True
+
+    translator = OpenAITranslator(settings, MagicMock())
+    assert translator.options["temperature"] == 0.5
+
+
+def test_pdf2zh_consumed_upstream_defaults_match_design():
+    """pdf2zh-next 2.9.0 的消费字段默认值必须与设计目录一致。"""
+    pdf = PDFSettings()
+    assert pdf.split_short_lines is False
+    assert pdf.short_line_split_factor == 0.8
+    assert pdf.skip_clean is False
+    assert pdf.disable_rich_text_translate is False
+    assert pdf.enhance_compatibility is False
+    assert pdf.translate_table_text is True
+    assert pdf.skip_scanned_detection is False
+    assert pdf.ocr_workaround is False
+    assert pdf.auto_enable_ocr_workaround is False
+    assert pdf.no_merge_alternating_line_numbers is False
+    assert pdf.skip_formula_offset_calculation is False
+    assert pdf.non_formula_line_iou_threshold == 0.9
+    assert pdf.figure_table_protection_threshold == 0.9
+    assert pdf.formular_font_pattern is None
+    assert pdf.formular_char_pattern is None
+
+
+def test_formula_mapping_uses_historical_formular_spelling():
+    """本项目使用正确拼写 formula_*，上游 2.9.0 字段是历史拼写 formular_*。"""
+    assert "formular_font_pattern" in PDFSettings.model_fields
+    assert "formular_char_pattern" in PDFSettings.model_fields
+    assert "formula_font_pattern" not in PDFSettings.model_fields
+    assert "formula_char_pattern" not in PDFSettings.model_fields
+
+    pdf_cfg = config.Pdf2zhRuntimeConfig(
+        formula_font_pattern="^math",
+        formula_char_pattern="\\d+",
+    )
+    settings = build_settings(_upstream(pdf=pdf_cfg), "dummy.pdf")
+    assert settings.pdf.formular_font_pattern == "^math"
+    assert settings.pdf.formular_char_pattern == "\\d+"
+
+
+def test_pdf2zh_fields_reach_upstream_settings(mock_config, monkeypatch):
+    monkeypatch.setattr(config, "GLOSSARY_PATH", Path("nonexistent.csv"))
+    pdf_cfg = config.Pdf2zhRuntimeConfig(
+        split_short_lines=True,
+        short_line_split_factor=0.5,
+        skip_clean=True,
+        disable_rich_text_translate=True,
+        enhance_compatibility=True,
+        translate_table_text=False,
+        skip_scanned_detection=True,
+        ocr_workaround=True,
+        auto_enable_ocr_workaround=True,
+        no_merge_alternating_line_numbers=True,
+        skip_formula_offset_calculation=True,
+        non_formula_line_iou_threshold=0.4,
+        figure_table_protection_threshold=0.6,
+        formula_font_pattern="^math",
+        formula_char_pattern="\\d+",
+    )
+    settings = build_settings(_upstream(pdf=pdf_cfg), "dummy.pdf")
+    pdf = settings.pdf
+    assert pdf.split_short_lines is True
+    assert pdf.short_line_split_factor == 0.5
+    assert pdf.skip_clean is True
+    assert pdf.disable_rich_text_translate is True
+    assert pdf.enhance_compatibility is True
+    assert pdf.translate_table_text is False
+    assert pdf.skip_scanned_detection is True
+    assert pdf.ocr_workaround is True
+    assert pdf.auto_enable_ocr_workaround is True
+    assert pdf.no_merge_alternating_line_numbers is True
+    assert pdf.skip_formula_offset_calculation is True
+    assert pdf.non_formula_line_iou_threshold == 0.4
+    assert pdf.figure_table_protection_threshold == 0.6
+    assert pdf.formular_font_pattern == "^math"
+    assert pdf.formular_char_pattern == "\\d+"

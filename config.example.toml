@@ -1,36 +1,82 @@
 # =============================================================================
-# PDF 阅读器 — 配置文件模板
+# PDF Reader — 完整配置参考
 # =============================================================================
+# 核对范围：本项目当前代码 + pdf2zh-next 2.9.0 + BabelDOC 0.6.2。
+# 升级上游依赖后，应重新核对本文件中的引擎字段和“尚未暴露的上游能力”。
+#
 # 使用方式：
-#   1. 复制此文件为 config.toml：  cp config.example.toml config.toml
-#   2. 编辑 config.toml 填入你的实际配置
-#   3. config.toml 已被 .gitignore 忽略，不会提交到 git
+#   Windows PowerShell:  Copy-Item config.example.toml config.toml
+#   macOS / Linux:       cp config.example.toml config.toml
+#   然后编辑项目资源根目录下的 config.toml，并重启程序。
 #
-# API Key 配置方式（二选一）：
-#   方式 A（推荐）：设置环境变量 MODEL_API_KEY（优先级高于下方 api_key 字段）
-#       PowerShell:  $env:MODEL_API_KEY = "sk-你的密钥"
-#       CMD:          set MODEL_API_KEY=sk-你的密钥
-#   方式 B：直接在下方的 api_key 字段填写
-#       ⚠️ 注意不要将含真实 API Key 的 config.toml 提交到 git
+# 重要边界：
+#   - 本文件完整列出了当前代码会读取的 41 个支持键（TOML 字段）。
+#   - pdf2zh-next/BabelDOC 还有很多参数，但本前端没有全部接通；见文件末尾。
+#   - 本项目直接构造 PDF2ZH SettingsModel，不读取 PDF2ZH/BabelDOC 自己的 CLI
+#     配置文件或 PDF2ZH_* 环境变量；设置那些参数不会影响本前端。
+#   - 未知 section、未知键、未知 provider、拼错字段与非法组合都会在启动时明确报错；
+#     openai_compatible 缺少 base_url 也会在启动时失败，不会静默兜底。
+#   - 所有支持键都在启动时完成类型、范围、组合与正则校验；数值必须是有限数
+#     （nan/inf/-inf 一律拒绝）。
+#   - 配置在进程启动时加载。修改 config.toml 后请重启，不要依赖热重载。
+#   - 配置变化只影响之后执行的翻译或主动重译，不会追溯更新已写入文档缓存的
+#     旧 right.pdf 页面；缓存仍只按原 PDF 哈希保存，累计术语表跨配置复用。
+#
+# TOML 字段总表（共 41 个支持键）：
+#   [pdf_reader]  dpi, cache_dir
+#   [model]       provider, api_key, model, base_url, thinking_mode,
+#                 reasoning_effort, send_reasoning_effort, enable_json_mode,
+#                 temperature, send_temperature, timeout
+#   [translation] lang_in, lang_out, min_text_length, qps, pool_max_workers,
+#                 term_qps, term_pool_max_workers, auto_extract_glossary,
+#                 primary_font_family, default_system_prompt
+#   [server]      host, port, debug
+#   [pdf2zh]      split_short_lines, short_line_split_factor, skip_clean,
+#                 disable_rich_text_translate, enhance_compatibility,
+#                 translate_table_text, skip_scanned_detection, ocr_workaround,
+#                 auto_enable_ocr_workaround, no_merge_alternating_line_numbers,
+#                 skip_formula_offset_calculation, non_formula_line_iou_threshold,
+#                 figure_table_protection_threshold, formula_font_pattern,
+#                 formula_char_pattern
+#
+# 配置来源不只 TOML：
+#   - 环境变量：MODEL_API_KEY、PDF_READER_DEBUG、PDF_READER_ROOT、
+#               PDF_READER_DATA_ROOT
+#   - 命令行：  --debug、--no-debug
+#   - 页面操作：待打开的 PDF、翻译页码/范围、自定义 Prompt
+#   - 固定文件：PROJECT_ROOT/docs/glossary.csv
+# =============================================================================
+
+
+# =============================================================================
+# 密钥、路径和覆盖优先级
 # =============================================================================
 #
-# 引擎参数速查（✓ = 支持  — = 不支持，设了会输出 warning 并忽略）
+# API Key（二选一，推荐环境变量）：
+#   PowerShell:  $env:MODEL_API_KEY = "你的密钥"
+#   CMD:         set MODEL_API_KEY=你的密钥
+#   macOS/Linux: export MODEL_API_KEY="你的密钥"
 #
-#   provider            默认模型               base_url   thinking   reasoning    json_mode   temp   timeout
-#   ─────────────────  ─────────────────────  ────────   ────────   ──────────   ─────────   ────   ───────
-#   deepseek            deepseek-chat          固定       ✓          ✓ high/max   ✓           —      —
-#   zhipu               glm-4-flash            固定       —          —            ✓           —      —
-#   siliconflow         Qwen/Qwen2.5-7B        可选       —          —            ✓           —      —
-#   aliyun              qwen-plus-latest       可选       —          —            ✓           ✓      ✓
-#   gemini              gemini-1.5-flash       固定       —          —            ✓           —      —
-#   groq                llama-3.3-70b          固定       —          —            ✓           —      —
-#   grok                grok-2-1212            固定       —          —            ✓           —      —
-#   modelscope          Qwen/Qwen2.5-32B       固定       —          —            ✓           —      —
-#   openai              gpt-4o-mini            可选       —          ✓ min/low/.. ✓           ✓      ✓
-#   openai_compatible   （自定义）             必填       —          ✓ min/low/.. ✓           ✓      ✓
+# API Key 优先级：
+#   MODEL_API_KEY > [model].api_key
 #
-#   base_url:  固定 = 引擎内置官方地址，设了无效  可选 = 可自定义  必填 = 必须填写
-#   未列出的 provider 名 → 自动走 openai_compatible 兜底
+# 不要把真实密钥写进 config.example.toml、日志、截图或 Git。
+# config.toml 已被本仓库 .gitignore 忽略，但仍应限制文件访问权限。
+#
+# Debug 优先级：
+#   CLI --debug/--no-debug > PDF_READER_DEBUG > [server].debug > false
+#
+# PDF_READER_DEBUG 接受（不区分大小写、忽略首尾空白）：
+#   true / false / 1 / 0 / on / off / yes / no
+# 其它值（包括空字符串）会在启动时明确报错。
+#
+# 高级路径环境变量（通常无需设置；值必须是绝对路径）：
+#   PDF_READER_ROOT
+#     项目资源根。config.toml、config.example.toml、templates/、static/ 和
+#     docs/glossary.csv 都从这里读取。仅适用于特殊部署/打包场景。
+#   PDF_READER_DATA_ROOT
+#     运行数据根。logs/ 和相对 cache_dir 以这里为基准；适合把运行数据放到
+#     仓库之外。默认等于项目资源根。
 # =============================================================================
 
 
@@ -38,180 +84,460 @@
 # PDF 阅读器设置
 # -----------------------------------------------------------------------------
 [pdf_reader]
-# 页面渲染 DPI（必须为正整数，布尔值不算；默认 200）
+
+# 页面预览渲染 DPI。
+# 类型/范围：正整数；默认 200。
+# 作用：影响浏览器中原文页和译文页 PNG 的清晰度、渲染耗时、内存与缓存体积。
+# 不作用于：PDF2ZH/BabelDOC 的翻译质量、模型请求或最终 PDF 的排版分辨率。
+# 建议：普通屏幕先用 150~200；高 DPI 更清晰但更耗资源。
 dpi = 200
-# 翻译缓存目录（非空字符串，保存中间文件；默认 "cache"）
+
+# 本前端的文档缓存目录。
+# 类型：非空字符串；默认 "cache"。
+# 相对路径：相对 PDF_READER_DATA_ROOT（默认项目根）解析。
+# 绝对路径：直接使用；路径中的 "~" 会展开为用户目录。
+# 内容：按文档哈希保存译文 PDF、累计术语表、阅读进度、调试轨迹和翻译临时目录。
+# 注意：这不是上游的翻译结果缓存开关；本项目固定 ignore_cache = true，见文件末尾。
 cache_dir = "cache"
 
 
 # -----------------------------------------------------------------------------
-# 模型配置（翻译服务使用的 LLM 模型）
+# 模型配置
 # -----------------------------------------------------------------------------
 [model]
-# 模型供应商（必填）
-#   可选值见上方速查表；未列出的名称自动走 openai_compatible 兜底
+
+# 引擎标识。
+# 类型：非空字符串；省略时默认 "openai_compatible"。
+# 当前明确支持：
+#   deepseek, zhipu, siliconflow, aliyun, gemini,
+#   groq, grok, modelscope, openai, openai_compatible
+#
+# 警告：未知 provider 会在启动时直接报错（不再静默回退 openai_compatible）。
+# 为避免把请求意外发往错误端点，请只使用上面的精确小写名称。
+# 本模板选用 deepseek 只是可编辑示例，不代表代码默认值。
 provider = "deepseek"
 
-# API Key（必填）
-#   环境变量 MODEL_API_KEY 优先级更高
-#   必须是非空字符串（数字/布尔不接受）；环境变量为合法非空字符串时可覆盖文件中的无效值
+# API Key。
+# 类型：非空字符串；必填，但可由 MODEL_API_KEY 环境变量覆盖。
+# 这个占位值会被启动校验拒绝，必须替换或设置环境变量。
 api_key = "sk-your-api-key-here"
 
-# 模型名称（必填）
-#   必须是非空字符串（数字/布尔/列表不接受）
-#   各引擎默认值 & 常见可选值（完整列表请查阅各供应商文档）：
-#     deepseek:          deepseek-chat / deepseek-reasoner
-#                        deepseek-v4-* 系列支持 thinking_mode（如 deepseek-v4-flash）
-#     zhipu:             glm-4-flash / glm-4-plus / glm-4-air
-#     siliconflow:       Qwen/Qwen2.5-7B-Instruct / deepseek-ai/DeepSeek-V3 ...
-#     aliyun:            qwen-plus-latest / qwen-turbo / qwen-max
-#     gemini:            gemini-1.5-flash / gemini-2.0-flash / gemini-1.5-pro
-#     groq:              llama-3.3-70b-versatile / llama-3.1-8b-instant
-#     grok:              grok-2-1212 / grok-2-latest
-#     modelscope:        Qwen/Qwen2.5-32B-Instruct
-#     openai:            gpt-4o-mini / gpt-4o / o1-mini / o1
-#     openai_compatible: 取决于你的中转服务所提供的模型
+# 模型 ID。
+# 类型：非空字符串；本项目必填，没有可依赖的应用级默认值。
+# 必须填写供应商当前实际开放给你的精确模型 ID；模型目录会变化，请以供应商控制台
+# 和 API 文档为准，不要把下面的示例当成长期有效的模型清单。
 model = "deepseek-chat"
 
-# API 基础地址（可选）
-#   仅 siliconflow / aliyun / openai / openai_compatible 生效
-#   deepseek / zhipu / gemini / groq / grok / modelscope 使用内置官方地址，设了无效
-#   openai_compatible 下为必填，其余可选（留空用引擎默认地址）
-# base_url = "https://api.siliconflow.cn/v1"
+# API 基础地址。
+# 类型：非空 URL 字符串。
+# openai_compatible：必填，缺少时启动直接失败。
+# 生效：siliconflow / aliyun / openai / openai_compatible。
+# 忽略：deepseek / zhipu / gemini / groq / grok / modelscope 使用上游固定地址；
+#       对这些 provider 设置 base_url 时会输出明确 warning 并忽略。
+# 末尾通常写 API 根路径（常见为 /v1），不要填写具体的 chat/completions 路径。
+# base_url = "https://your-openai-compatible-service.example/v1"
 
 
 # -----------------------------------------------------------------------------
-# 高级参数（全部可选，仅对应引擎支持时生效；不支持时输出 warning 并忽略）
+# 模型高级字段（均可省略）
 # -----------------------------------------------------------------------------
+# 注意：一个字段出现在这里，不代表每个 provider 都支持。请同时查看下方矩阵。
 
-# thinking_mode — 深度思考开关（字符串）
-#   仅 deepseek 引擎，且仅对 deepseek-v4-* 系列模型生效
-#   "enabled"  开启深度思考（模型在回答前先进行推理链）
-#   "disabled" 关闭深度思考
+# DeepSeek v4 思考模式。
+# 类型/取值："enabled" 或 "disabled"。
+# 仅 provider="deepseek" 且 model 以 "deepseek-v4-" 开头时会加入请求；
+# 其它 DeepSeek 模型即使设置也不会加入 thinking 请求体。
 # thinking_mode = "enabled"
 
-# reasoning_effort — 推理深度（字符串）
-#   deepseek:            "high" / "max"
-#     ⚠️ 需同时设 thinking_mode = "enabled"，且模型为 deepseek-v4-* 系列
-#   openai / openai_compatible: "minimal" / "low" / "medium" / "high"
-#     控制推理型模型（如 o1 系列）的思考力度，非推理模型可能忽略此参数
+# 推理力度。
+# 类型：字符串。
+# DeepSeek：仅 thinking_mode="enabled" 的 deepseek-v4-* 生效；只接受 "high" / "max"。
+# OpenAI / OpenAI Compatible：只接受 "minimal" / "low" / "medium" / "high"，
+#   并且必须同时打开 send_reasoning_effort 才会进入实际 API 请求。
 # reasoning_effort = "high"
 
-# enable_json_mode — 强制 JSON 输出模式（布尔值）
-#   适用: deepseek / zhipu / siliconflow / aliyun / gemini / groq / grok /
-#         modelscope / openai / openai_compatible
-#   true 时模型被要求以合法 JSON 格式输出，适合结构化解析场景
+# 推理力度发送开关。
+# 类型：布尔值 true/false；默认 false。
+# 生效：openai / openai_compatible；为 true 时必须同时设置 reasoning_effort。
+# DeepSeek 不使用本开关：deepseek-v4-* + thinking_mode="enabled" 时上游 transform
+# 会自动发送 reasoning effort；对本开关显式设 true 会得到 warning 并忽略。
+# 开关保持 false（默认）时，reasoning_effort 即使已配置也不会进入 API 请求。
+# send_reasoning_effort = true
+
+# 启用上游 JSON mode 能力。
+# 类型：布尔值 true/false。
+# 所有当前明确支持的 provider 都接通了此字段，但行为分两类：
+#   - siliconflow：开启后，专用 translator 会给普通翻译请求也加入 JSON response_format。
+#   - 其它当前 provider：走 OpenAI translator，只有自动术语提取、LLM-only 等明确请求
+#     结构化输出的阶段才加入 JSON response_format；普通段落翻译不会被一律强制为 JSON。
+# 模型或中转服务不支持 JSON mode 时请省略或设 false。
 # enable_json_mode = true
 
-# temperature — 输出随机性（字符串形式，范围 "0"~"2"）
-#   仅 openai / aliyun / openai_compatible
-#   值越低 → 输出越确定/保守；值越高 → 输出越随机/多样
-#   ⚠️ 必须用字符串，不要写裸数字（写成 "0.7" 而非 0.7）
+# Temperature。
+# 上游要求使用字符串形式，例如 "0.0" 或 "0.7"；允许范围最终由供应商决定。
+# 只校验“非空、可解析为有限浮点数”；不限制 0~2 之类的项目级范围。
+# 生效：aliyun / openai / openai_compatible，且必须同时打开 send_temperature。
+# 其它 provider 不支持；开关保持 false（默认）时，该值不会进入实际 API 请求。
 # temperature = "0.7"
 
-# timeout — 请求超时秒数（字符串形式，正整数）
-#   仅 openai / aliyun / openai_compatible
-#   ⚠️ 必须用字符串，不要写裸数字（写成 "500" 而非 500）
+# Temperature 发送开关。
+# 类型：布尔值 true/false；默认 false。
+# 生效：aliyun / openai / openai_compatible；为 true 时必须同时设置 temperature。
+# OpenAI / OpenAI Compatible 内部使用上游历史拼写字段 openai_send_temprature
+# （pdf2zh-next 2.9.0 兼容性保留，本项目只把它作为内部映射说明）。
+# send_temperature = true
+
+# 模型 API 请求超时秒数。
+# 类型：可解析为有限正数的字符串，例如 "30"、"30.5"、"500"；
+# nan/inf/-inf、0、负数与不可解析值都会在启动时拒绝。
+# 生效：aliyun / openai / openai_compatible；其它 provider 设置后会告警并忽略。
+# 阿里云引擎省略时使用上游默认 "500"；OpenAI/兼容引擎省略时使用 SDK 默认值。
 # timeout = "500"
 
 
 # =============================================================================
-# 各引擎配置示例（将需要的块复制到上方 [model] 段即可）
+# 当前引擎字段接通矩阵
 # =============================================================================
-# ---- deepseek ----
-# provider = "deepseek"
-# api_key = "sk-..."
-# model = "deepseek-chat"               # 或 deepseek-v4-flash（配合 thinking_mode）
-# thinking_mode = "enabled"             # 仅 v4 系列
-# reasoning_effort = "high"             # 需 thinking_mode = "enabled"
-# enable_json_mode = true
+# 标记：✓ = 已端到端生效（发送开关打开后真实进入 API 请求）
+#       ✓* = DeepSeek v4 transform 自动发送，不需要本项目开关
+#       — = 不适用/未映射；显式设置通常输出 warning 并忽略，发送开关用于
+#           不支持的 Provider 时会在启动阶段报错
+#
+# provider           base_url  thinking_mode  reasoning_effort  send_reasoning_effort  json_mode  temperature  send_temperature  timeout
+# -----------------  --------  -------------  ----------------  ---------------------  ---------  -----------  ----------------  -------
+# deepseek            —         ✓*             ✓*                —                      ✓          —            —                 —
+# zhipu               —         —              —                 —                      ✓          —            —                 —
+# siliconflow         ✓         —              —                 —                      ✓          —            —                 —
+# aliyun              ✓         —              —                 —                      ✓          ✓            ✓                 ✓
+# gemini              —         —              —                 —                      ✓          —            —                 —
+# groq                —         —              —                 —                      ✓          —            —                 —
+# grok                —         —              —                 —                      ✓          —            —                 —
+# modelscope          —         —              —                 —                      ✓          —            —                 —
+# openai              ✓         —              ✓                 ✓                      ✓          ✓            ✓                 ✓
+# openai_compatible   ✓**       —              ✓                 ✓                      ✓          ✓            ✓                 ✓
+#
+# * 仅 deepseek-v4-*；reasoning_effort 还要求 thinking_mode="enabled"。
+# ** openai_compatible 的 base_url 是启动期必填项。
+# OpenAI/OpenAI Compatible 的 temperature 发送开关在内部映射到上游历史拼写
+# openai_send_temprature（pdf2zh-next 2.9.0 兼容性保留），本项目只作为内部映射说明。
+# 未知 provider、未知 section/key、非法组合与非法数值都会在启动时失败，不再静默忽略。
+#
+# 所有 provider 都会接收 api_key 和 model；本项目要求两者显式配置。
+# =============================================================================
 
-# ---- zhipu（智谱）----
+
+# =============================================================================
+# Provider 配方（只展示字段组合；一次只使用一个 [model] 段）
+# =============================================================================
+# 下面全部保持注释状态。需要切换时，把对应字段值复制到上面的 [model] 段；
+# 不要在同一个 TOML 文件中重复声明 [model]。
+# 模型名仅为格式示例/上游 2.9.0 默认示例，是否可用以供应商当前账号权限为准。
+
+# ---- DeepSeek ----
+# provider = "deepseek"
+# api_key = "..."
+# model = "deepseek-chat"
+# enable_json_mode = true
+# 若使用 deepseek-v4-*：
+# thinking_mode = "enabled"
+# reasoning_effort = "high"       # 或 "max"
+
+# ---- 智谱 ----
 # provider = "zhipu"
 # api_key = "..."
 # model = "glm-4-flash"
 # enable_json_mode = true
 
-# ---- siliconflow（硅基流动）----
+# ---- 硅基流动 ----
 # provider = "siliconflow"
-# api_key = "sk-..."
+# api_key = "..."
 # model = "Qwen/Qwen2.5-7B-Instruct"
-# base_url = "https://api.siliconflow.cn/v1"   # 可选，留空用默认
+# base_url = "https://api.siliconflow.cn/v1"  # 可省略，使用上游默认地址
 # enable_json_mode = true
+# 上游的 enable_thinking/send_enable_thinking_param 当前未被本前端暴露。
 
-# ---- aliyun（阿里云 DashScope）----
+# ---- 阿里云 DashScope ----
 # provider = "aliyun"
-# api_key = "sk-..."
+# api_key = "..."
 # model = "qwen-plus-latest"
-# base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # 可选
-# enable_json_mode = true
-# temperature = "0.0"
+# base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # 可省略
 # timeout = "500"
+# enable_json_mode = true
+# temperature = "0.5"      # 需要同时打开 send_temperature
+# send_temperature = true
 
-# ---- gemini ----
+# ---- Gemini ----
 # provider = "gemini"
-# api_key = "AIza..."
-# model = "gemini-1.5-flash"
+# api_key = "..."
+# model = "你的 Gemini 模型 ID"
 # enable_json_mode = true
 
-# ---- groq ----
+# ---- Groq ----
 # provider = "groq"
-# api_key = "gsk_..."
-# model = "llama-3.3-70b-versatile"
+# api_key = "..."
+# model = "你的 Groq 模型 ID"
 # enable_json_mode = true
 
-# ---- grok ----
+# ---- Grok / xAI ----
 # provider = "grok"
-# api_key = "xai-..."
-# model = "grok-2-1212"
+# api_key = "..."
+# model = "你的 xAI 模型 ID"
 # enable_json_mode = true
 
-# ---- modelscope（魔搭）----
+# ---- ModelScope / 魔搭 ----
 # provider = "modelscope"
-# api_key = "ms-..."
+# api_key = "..."
 # model = "Qwen/Qwen2.5-32B-Instruct"
 # enable_json_mode = true
 
-# ---- openai ----
+# ---- OpenAI 官方接口 ----
 # provider = "openai"
-# api_key = "sk-..."
-# model = "gpt-4o-mini"
-# base_url = "https://api.openai.com/v1"   # 可选（用于代理/中转）
-# reasoning_effort = "high"
-# enable_json_mode = true
-# temperature = "0.7"
+# api_key = "..."
+# model = "你的 OpenAI 模型 ID"
+# base_url = "https://api.openai.com/v1"  # 可省略；也可指向受信任代理
 # timeout = "500"
+# enable_json_mode = true
+# reasoning_effort = "high"     # 需要同时打开 send_reasoning_effort
+# send_reasoning_effort = true
+# temperature = "0.7"           # 需要同时打开 send_temperature
+# send_temperature = true
 
-# ---- openai_compatible（OpenAI 兼容接口 / 中转服务）----
+# ---- OpenAI Compatible / 中转服务 ----
 # provider = "openai_compatible"
-# api_key = "sk-..."
-# model = "your-model-name"
-# base_url = "https://your-proxy.com/v1"   # 必填！
-# reasoning_effort = "high"
-# enable_json_mode = true
-# temperature = "0.7"
+# api_key = "..."
+# model = "中转服务提供的精确模型 ID"
+# base_url = "https://your-service.example/v1"  # 必填
 # timeout = "500"
+# enable_json_mode = true
+# reasoning_effort = "medium"   # 需要同时打开 send_reasoning_effort
+# send_reasoning_effort = true
+# temperature = "0.2"           # 需要同时打开 send_temperature
+# send_temperature = true
 
 
 # -----------------------------------------------------------------------------
 # 翻译设置
 # -----------------------------------------------------------------------------
 [translation]
-# 源语言（ISO 639-1 代码，默认 "en"）
+
+# 源语言标识；默认 "en"。
+# 本项目只校验“非空字符串”，然后原样传给 PDF2ZH；不会在启动时验证语言是否受支持。
+# 建议使用模型/上游常见语言代码，例如 en、zh、zh-TW、ja、ko、fr、de。
+# 最终支持范围取决于所选 provider 和模型。
 lang_in = "en"
-# 目标语言（ISO 639-1 代码，默认 "zh"）
+
+# 目标语言标识；默认 "zh"。
+# 规则与 lang_in 相同。这里的值同时用于翻译 Prompt 和上游处理配置。
 lang_out = "zh"
 
 
 # -----------------------------------------------------------------------------
-# 服务器设置
+# 翻译高级字段（均可省略，省略时使用下面的默认值）
+# -----------------------------------------------------------------------------
+
+# 少于该长度的文本不翻译。
+# 类型/默认/范围：非布尔整数；默认 5；>=0。
+# min_text_length = 5
+
+# 主翻译请求速率（QPS）。
+# 类型/默认/范围：非布尔整数；默认 4；>=1。
+# 风险：qps 越高，并发连接数、API 消耗与限流概率越大；本项目不设硬上限，
+# 但 >100 时启动会输出 warning，请按供应商配额谨慎调高。
+# qps = 4
+
+# 主翻译线程池大小。
+# 类型：可选非布尔正整数；省略（默认）时由上游跟随 qps。
+# 风险：与 qps 一样会放大并发连接与 API 消耗。
+# pool_max_workers = 4
+
+# 术语提取翻译 QPS。
+# 类型：可选非布尔正整数；省略（默认）时跟随 qps。
+# term_qps = 4
+
+# 术语提取线程池大小。
+# 类型：可选非布尔整数；省略（默认）时跟随 pool_max_workers；
+# 显式 0 在上游 2.9.0 中同样表示跟随 pool_max_workers（已按源码核对）。
+# term_pool_max_workers = 4
+
+# 自动提取术语并保存/合并到当前文档累计术语表。
+# 类型：布尔值 true/false；默认 true（等价于当前固定行为）。
+# true → 上游 no_auto_extract_glossary=False + save_auto_extracted_glossary=True；
+# false → 关闭自动提取，也不保存自动术语。
+# auto_extract_glossary = true
+
+# 译文主字体。
+# 类型/默认：字符串；默认 "auto"（自动选择，等价于上游 None）。
+# 其它取值仅允许："serif"、"sans-serif"、"script"。
+# primary_font_family = "auto"
+
+# 全局默认系统提示词。
+# 类型：可选非空字符串。
+# 优先级：页面任务 Prompt（非空）> 本字段 > 上游默认翻译提示词。
+# 注意：Prompt 原文不会写入日志或错误消息。
+# default_system_prompt = "/no_think You are a professional translation engine."
+
+
+# -----------------------------------------------------------------------------
+# PDF 高级处理（pdf2zh-next / BabelDOC 版面参数）
+# -----------------------------------------------------------------------------
+# 以下 15 个字段全部可选；省略时使用与上游 2.9.0 一致的默认值。
+# 视觉结果依赖具体 PDF，启用前建议用真实文档单页验证；其中表格文本翻译为上游
+# 实验性能力，OCR/兼容性开关可能改变版面或强制黑字白底。
+[pdf2zh]
+
+# 强制拆分短行成不同段落。
+# 类型/默认：布尔值；默认 false。
+# 副作用：改变段落拆分，可能影响公式与行号排版。
+# split_short_lines = false
+
+# 短行拆分阈值因子。
+# 类型/默认/范围：非布尔数值；默认 0.8；>=0.1；必须为有限数（nan/inf 拒绝）。
+# 只在 split_short_lines 开启时有意义。
+# short_line_split_factor = 0.8
+
+# 跳过 PDF 清理步骤。
+# 类型/默认：布尔值；默认 false。
+# 副作用：可能改善特殊 PDF，也可能保留干扰元素。
+# skip_clean = false
+
+# 禁用富文本翻译。
+# 类型/默认：布尔值；默认 false。
+# 副作用：影响富文本样式保留。
+# disable_rich_text_translate = false
+
+# 兼容性增强总开关。
+# 类型/默认：布尔值；默认 false。
+# 副作用：开启时上游会联动 skip_clean 与 disable_rich_text_translate。
+# enhance_compatibility = false
+
+# 翻译表格文本。
+# 类型/默认：布尔值；默认 true。
+# 风险：上游标注为实验性能力，表格复杂时可能影响版面。
+# translate_table_text = true
+
+# 跳过扫描文档检测。
+# 类型/默认：布尔值；默认 false。
+# skip_scanned_detection = false
+
+# 强制 OCR workaround（译文黑字 + 白底）。
+# 类型/默认：布尔值；默认 false。
+# 副作用：明显改变视觉结果。
+# ocr_workaround = false
+
+# 检测到重度扫描文档时自动启用 OCR workaround。
+# 类型/默认：布尔值；默认 false。
+# 与扫描检测联动。
+# auto_enable_ocr_workaround = false
+
+# 不合并交替行号。
+# 类型/默认：布尔值；默认 false。
+# 针对带交替行号的论文/代码排版。
+# no_merge_alternating_line_numbers = false
+
+# 跳过公式偏移计算。
+# 类型/默认：布尔值；默认 false。
+# 影响公式位置计算。
+# skip_formula_offset_calculation = false
+
+# 非公式线条 IoU 阈值。
+# 类型/默认/范围：非布尔数值；默认 0.9；必须在 [0,1]；必须为有限数。
+# non_formula_line_iou_threshold = 0.9
+
+# 图表/表格保护阈值。
+# 类型/默认/范围：非布尔数值；默认 0.9；必须在 [0,1]；必须为有限数。
+# figure_table_protection_threshold = 0.9
+
+# 公式字体匹配正则。
+# 类型：可选非空字符串；启动期预编译校验，非法正则直接报错。
+# 本项目使用正确拼写 formula_font_pattern，内部映射到上游历史拼写
+# formular_font_pattern（pdf2zh-next 2.9.0 兼容性保留）。
+# formula_font_pattern = "^math"
+
+# 公式字符匹配正则。
+# 类型：可选非空字符串；启动期预编译校验，非法正则直接报错。
+# 同上，内部映射到上游历史拼写 formular_char_pattern。
+# formula_char_pattern = "\\d+"
+
+
+# -----------------------------------------------------------------------------
+# Web 服务器设置
 # -----------------------------------------------------------------------------
 [server]
-# 监听地址（127.0.0.1 = 仅本机访问，0.0.0.0 = 局域网内可访问）
+
+# Flask 监听地址；默认 "127.0.0.1"。
+# "127.0.0.1" / "localhost" / "::1"：仅本机访问（推荐）。
+# "0.0.0.0"：监听所有 IPv4 网卡，不等于浏览器访问地址。
+# 安全警告：本服务当前没有身份认证，而且能处理本地 PDF。不要直接暴露到公网或
+# 不可信局域网；如确需远程访问，应另行配置认证、TLS、防火墙和反向代理。
 host = "127.0.0.1"
-# 监听端口（1-65535 的整数）
+
+# 监听端口；默认 5000。
+# 类型/范围：整数 1~65535；字符串和布尔值都不接受。
+# 当前没有 PDF_READER_PORT 环境变量，也没有 --port CLI 参数。
 port = 5000
-# 调试模式（必须是布尔值 true/false，默认 false；生产环境保持 false）
-# 最终 debug 优先级：CLI --debug/--no-debug > 环境变量 PDF_READER_DEBUG > 本字段 > 默认 false
-# debug = true 时同时启用 Flask debugger 与 reloader；debug = false 时两者都显式关闭
+
+# 应用调试模式；默认 false。
+# 类型：TOML 布尔值 true/false，不能写成字符串 "true" 或数字 1。
+# true 同时启用 DEBUG 日志、Flask debugger 和 reloader；仅限本机开发。
+# 覆盖优先级：CLI --debug/--no-debug > PDF_READER_DEBUG > 本字段 > false。
 debug = false
+
+
+# =============================================================================
+# 页面操作可控制、但不属于 config.toml 的参数
+# =============================================================================
+# - PDF 路径：在首页输入/选择，决定当前阅读文档。
+# - 翻译页码：当前页、起止页或全文由页面操作决定，再转换为 PDF2ZH pages 参数。
+# - 自定义 Prompt：页面中的 Prompt 输入框按翻译任务传入 custom_system_prompt；
+#   优先级：非空页面 Prompt > translation.default_system_prompt > 上游默认提示词；
+#   空白输入会回落到 default_system_prompt（未配置时保留上游默认）。
+# - 累计术语表：每个文档缓存目录中的 cumulative_glossary.csv 会自动参与后续翻译。
+# - 全局术语表：固定读取 PROJECT_ROOT/docs/glossary.csv；目前没有 TOML 路径字段。
+# =============================================================================
+
+
+# =============================================================================
+# PDF2ZH/BabelDOC 内部固定值与暂缓能力
+# =============================================================================
+# 本前端构造 SettingsModel 时固定：
+#   BasicSettings.debug = false
+#     与 [server].debug 不是同一个开关；服务器 debug 不会开启上游 BasicSettings.debug。
+#   TranslationSettings.ignore_cache = true
+#     每次调用都跳过上游翻译缓存；不影响本前端 cache_dir 中保存的译文和阅读进度。
+#     用户点击翻译/重译时始终按当前模型、Prompt、术语表与设置重新调用上游。
+#   PDFSettings.no_dual = true
+#     上游只产出单语译文 PDF；本前端自己把原文和译文并排显示。
+#   PDFSettings.only_include_translated_page = true
+#     按页/范围翻译时，临时输出只包含本次翻译页。
+#   PDFSettings.watermark_output_mode = "no_watermark"
+#     固定输出无水印版本。
+#   PDFSettings.no_mono 保持 false（上游默认）——本前端优先消费 mono_pdf_path。
+#
+# 由运行时决定：
+#   pages、output、custom_system_prompt、glossaries。
+#
+# 已接通、通过本文件可配置的翻译参数：
+#   [translation]：min_text_length、qps、pool_max_workers、term_qps、
+#     term_pool_max_workers、auto_extract_glossary、primary_font_family、
+#     default_system_prompt。
+#   [pdf2zh]：上方的全部 15 个 PDF 高级字段（短行、清理、富文本、兼容性、表格、
+#     扫描/OCR、行号、公式偏移、阈值与正则）。
+#
+# 仍保持内部固定或暂缓（不会通过 config.toml 开放）：
+#   - 输出结构字段：no_mono、max_pages_per_part、use_alternating_pages_dual、
+#     dual_translate_first，以及双语/交替页/分卷/多文件输出。
+#   - 上游暂缓参数：rpc_doclayout、report_interval、no_remove_non_formula_lines、
+#     SiliconFlow 专有 thinking 参数。
+#   - 独立术语提取 Provider 与第二套凭据、任意 raw 参数透传。
+#
+# 当前未注册的上游翻译器包括：Ollama、Azure OpenAI、DeepL、Google/Bing、Qwen-MT、
+# Dify、AnythingLLM、Tencent、Claude Code、CLI 等。把这些上游名字直接写进 provider
+# 不会启用它们，而会在启动阶段直接报错（不再静默兜底）。
+#
+# PDF2ZH 自己的 ~/.config/pdf2zh/config.v3.toml、--config-file、PDF2ZH_* 环境变量，
+# 以及 BabelDOC 自己的 -c/--config 和 CLI 参数都不经过本项目的加载链路，因此无效。
+#
+# 缓存语义不变：前端文档缓存仍只按原 PDF 哈希保存（cache/<pdf_hash>/right.pdf、
+# cumulative_glossary.csv、reading_progress.json）；修改配置不会追溯更新旧译文页面，
+# 新配置只作用于之后执行的翻译或主动重译；累计术语表继续跨模型/配置复用。
+# =============================================================================

@@ -75,13 +75,29 @@ powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable .\
 
 ## 配置
 
-编辑 `config.toml` 中的 `[model]`，或者通过环境变量提供 API Key：
+把 [config.example.toml](config.example.toml) 复制为 `config.toml` 后编辑；完整字段手册、
+每个字段的类型/默认值/范围/Provider 适用性与副作用、Provider 配方和内部固定值都在该文件中。
+配置扩展的设计决策与实施说明见 [PDF2ZH 配置能力扩展设计](docs/pdf2zh-configuration-expansion-design.md)。
+
+当前支持 41 个键：`[pdf_reader]`（2）、`[model]`（11）、`[translation]`（10）、
+`[server]`（3）、`[pdf2zh]`（15）。启动时会严格校验类型、范围、组合与正则：
+未知 section/key、未知 provider、非法数值（含 nan/inf）、`openai_compatible` 缺少
+`base_url` 都会在启动阶段直接报错，不再静默忽略或兜底。
+
+编辑 `[model]`，或者通过环境变量提供 API Key：
 
 ```powershell
 $env:MODEL_API_KEY = 'your-api-key'
 ```
 
-完整配置字段和模型示例见 `config.example.toml`。API Key 不应提交到 Git。
+行为边界：
+
+- 配置变化只影响之后执行的翻译或主动重译，不会追溯更新已写入文档缓存的旧 `right.pdf` 页面。
+- 前端文档缓存仍只按原 PDF 哈希保存；累计术语表继续跨模型/配置复用。
+- 每次翻译固定跳过上游请求缓存（`ignore_cache=true`），但不会影响本前端按 PDF 哈希复用的译文页面。
+- 页面 Prompt 优先级：非空页面 Prompt > `translation.default_system_prompt` > 上游默认提示词。
+
+API Key 不应提交到 Git。
 
 ## 路径约定
 

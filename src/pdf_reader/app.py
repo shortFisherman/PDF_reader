@@ -66,12 +66,12 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
         run_cfg = config.resolve_server_config(cli_debug=args.debug)
-        config.validate_startup_requirements()
+        upstream = config.validate_startup_requirements()
     except config.ConfigError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    settings = config.build_app_settings(cli_debug=args.debug, run_cfg=run_cfg)
+    settings = config.build_app_settings(cli_debug=args.debug, run_cfg=run_cfg, upstream=upstream)
     app = create_app(settings)
     coordinator = app.config["translation_coordinator"]
     recovered = cache_ops.recover_orphan_temp_workspaces(settings.cache_dir)

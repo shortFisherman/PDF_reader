@@ -87,7 +87,7 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     settings_call_kwargs = []
     merge_calls = []
 
-    def fake_build_settings(pdf_path, user_prompt=None, output_dir=None, glossary_paths=None, debug=None):  # noqa: ANN202
+    def fake_build_settings(upstream, pdf_path, user_prompt=None, output_dir=None, glossary_paths=None, debug=None):  # noqa: ANN202
         settings_call_kwargs.append({"glossary_paths": glossary_paths})
         return MagicMock()
 
@@ -332,7 +332,7 @@ def test_translate_batch_emits_batch_info_and_finish(app_state, sample_pdf, monk
     app_state.open_pdf(str(sample_pdf), sha256_func)
     page_count = app_state.page_count
 
-    def fake_build_settings(input_pdf, user_prompt=None, output_dir=None, glossary_paths=None, pages="1"):  # noqa: ANN202
+    def fake_build_settings(upstream, input_pdf, user_prompt=None, output_dir=None, glossary_paths=None, pages="1"):  # noqa: ANN202
         return MagicMock()
 
     async def fake_translate_stream(settings, file):  # noqa: ANN202
@@ -486,6 +486,13 @@ def test_translate_context_uses_injected_settings_not_module_globals(app_state, 
         model="deepseek-chat",
         lang_in="en",
         lang_out="zh",
+        upstream=config.build_upstream_runtime_config(
+            {
+                "model": {"provider": "deepseek", "model": "deepseek-chat", "api_key": "sk-test"},
+                "pdf_reader": {},
+                "translation": {"lang_in": "en", "lang_out": "zh"},
+            }
+        ),
     )
     monkeypatch.setattr(config, "MODEL_PROVIDER", "zhipu")
     monkeypatch.setattr(config, "MODEL", "zhipu-ai")
@@ -540,6 +547,18 @@ def test_register_routes_builds_settings_only_when_key_missing(monkeypatch):
         model="",
         lang_in="en",
         lang_out="zh",
+        upstream=config.build_upstream_runtime_config(
+            {
+                "model": {
+                    "provider": "openai_compatible",
+                    "model": "m",
+                    "api_key": "sk-test",
+                    "base_url": "https://example.com/v1",
+                },
+                "pdf_reader": {},
+                "translation": {"lang_in": "en", "lang_out": "zh"},
+            }
+        ),
     )
     calls: list[tuple[object, ...]] = []
 

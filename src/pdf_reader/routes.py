@@ -165,6 +165,7 @@ def translate_page(page: int):
     app_settings = _get_settings()
     glossary_paths = glossary_service.resolve_glossary_paths(snapshot.glossary_cache_path)
     settings_model = build_settings(
+        app_settings.upstream,
         "",
         user_prompt,
         glossary_paths=glossary_paths,
@@ -272,6 +273,7 @@ def translate_batch():
     app_settings = _get_settings()
     glossary_paths = glossary_service.resolve_glossary_paths(snapshot.glossary_cache_path)
     settings_model = build_settings(
+        app_settings.upstream,
         "",
         user_prompt,
         glossary_paths=glossary_paths,

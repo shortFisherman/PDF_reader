@@ -1,5 +1,24 @@
 # 更新日志
 
+## 未发布 — 配置能力扩展（第一批至第三批）
+
+- 新增 41 个支持键：`[model]` 的 `send_temperature`/`send_reasoning_effort` 发送开关；
+  `[translation]` 的 `min_text_length`/`qps`/`pool_max_workers`/`term_qps`/
+  `term_pool_max_workers`/`auto_extract_glossary`/`primary_font_family`/
+  `default_system_prompt`；`[pdf2zh]` 的 15 个 PDF 高级字段（短行、清理、富文本、
+  兼容性、表格、扫描/OCR、行号、公式偏移、阈值与正则），其中 `formula_*` 映射到
+  上游历史拼写 `formular_*`。
+- 启动严格校验：未知 section/key/provider 直接报错；`openai_compatible` 缺
+  `base_url` 启动失败；bool 不得冒充数值；数值必须有限（nan/inf 拒绝）；正则
+  启动期预编译；发送开关与取值/Provider 组合校验。API Key 与 Prompt 原文不进入
+  日志、异常或配置摘要。
+- 兼容性：旧配置不带新键时行为不变；发送开关默认关闭保持旧请求行为；配置变化只
+  影响之后执行的翻译或主动重译，PDF 哈希缓存、页面替换、累计术语与路由语义不变；
+  上游请求缓存仍固定 `ignore_cache=true`。
+- 文档与治理：`config.example.toml` 升级为完整配置手册；README 增加配置入口与
+  行为边界；`docs/architecture.md` 同步当前配置对象、严格校验与 SettingsModel
+  映射；依赖升级契约新增发送开关历史拼写、transform 与 PDFSettings 字段检查项。
+
 ## 2026-08-30 — P3 工程改进收口
 
 - 工程改进清单（`docs/engineering-improvement-plan-829.md`）P3-01 至 P3-07 全部收口：P3-01 `2d63a0a`；P3-02 `54dae14`+`8652530`；P3-03 `6f6e79a`；P3-04 `6cf2af2`；P3-05 `f5c567e`+`f1638a3`（验收补强 `1ca789d`）；P3-06 `5282484`+`60cd77f`；P3-07 `5981217`（许可证与上游契约闭环由 `6cf2af2`/`5282484`/`60cd77f` 提供）。各条目状态、完成日期、验证证据与剩余风险已逐项记录。

@@ -5,6 +5,10 @@ export default [
     {
         ignores: [
             'node_modules/**',
+            // Python 环境与构建产物目录：第三方/生成 JS 不属于本项目 lint 目标。
+            'venv/**',
+            '.venv/**',
+            'build/**',
             // 非本项目 JS 的目录/第三方捆绑与历史产物，不在 P2-03 目标内。
             '.agents/**',
             '.codex/**',

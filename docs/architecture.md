@@ -4,11 +4,12 @@
 
 ## 核验基线
 
-- 核验日期：2026-08-30；实现基线 commit：`1ca789d`（P3 实现树，文档收口提交为前置 HEAD）；本文件随 P3 工程改进收口更新基线，实现未改变。
+- 核验日期：2026-08-30。事实来源、锁定版本与测试/覆盖率基线见下。
 - 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml`、`tests/test_upstream_contract.py` 和测试收集结果。
 - 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2。
-- 测试基线：`pytest --collect-only -q` 收集到 597 个 Python 测试（2026-08-30，最终实现树 `1ca789d` 核验值，含上游契约、文档治理与全部 P0–P3 用例）；`package.json` 的 `test:frontend` 定义六个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller）。
-- 基线说明：任何新的架构核对都应以当前源码、锁定文件和测试命令为准；后续文档收口提交只更新文档、不改变实现，测试数量等易腐数字以本行基线为准。
+- 测试基线：`pytest --collect-only -q` 收集到 702 个 Python 测试（2026-08-30 核验值，含上游契约、文档治理、配置示例契约与全部 P0–P3 用例）；`package.json` 的 `test:frontend` 定义六个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller）。
+- 覆盖率基线：全局 line 93.9%、branch 86.2%（2026-08-30 核验值；策略与关键模块 floor 见“测试、CI 与验证入口”）。
+- 基线说明：测试数量与覆盖率是易腐数字，任何新的架构核对都应以当前源码、锁定文件、测试收集结果与 coverage 报告为准；本文数值只代表 2026-08-30 的核验结果。
 
 ## 系统总览
 
@@ -42,7 +43,7 @@
 
 - 契约测试入口：`tests/test_upstream_contract.py`（离线、确定性，全部使用 fake 上游流，不联网、不运行真实翻译、不需要 API Key）；升级 pdf2zh-next/BabelDOC 前必须运行（命令见 [依赖升级流程](governance/dependency-upgrade.md)）。
 - 固定版本：pdf2zh-next 2.9.0 与 babeldoc 0.6.2 同时受 `pyproject.toml`/`requirements.lock` 与安装元数据约束；babeldoc 是传递依赖，只由 `requirements.lock` 固定。
-- SettingsModel 消费面：`basic.debug=False`；`translation` 的 `lang_in`/`lang_out`/`ignore_cache=True`/`save_auto_extracted_glossary=True`/`output`（由 SSE 生成器赋值注入）/`glossaries`（逗号连接）/`custom_system_prompt`；`pdf` 的 `pages`/`no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`；`translate_engine_settings` 按 `ENGINE_REGISTRY` 的字段映射构造。
+- SettingsModel 消费面：`basic.debug=False`；`translation` 的 `lang_in`/`lang_out`/`min_text_length`/`qps`/`pool_max_workers`/`term_qps`/`term_pool_max_workers`/`no_auto_extract_glossary`（由 `auto_extract_glossary` 反转）/`ignore_cache=True`/`save_auto_extracted_glossary`/`primary_font_family`/`output`（由 SSE 生成器赋值注入）/`glossaries`（逗号连接）/`custom_system_prompt`（页面 Prompt > `default_system_prompt` > 上游默认）；`pdf` 的 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，以及 `[pdf2zh]` 已开放的 15 个字段（含项目正确拼写 `formula_*` → 上游历史拼写 `formular_*`）；`translate_engine_settings` 按 `ENGINE_REGISTRY` 的字段映射构造，发送开关按 Provider 映射（OpenAI 使用历史拼写 `openai_send_temprature`，Aliyun/Compatible 使用各自字段）。
 - 事件适配边界：本项目只承诺 `progress_start`、`progress_update`、`finish`、`error` 四种上游事件的映射；`progress_end` 等未承诺事件与未知事件被忽略（`format_sse_event` 返回 `None`），worker 空闲心跳（空串）原样透传为 SSE 空行。
 - 输出路径边界：`settings.translation.output` 在生成器中注入为任务工作区 `output/` 目录；`finish` 结果的 `mono_pdf_path` 优先、缺失时回退 `dual_pdf_path`，`auto_extracted_glossary_path` 直接交给术语合并。
 - 取消/流式边界：`do_translate_async_stream(settings, file)` 按两个位置参数调用；`TranslationStream` 的协作式取消、迟到事件丢弃（`late_result_dropped`）、`join(timeout)` 与 `is_alive` 所有权接口是升级契约的一部分。
@@ -57,7 +58,7 @@
 | `LICENSE` | 本项目许可证：标准完整 GNU AGPL v3 官方文本（AGPL-3.0-only），与 `pyproject.toml`/`package.json`/`package-lock.json` 声明一致 |
 | `docs/governance/license.md` | 本项目与固定上游依赖（pdf2zh-next/BabelDOC）的许可证核验基线、四种使用/分发场景与发布前核验清单（非法律意见） |
 | `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python -m pdf_reader` |
-| `src/pdf_reader/config.py` | 读取 `config.toml`、定义 `EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
+| `src/pdf_reader/config.py` | 读取 `config.toml`、定义冻结运行时配置（`ModelRuntimeConfig`/`TranslationRuntimeConfig`/`Pdf2zhRuntimeConfig`/`UpstreamRuntimeConfig`）、严格/宽松解析、`EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
 | `src/pdf_reader/paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
 | `src/pdf_reader/task_logging.py` | 集中任务日志上下文：不可变 `TaskContext`、`contextvars` 传播、统一前缀/截断/1-based 页码、生命周期状态、`SafeFormatter` 脱敏 |
 | `src/pdf_reader/routes.py` | Blueprint：9 个 HTTP/SSE 端点；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器与 409 `translation_busy` |
@@ -66,8 +67,8 @@
 | `src/pdf_reader/file_hash.py` | `sha256()` 流式文件哈希 |
 | `src/pdf_reader/pdf_renderer.py` | `render_page()` 在锁内渲染页面为 PNG |
 | `src/pdf_reader/pdf_extraction.py` | `extract_single_page()` / `extract_pages()` 在锁内抽取临时输入 PDF |
-| `src/pdf_reader/engine_resolver.py` | `resolve_engine()`（未知 Provider 回退 openai_compatible）与 `build_engine_kwargs()` |
-| `src/pdf_reader/translation_settings.py` | `build_settings()` 组装 pdf2zh-next `SettingsModel` |
+| `src/pdf_reader/engine_resolver.py` | `resolve_engine()`（未知 Provider 抛 `ConfigError`）与 `build_engine_kwargs(spec, model_cfg)`（显式接收 `ModelRuntimeConfig`） |
+| `src/pdf_reader/translation_settings.py` | `build_settings(upstream, ...)` 显式接收 `UpstreamRuntimeConfig` 组装 pdf2zh-next `SettingsModel` |
 | `src/pdf_reader/translation_orchestrator.py` | `TranslationStream`：daemon worker 线程 + asyncio 循环 + 事件队列 + 协作式取消；`run_translation()` 工厂 |
 | `src/pdf_reader/translation_coordinator.py` | 单槽 `TranslationCoordinator`：线程安全的 active job、任务身份、409 互斥与 finish/fail/cancel 幂等释放 |
 | `src/pdf_reader/sse_stream.py` | SSE 格式化、`generate()` / `generate_batch()`、`STAGE_LABELS`、worker 退出确认后的任务工作区清理 |
@@ -82,7 +83,7 @@
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
 | `tests/test_upstream_contract.py` | P3-06 上游最小契约：固定版本、SettingsModel 消费字段/引擎字段映射、事件映射与未知事件忽略、输出路径与 mono→dual/glossary、协作式取消与 join/is_alive 所有权（离线确定性 fake） |
 | `tests/test_documentation_governance.py` | P3-06 文档治理：常青文档职责边界、链接可解析、上游契约命令一致、易腐数字基线 |
-| `tests/` | 36 个 pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证、P3-05 缓存与关闭、P3-06 上游契约/文档治理、P3-07 密钥扫描与仓库治理用例）与前端 `.mjs` 测试运行器 |
+| `tests/` | 37 个 pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证、P3-05 缓存与关闭、P3-06 上游契约/文档治理、P3-07 密钥扫描与仓库治理、配置示例契约用例）与前端 `.mjs` 测试运行器 |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `scripts/secret_scan.py` | 高可信密钥扫描：只扫 Git 跟踪内容，占位示例放行，不输出 secret 值 |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
@@ -106,8 +107,8 @@
 
 1. `python -m pdf_reader` 进入 `app.main(argv=None)`：模块导入不解析 CLI、不修改 `config.DEBUG`；CLI 解析只发生在该启动边界内，`__main__.py` 的 `main()` 调用受 `if __name__ == "__main__"` 守卫保护，`import pdf_reader.__main__` 同样无副作用。`--debug` 与 `--no-debug` 互斥。
 2. `config.resolve_server_config(cli_debug=...)` 按优先级 CLI `--debug`/`--no-debug` > 环境变量 `PDF_READER_DEBUG` > `[server].debug` > 默认 `false` 解析一次，返回 frozen `ServerConfig(host, port, debug)`；`use_reloader` 派生为与 `debug` 相同的值（debug 开 → Flask debugger+reloader 开，关 → 两者显式关闭）。
-3. `main` 调用 `config.validate_startup_requirements()` 统一校验 `[model]`/`[pdf_reader]`/`[translation]` 的 table 与核心字段类型；缺少 `model.model`、API Key 或 API Key 为示例值时抛 `ConfigError`，main 打印 `ERROR:` 并以退出码 2 结束，不启动服务器。
-4. `main` 用步骤 2 的同一 `ServerConfig` 调用 `config.build_app_settings(cli_debug=..., run_cfg=run_cfg)`：复用已解析结果，不再二次调用 `resolve_server_config`，`settings.debug` 与 `run_cfg.debug` 恒一致。
+3. `main` 调用 `config.validate_startup_requirements()` 统一严格校验 `[model]`/`[pdf_reader]`/`[translation]`/`[pdf2zh]`：未知 section/key/provider、类型/范围/组合/正则错误、`openai_compatible` 缺 `base_url` 均抛 `ConfigError`；缺少 `model.model`、API Key 或 API Key 为示例值时同样失败。main 打印 `ERROR:` 并以退出码 2 结束，不启动服务器。该函数返回严格解析出的同一个 `UpstreamRuntimeConfig`。
+4. `main` 用步骤 2 的同一 `ServerConfig` 与步骤 3 的同一 `UpstreamRuntimeConfig` 调用 `config.build_app_settings(cli_debug=..., run_cfg=run_cfg, upstream=upstream)`：复用已解析结果，不再二次调用 `resolve_server_config` 或宽松重解析上游配置；`settings.debug` 与 `run_cfg.debug` 恒一致，`settings.upstream` 与严格实例恒为同一对象。
 5. `create_app(settings)` 使用 `settings.debug` 调用 `logging_config.setup_logging(...)`，输出启动摘要（provider/model/lang/cache_dir/dpi/debug，不含 api_key）；创建 `Flask(__name__)` 并显式传入 `template_folder=PROJECT_ROOT/templates`、`static_folder=PROJECT_ROOT/static`（由 `src/pdf_reader/paths.py` 解析），装配全局 `AppState(settings.cache_dir)` 与 `TranslationCoordinator()`，导入并注册 `pdf_reader.routes.register_routes`。`register_routes` 只消费已注入的 `app.config["app_settings"]`；仅当该 key 缺失（绕过 `create_app` 直接注册 blueprint 的兼容边界）时才惰性调用 `config.build_app_settings()`。
 6. `main` 在 `create_app`（日志已就绪）之后调用 `cache_ops.recover_orphan_temp_workspaces(settings.cache_dir)`：清理上次崩溃/超时退出遗留的、可验证归属（固定前缀 + 有效标记 + 非链接 + PID 已不存活）的翻译任务根工作区（含 `input/` 与 `output/`）；未知/无标记/损坏标记/链接路径/PID 仍存活的目录一律保守保留。清理数量与保留分类写入 INFO/WARNING 日志。
 7. `app.run(host=..., port=..., debug=..., use_reloader=...)` 显式传入全部四个参数，默认 `debug=False, use_reloader=False`；`app.run()` 返回或异常退出时先调用 `coordinator.shutdown(timeout=10.0)` 做有界关闭：请求协作式取消并等待 worker 与 active job，按 `no_active_job`（INFO）/ `completed`（INFO）/ `timeout`（WARNING，任务与工作区保留供下次启动恢复）记录日志，worker 未确认退出时追加 WARNING；随后 `app_state.close()` 幂等关闭并释放左右 PyMuPDF 句柄、清空状态（即使 `shutdown` 抛异常也会执行）。
@@ -120,13 +121,14 @@
 - 导入安全：`_section`/`_string` 安全提取，非 table section 与非字符串字段在导入期使用安全默认值（不会因 `AttributeError`/`TypeError` 崩溃）；原始 `CONFIG` 保留供启动校验。
 - 环境变量覆盖：`MODEL_API_KEY`（优先级高于 `model.api_key`）；`PDF_READER_DEBUG` 是 debug 优先级中间层，只接受 `true/false/1/0/on/off/yes/no`（不区分大小写、忽略首尾空白），非法值启动时报错（即使 CLI 显式覆盖也会 fail-fast）。
 - `[server]` 严格校验：必须是 table；`host` 非空字符串；`port` 是 1–65535 的 int（布尔值不算）；`debug` 必须为真布尔值。旧的 `[debug].enabled` 键已停止使用。
-- 默认值：provider=`openai_compatible`、dpi=200、cache_dir=`cache`、lang_in=`en`、lang_out=`zh`。相对 `cache_dir` 以 `DATA_ROOT`（默认等于 `PROJECT_ROOT`）为基准解析并 `resolve()`；绝对 `cache_dir` 保持绝对，不被重写。`DATA_ROOT` 可用环境变量 `PDF_READER_DATA_ROOT` 覆盖。
-- 统一校验 `validate_startup_requirements()`（`app.main` 启动前调用）：`[model]`、`[pdf_reader]`、`[translation]` 存在则必须为 table；`model.provider`/`model.model`/`model.api_key`/`model.base_url`（若有）必须是非空字符串（int/bool/list 拒绝，不泄漏密钥）；`pdf_reader.dpi` 必须为正整数（bool 不算）、`cache_dir` 必须为非空字符串；`translation.lang_in/lang_out` 必须为非空字符串。
-- `MODEL_API_KEY` 环境值合法（非空且非示例占位值）时覆盖文件中无效的 `api_key`，但 `[model]` 段本身仍必须是 table；`engine_resolver.resolve_engine()` 入口仍保留同样的延迟必填校验。
+- 冻结运行时配置：`build_upstream_runtime_config()` 把解析结果冻结为 `ModelRuntimeConfig`（`api_key` 为 `repr=False`）/`TranslationRuntimeConfig`/`Pdf2zhRuntimeConfig`/`UpstreamRuntimeConfig`；`AppSettings.upstream` 持有该对象，`model_provider`/`model`/`lang_in`/`lang_out` 从它派生，不再从 raw section 单独取值。
+- 默认值：provider=`openai_compatible`、model=`""`、dpi=200、cache_dir=`cache`、lang_in=`en`、lang_out=`zh`、`min_text_length=5`、`qps=4`、worker 相关为 `None`（上游跟随）、`auto_extract_glossary=True`、`primary_font_family=None`（auto）、PDF 高级字段采用上游 2.9.0 默认（`translate_table_text=True`、其余 false/0.8/0.9）。相对 `cache_dir` 以 `DATA_ROOT`（默认等于 `PROJECT_ROOT`）为基准解析并 `resolve()`；绝对 `cache_dir` 保持绝对，不被重写。`DATA_ROOT` 可用环境变量 `PDF_READER_DATA_ROOT` 覆盖。
+- 统一严格校验 `validate_startup_requirements()`（`app.main` 启动前调用，返回严格 `UpstreamRuntimeConfig`）：`[model]`/`[pdf_reader]`/`[translation]`/`[pdf2zh]` 存在则必须为 table；未知 section/key 与未知 provider 直接报错；`openai_compatible` 缺 `base_url` 启动失败；bool 不得冒充 int/float；数值必须有限（nan/inf/-inf 拒绝）；`temperature` 只要求可解析且有限，`timeout` 要求有限正数；`reasoning_effort` 按 Provider 枚举校验；正则字段启动期预编译；API Key 只出现在 `ModelRuntimeConfig.api_key`（`repr=False`），错误与日志不泄漏 Key/Prompt 原文。
+- `MODEL_API_KEY` 环境值合法（非空且非示例占位值）时覆盖文件中无效的 `api_key`，但 `[model]` 段本身仍必须是 table。`build_app_settings()` 未传入 `upstream` 时用宽松解析装配（无 config.toml 的测试/兼容 fallback）；`main` 必须传回严格实例，禁止宽松重解析。
 - `GLOSSARY_PATH = PROJECT_ROOT/docs/glossary.csv`（由 `src/pdf_reader/paths.py` 派生），必须保持该路径；模块位于 `src/pdf_reader/` 时不因 `__file__` 变化而改变。
 - `ENGINE_REGISTRY` 用声明式 `EngineSpec` 注册 10 个 Provider，顺序为：`deepseek`、`zhipu`、`siliconflow`、`aliyun`、`gemini`、`groq`、`grok`、`modelscope`、`openai`、`openai_compatible`。
-- 未知 Provider 在通过必填校验后回退到 `openai_compatible`。
-- `translation_settings.build_settings()`：设置 `lang_in`/`lang_out`，`ignore_cache=True`，`save_auto_extracted_glossary=True`；有自定义提示词时写入 `custom_system_prompt`；把非空的 `docs/glossary.csv` 与累积术语路径拼为 `glossaries`；`output` 由生成器设置；PDF 参数为 `pages`、`no_dual=True`、`only_include_translated_page=True`、`watermark_output_mode="no_watermark"`。
+- `resolve_engine()` 对未知 Provider 抛 `ConfigError`（不再回退 `openai_compatible`）；`build_engine_kwargs(spec, model_cfg)` 显式接收 `ModelRuntimeConfig`，按 `ENGINE_REGISTRY.field_map` 映射（含发送开关：OpenAI → 历史拼写 `openai_send_temprature`，Compatible/Aliyun → 各自 `send_temperature`；发送开关为 `False` 时省略以保持旧请求行为，`enable_json_mode=False` 等普通字段仍显式透传）。
+- `translation_settings.build_settings(upstream, input_pdf, ...)`：设置 `lang_in`/`lang_out`/`min_text_length`/`qps`/worker 与 term 字段/`no_auto_extract_glossary`+`save_auto_extracted_glossary`（由 `auto_extract_glossary` 映射）/`primary_font_family`；Prompt 优先级为页面非空 Prompt > `default_system_prompt` > 上游默认；`ignore_cache=True`；把非空的 `docs/glossary.csv` 与累积术语路径拼为 `glossaries`；`output` 由生成器设置；PDF 参数为 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，并把 `[pdf2zh]` 的 15 个字段显式传入（`formula_*` → 上游 `formular_*`）。
 
 ## 打开 PDF 与页面渲染
 
@@ -168,6 +170,8 @@
 | `PROJECT_ROOT/docs/glossary.csv` | 仓库级手动术语表，由 `src/pdf_reader/paths.py` 解析，非空时参与每次翻译 |
 
 `DATA_ROOT` 默认等于 `PROJECT_ROOT`（仓库根），因此正常本地运行的数据位置与既有约定一致：`cache/`、`logs/` 仍在仓库根下；`PDF_READER_DATA_ROOT` 只用于测试隔离或未来显式分离运行数据。
+
+配置扩展不改变缓存身份与复用语义：文档缓存仍只按原 PDF 哈希保存（`right.pdf`、`cumulative_glossary.csv`、`reading_progress.json`），不产生配置指纹、缓存分支或自动失效；修改模型、Prompt、字体或 PDF 高级参数只影响之后执行的翻译或主动重译，已有 `right.pdf` 页面继续复用，累计术语表跨配置复用；上游请求缓存仍固定 `TranslationSettings.ignore_cache=True`。
 
 `AppState` 另维护当前 `_document_id`、`_translated_pages`（`translated_pages` 冻结集合）与左右 PyMuPDF 文档对象；`open_pdf` 会使旧身份失效并清空旧文档与翻译页集合。SSE 断开后任务先被协作式取消；迟到任务若仍自然结束，其结果被丢弃（不进入写回），抽取、PDF 提交与术语提交的写回边界仍受身份校验约束。
 
@@ -239,7 +243,7 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
 
-覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-08-30，最终实现树 `1ca789d`，`scripts/verify.ps1 -PythonExecutable "C:\Program Files\Python312\python.exe"` 输出）：全局 line 94.8%、branch 88.3%，五个关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
+覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-08-30 核验值）：全局 line 93.9%、branch 86.2%，五个关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
 
 测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
 

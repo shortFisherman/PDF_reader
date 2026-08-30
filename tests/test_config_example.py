@@ -1,0 +1,99 @@
+"""P4-01 配置示例与文档契约。
+
+锁定 config.example.toml 与当前代码支持面一致：可解析、活跃键在白名单内、
+全部 41 个支持键都有文档赋值行、无真实密钥；README 链接有效；roadmap 未被本次修改。
+"""
+
+import re
+import subprocess
+import tomllib
+from pathlib import Path
+
+from pdf_reader import config
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+EXAMPLE = REPO_ROOT / "config.example.toml"
+README = REPO_ROOT / "README.md"
+ROADMAP = REPO_ROOT / "docs" / "roadmap.md"
+
+_SECTION_HEADER = re.compile(r"^\[([a-zA-Z0-9_]+)\]\s*$")
+_COMMENT_ASSIGNMENT = re.compile(r"^\s*#\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
+_SECRET_LIKE = re.compile(r"sk-[A-Za-z0-9]{16,}")
+
+
+def test_supported_key_count_is_41():
+    supported = config._KNOWN_SECTION_KEYS
+    assert sum(len(keys) for keys in supported.values()) == 41
+    assert len(supported["pdf_reader"]) == 2
+    assert len(supported["model"]) == 11
+    assert len(supported["translation"]) == 10
+    assert len(supported["server"]) == 3
+    assert len(supported["pdf2zh"]) == 15
+
+
+def test_example_is_toml_parseable():
+    with open(EXAMPLE, "rb") as fh:
+        data = tomllib.load(fh)
+    assert isinstance(data, dict)
+
+
+def test_active_keys_are_in_code_whitelist():
+    with open(EXAMPLE, "rb") as fh:
+        data = tomllib.load(fh)
+    whitelist = config._KNOWN_SECTION_KEYS
+    for section, keys in data.items():
+        assert section in whitelist, f"未知 section [{section}] 出现在示例中"
+        for key in keys:
+            assert key in whitelist[section], f"[{section}].{key} 不在代码白名单中"
+
+
+def test_all_supported_keys_have_example_assignments_in_their_section():
+    """每个支持键必须在对应 section 有活跃或注释形式的赋值行（允许 recipes 重复）。"""
+    with open(EXAMPLE, "rb") as fh:
+        data = tomllib.load(fh)
+    supported = config._KNOWN_SECTION_KEYS
+    section_keys = {section: set(data.get(section, {})) for section in supported}
+    current: str | None = None
+    for line in EXAMPLE.read_text(encoding="utf-8").splitlines():
+        header = _SECTION_HEADER.match(line)
+        if header:
+            current = header.group(1)
+            continue
+        assignment = _COMMENT_ASSIGNMENT.match(line)
+        if assignment and current in section_keys:
+            section_keys[current].add(assignment.group(1))
+
+    for section, keys in supported.items():
+        missing = sorted(keys - section_keys[section])
+        assert not missing, f"[{section}] 缺少示例赋值行: {missing}"
+
+
+def test_example_contains_no_real_api_key():
+    text = EXAMPLE.read_text(encoding="utf-8")
+    for line in text.splitlines():
+        assert not _SECRET_LIKE.search(line), f"疑似真实 API Key: {line.strip()}"
+
+
+def test_readme_links_to_example_and_design_doc():
+    text = README.read_text(encoding="utf-8")
+    assert "config.example.toml" in text
+    assert "docs/pdf2zh-configuration-expansion-design.md" in text
+    broken = []
+    for target in re.findall(r"\]\(([^)]+)\)", text):
+        if target.startswith(("http://", "https://", "#", "mailto:")):
+            continue
+        path_part = target.split("#", 1)[0]
+        if not (README.parent / path_part).resolve().exists():
+            broken.append(target)
+    assert not broken, f"README 链接无法解析: {broken}"
+
+
+def test_roadmap_unchanged_by_this_change():
+    result = subprocess.run(
+        ["git", "diff", "--exit-code", "--", str(ROADMAP.relative_to(REPO_ROOT))],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, "docs/roadmap.md 不得在本变更中被修改"

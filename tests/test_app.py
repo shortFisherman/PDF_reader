@@ -33,6 +33,7 @@ def _settings(debug: bool = False) -> config.AppSettings:
         model="deepseek-chat",
         lang_in="en",
         lang_out="zh",
+        upstream=config.build_upstream_runtime_config(_valid_config()),
     )
 
 
@@ -136,6 +137,42 @@ class TestMainDebugPriority:
         assert len(resolved) == 1
         assert mock_app.settings.debug is True
         assert mock_app.settings.debug == resolved[0].debug
+
+    def test_main_reuses_strict_upstream_instance(self, monkeypatch, main_entry):
+        """main 必须把 validate_startup_requirements 的严格实例原样传给 build_app_settings。"""
+        sentinel = config.build_upstream_runtime_config(_valid_config())
+        captured: dict = {}
+
+        def fake_build_app_settings(
+            config_data=None,
+            *,
+            cli_debug=None,
+            run_cfg=None,
+            upstream=None,
+        ) -> config.AppSettings:
+            captured["upstream"] = upstream
+            return config.AppSettings(
+                debug=False,
+                cache_dir=Path("cache"),
+                dpi=200,
+                glossary_path=Path("docs/glossary.csv"),
+                model_provider=upstream.model.provider,
+                model=upstream.model.model,
+                lang_in=upstream.translation.lang_in,
+                lang_out=upstream.translation.lang_out,
+                upstream=upstream,
+            )
+
+        monkeypatch.setattr(config, "build_app_settings", fake_build_app_settings)
+        monkeypatch.setattr(config, "validate_startup_requirements", lambda: sentinel)
+        monkeypatch.setattr(config, "CONFIG", _valid_config())
+        monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
+        mock_app, run = main_entry
+
+        assert run([]) == 0
+
+        assert captured["upstream"] is sentinel
+        assert mock_app.settings.upstream is sentinel
 
 
 class TestMainErrorPaths:
@@ -395,6 +432,7 @@ class TestCreateAppInjectedSettings:
             model="deepseek-chat",
             lang_in="en",
             lang_out="zh",
+            upstream=config.build_upstream_runtime_config(_valid_config()),
         )
         monkeypatch.setattr(config, "DPI", 300)
         with patch("pdf_reader.app.logging_config.setup_logging"):

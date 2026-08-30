@@ -148,7 +148,7 @@ class TestStartupValidationSections:
     @staticmethod
     def _base() -> dict:
         return {
-            "model": {"model": "deepseek-chat", "api_key": "sk-test"},
+            "model": {"provider": "deepseek", "model": "deepseek-chat", "api_key": "sk-test"},
             "pdf_reader": {"dpi": 200, "cache_dir": "cache"},
             "translation": {"lang_in": "en", "lang_out": "zh"},
         }
@@ -214,7 +214,11 @@ class TestStartupValidationSections:
 
 class TestEnvApiKeyOverride:
     def _base(self) -> dict:
-        return {"model": {"model": "deepseek-chat", "api_key": "sk-file"}, "pdf_reader": {}, "translation": {}}
+        return {
+            "model": {"provider": "deepseek", "model": "deepseek-chat", "api_key": "sk-file"},
+            "pdf_reader": {},
+            "translation": {},
+        }
 
     def test_env_valid_overrides_invalid_file_api_key_type(self, monkeypatch):
         monkeypatch.setenv("MODEL_API_KEY", "sk-env-key")
@@ -251,7 +255,7 @@ class TestBuildAppSettingsSingleParse:
         snapshot = {
             "pdf_reader": {"dpi": 150, "cache_dir": "cache"},
             "translation": {"lang_in": "ja", "lang_out": "ko"},
-            "model": {"provider": "zhipu", "model": "zhipu-ai"},
+            "model": {"provider": "zhipu", "model": "zhipu-ai", "api_key": "sk-test"},
         }
         with patch.object(config, "resolve_server_config", wraps=config.resolve_server_config) as spy:
             settings = config.build_app_settings(snapshot, cli_debug=False, run_cfg=run_cfg)
@@ -266,7 +270,12 @@ class TestBuildAppSettingsSingleParse:
 
     def test_build_app_settings_resolves_when_no_run_cfg(self, monkeypatch):
         monkeypatch.delenv("PDF_READER_DEBUG", raising=False)
-        snapshot = {"server": {"debug": True}, "pdf_reader": {}, "translation": {}, "model": {}}
+        snapshot = {
+            "server": {"debug": True},
+            "pdf_reader": {},
+            "translation": {},
+            "model": {"provider": "deepseek", "model": "deepseek-chat", "api_key": "sk-test"},
+        }
 
         settings = config.build_app_settings(snapshot)
 

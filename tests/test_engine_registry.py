@@ -21,33 +21,22 @@ ALL_PROVIDERS = [
 ]
 
 
-def test_resolve_engine_rejects_missing_model(monkeypatch):
-    monkeypatch.setattr(config, "MODEL", "")
-    try:
-        resolve_engine("deepseek")
-        assert False, "Expected ValueError for missing MODEL"
-    except ValueError as e:
-        assert "model" in str(e)
-
-
-def test_resolve_engine_rejects_missing_api_key(monkeypatch):
-    monkeypatch.setattr(config, "MODEL", "test-model")
-    monkeypatch.setattr(config, "MODEL_API_KEY", "")
-    try:
-        resolve_engine("deepseek")
-        assert False, "Expected ValueError for missing API key"
-    except ValueError as e:
-        assert "api_key" in str(e)
-
-
-def test_resolve_engine_rejects_default_api_key(monkeypatch):
-    monkeypatch.setattr(config, "MODEL", "test-model")
-    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-your-api-key-placeholder")
-    try:
-        resolve_engine("deepseek")
-        assert False, "Expected ValueError for default API key"
-    except ValueError as e:
-        assert "api_key" in str(e)
+def _model_cfg(**overrides: object) -> config.ModelRuntimeConfig:
+    values: dict = {
+        "provider": "deepseek",
+        "api_key": "sk-test-key",
+        "model": "test-model",
+        "base_url": None,
+        "thinking_mode": None,
+        "reasoning_effort": None,
+        "send_reasoning_effort": False,
+        "enable_json_mode": None,
+        "temperature": None,
+        "send_temperature": False,
+        "timeout": None,
+    }
+    values.update(overrides)
+    return config.ModelRuntimeConfig(**values)
 
 
 def test_all_providers_resolve_to_correct_class(mock_config):
@@ -59,37 +48,33 @@ def test_all_providers_resolve_to_correct_class(mock_config):
         )
 
 
-def test_unknown_provider_falls_back_to_openai_compatible(mock_config):
-    spec = resolve_engine("nonexistent_provider_xyz")
-    from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
-
-    assert spec.settings_cls is OpenAICompatibleSettings
+def test_unknown_provider_raises(mock_config):
+    with pytest.raises(config.ConfigError, match="未知 Provider"):
+        resolve_engine("nonexistent_provider_xyz")
 
 
-def test_aliyun_enable_json_mode_is_mapped(monkeypatch):
+def test_aliyun_enable_json_mode_is_mapped():
     """aliyun field_map 必须映射 enable_json_mode，且值能透传到 engine_kwargs。"""
-    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
-    monkeypatch.setattr(config, "MODEL", "qwen-plus-latest")
-    monkeypatch.setattr(config, "MODEL_ENABLE_JSON_MODE", True)
     spec = resolve_engine("aliyun")
     assert "enable_json_mode" in spec.field_map, "aliyun field_map 漏映射 enable_json_mode"
-    kwargs = build_engine_kwargs(spec)
+    model_cfg = _model_cfg(provider="aliyun", model="qwen-plus-latest", enable_json_mode=True)
+    kwargs = build_engine_kwargs(spec, model_cfg)
     assert kwargs.get("aliyun_dashscope_enable_json_mode") is True
 
 
-def test_all_engines_build_kwargs_structure(monkeypatch):
-    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-test-key")
-    monkeypatch.setattr(config, "MODEL", "test-model")
-    monkeypatch.setattr(config, "MODEL_BASE_URL", "https://test.api/v1")
-    monkeypatch.setattr(config, "MODEL_THINKING_MODE", "enabled")
-    monkeypatch.setattr(config, "MODEL_REASONING_EFFORT", "high")
-    monkeypatch.setattr(config, "MODEL_ENABLE_JSON_MODE", "true")
-    monkeypatch.setattr(config, "MODEL_TEMPERATURE", "0.3")
-    monkeypatch.setattr(config, "MODEL_TIMEOUT", "60")
+def test_all_engines_build_kwargs_structure():
+    model_cfg = _model_cfg(
+        base_url="https://test.api/v1",
+        thinking_mode="enabled",
+        reasoning_effort="high",
+        enable_json_mode=True,
+        temperature="0.3",
+        timeout="60",
+    )
 
     for provider in ALL_PROVIDERS:
         spec = resolve_engine(provider)
-        kwargs = build_engine_kwargs(spec)
+        kwargs = build_engine_kwargs(spec, model_cfg)
         assert isinstance(kwargs, dict), f"build_engine_kwargs({spec.settings_cls.__name__}) returned {type(kwargs)}"
         engine_name = spec.settings_cls.__name__
         api_field = spec.field_map.get("api_key", "")
@@ -215,13 +200,21 @@ def test_new_path_matches_old_path(monkeypatch):
     monkeypatch.setattr(config, "MODEL_BASE_URL", "https://test.api/v1")
     monkeypatch.setattr(config, "MODEL_THINKING_MODE", "enabled")
     monkeypatch.setattr(config, "MODEL_REASONING_EFFORT", "high")
-    monkeypatch.setattr(config, "MODEL_ENABLE_JSON_MODE", "true")
+    monkeypatch.setattr(config, "MODEL_ENABLE_JSON_MODE", True)
     monkeypatch.setattr(config, "MODEL_TEMPERATURE", "0.3")
     monkeypatch.setattr(config, "MODEL_TIMEOUT", "60")
+    model_cfg = _model_cfg(
+        base_url="https://test.api/v1",
+        thinking_mode="enabled",
+        reasoning_effort="high",
+        enable_json_mode=True,
+        temperature="0.3",
+        timeout="60",
+    )
 
     for provider, spec in config.PROVIDER_INDEX.items():
         old_kwargs = _old_build_engine_kwargs(spec.settings_cls)
-        new_kwargs = build_engine_kwargs(spec)
+        new_kwargs = build_engine_kwargs(spec, model_cfg)
         assert old_kwargs == new_kwargs, f"{provider}: old={old_kwargs} != new={new_kwargs}"
 
 
@@ -243,10 +236,8 @@ def test_fake_engine_extensibility(monkeypatch):
         required_fields=("api_key", "model"),
     )
 
-    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-fake-key")
-    monkeypatch.setattr(config, "MODEL", "fake-model-v1")
-
-    kwargs = build_engine_kwargs(fake_spec)
+    model_cfg = _model_cfg(provider="fake", api_key="sk-fake-key", model="fake-model-v1")
+    kwargs = build_engine_kwargs(fake_spec, model_cfg)
 
     assert kwargs == {
         "fake_api_key": "sk-fake-key",
@@ -277,11 +268,13 @@ def test_fake_engine_optional_field_warns(monkeypatch, caplog):
         required_fields=("api_key", "model"),
     )
 
-    monkeypatch.setattr(config, "MODEL_API_KEY", "sk-minimal")
-    monkeypatch.setattr(config, "MODEL", "minimal-model")
-    monkeypatch.setattr(config, "MODEL_TEMPERATURE", "0.5")
-
-    kwargs = build_engine_kwargs(fake_spec)
+    model_cfg = _model_cfg(
+        provider="minimal",
+        api_key="sk-minimal",
+        model="minimal-model",
+        temperature="0.5",
+    )
+    kwargs = build_engine_kwargs(fake_spec, model_cfg)
 
     assert kwargs["minimal_key"] == "sk-minimal"
     assert kwargs["minimal_model"] == "minimal-model"
@@ -298,4 +291,80 @@ def test_build_engine_kwargs_missing_model_fields_fails_fast():
         required_fields=("model",),
     )
     with pytest.raises(AttributeError):
-        build_engine_kwargs(spec)
+        build_engine_kwargs(spec, _model_cfg(model="m"))
+
+
+def test_openai_send_temperature_maps_to_historical_temprature_field():
+    """OpenAI 上游 2.9.0 使用历史拼写 openai_send_temprature，契约测试必须锁死。"""
+    spec = resolve_engine("openai")
+    model_cfg = _model_cfg(
+        provider="openai",
+        temperature="0.7",
+        send_temperature=True,
+    )
+    kwargs = build_engine_kwargs(spec, model_cfg)
+    assert kwargs["openai_send_temprature"] is True
+    assert kwargs["openai_temperature"] == "0.7"
+
+
+def test_openai_send_reasoning_effort_mapped():
+    spec = resolve_engine("openai")
+    model_cfg = _model_cfg(
+        provider="openai",
+        reasoning_effort="high",
+        send_reasoning_effort=True,
+    )
+    kwargs = build_engine_kwargs(spec, model_cfg)
+    assert kwargs["openai_send_reasoning_effort"] is True
+    assert kwargs["openai_reasoning_effort"] == "high"
+
+
+def test_openai_compatible_send_switches_mapped():
+    spec = resolve_engine("openai_compatible")
+    model_cfg = _model_cfg(
+        provider="openai_compatible",
+        base_url="https://example.com/v1",
+        temperature="0.2",
+        send_temperature=True,
+        reasoning_effort="low",
+        send_reasoning_effort=True,
+    )
+    kwargs = build_engine_kwargs(spec, model_cfg)
+    assert kwargs["openai_compatible_send_temperature"] is True
+    assert kwargs["openai_compatible_send_reasoning_effort"] is True
+
+
+def test_aliyun_send_temperature_mapped():
+    spec = resolve_engine("aliyun")
+    model_cfg = _model_cfg(
+        provider="aliyun",
+        temperature="0.5",
+        send_temperature=True,
+    )
+    kwargs = build_engine_kwargs(spec, model_cfg)
+    assert kwargs["aliyun_dashscope_send_temperature"] is True
+
+
+def test_send_switches_false_are_omitted_to_preserve_old_behavior():
+    for provider in ("openai", "openai_compatible", "aliyun"):
+        spec = resolve_engine(provider)
+        model_cfg = _model_cfg(provider=provider)
+        kwargs = build_engine_kwargs(spec, model_cfg)
+        for engine_field in spec.field_map.values():
+            if "send_" in engine_field:
+                assert engine_field not in kwargs, f"{provider}: {engine_field} 不应写入"
+
+
+def test_enable_json_mode_false_is_passed_explicitly():
+    """普通布尔字段的 False 不能被发送开关的省略逻辑吞掉。"""
+    spec = resolve_engine("openai")
+    model_cfg = _model_cfg(provider="openai", enable_json_mode=False)
+    kwargs = build_engine_kwargs(spec, model_cfg)
+    assert kwargs["openai_enable_json_mode"] is False
+
+    deepseek_spec = resolve_engine("deepseek")
+    deepseek_kwargs = build_engine_kwargs(
+        deepseek_spec,
+        _model_cfg(provider="deepseek", enable_json_mode=False),
+    )
+    assert deepseek_kwargs["deepseek_enable_json_mode"] is False
