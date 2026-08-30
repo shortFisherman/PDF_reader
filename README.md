@@ -32,6 +32,7 @@ PDF 版面翻译由 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-
 - [pdf2zh-next 开发参考](docs/pdf2zh-next-development-guide.md)：涉及上游接口、事件和配置时按版本范围阅读。
 - [工具与工作流目录治理](docs/governance/tool-directories.md)：`.agents/`、`.codex/`、`.comet/`、`.opencode/`、`openspec/` 等目录的职责、跟踪与重建边界。
 - [依赖升级流程](docs/governance/dependency-upgrade.md)：Python/Node 支持范围与上游翻译依赖升级契约。
+- [长期文档治理](docs/governance/documentation.md)：三份长期文档的更新时机、上游升级步骤、易腐数字政策与事实冲突优先级。
 
 ## 环境要求
 
@@ -246,6 +247,12 @@ Node.js `>=22`（版本不满足时快速失败并给出提示）：显式 `-Pyt
 显式路径无效时快速失败、不回退。
 
 统一验证依次执行：密钥扫描（`scripts/secret_scan.py`，只扫描 Git 跟踪内容且不输出 secret 值）→ Ruff lint/format → coverage（`coverage run --branch -m pytest`，含全局与关键模块阈值策略）→ mypy（仅 `src/pdf_reader`）→ JS lint（`npm run lint:js`，ESLint flat config）→ 前端测试（`npm test`）。本地 coverage 数据写入临时目录并在结束后清理；CI 通过 `PDF_READER_COVERAGE_ARTIFACT_DIR=coverage-artifacts` 输出 coverage JSON/XML 并上传 artifact（该目录已加入 .gitignore）。
+
+升级 pdf2zh-next/BabelDOC 前，先运行上游契约测试（离线、确定性，不联网、不调用真实翻译、不需要 API Key）：
+
+```powershell
+python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py
+```
 
 安装后的关键 Python 依赖可用以下命令快速检查：
 

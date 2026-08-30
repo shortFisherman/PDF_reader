@@ -26,11 +26,23 @@
    - 运行完整 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1`。
 3. 升级 `pdf2zh-next` 或 BabelDOC 的强制前置条件：
    - 核对 `docs/pdf2zh-next-development-guide.md` 与 `docs/reports/` 的版本适用范围；
-   - 运行关键上游契约测试（`tests/test_upstream_contract.py`）：固定版本、`SettingsModel`
-     字段映射、事件类型、输出路径与取消/流式适配边界必须仍然通过；
+   - 运行关键上游契约测试：`python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`；
+   - 契约范围（`tests/test_upstream_contract.py` 必须全部通过）：
+     - 固定版本：`pdf2zh-next==2.9.0`、`babeldoc==0.6.2` 与 `pyproject.toml`/`requirements.lock`/安装元数据一致
+       （babeldoc 是传递依赖，只由锁文件固定）；
+     - `SettingsModel` 消费字段：`translation` 的 `lang_in`/`lang_out`/`ignore_cache`/`output`/`glossaries`/
+       `save_auto_extracted_glossary`/`custom_system_prompt`，`pdf` 的 `pages`/`no_dual`/
+       `only_include_translated_page`/`watermark_output_mode`，以及 `ENGINE_REGISTRY` 全部引擎字段映射；
+     - 事件适配：`progress_start`/`progress_update`/`finish`/`error` 映射不变，未承诺事件（如
+       `progress_end`）与未知事件保持忽略，心跳（空串）透传；
+     - 输出路径：`settings.translation.output` 注入任务工作区 `output/`，`mono_pdf_path`→`dual_pdf_path`
+       回退与 `auto_extracted_glossary_path` 适配不变；
+     - 取消/流式：`do_translate_async_stream(settings, file)` 调用方式、协作式取消、迟到事件丢弃与
+       `join`/`is_alive` 所有权接口不变。
    - 若契约变化，先更新适配代码与测试，再合并依赖升级，禁止“先升级再观察”。
 
 ## 升级记录
 
 每次依赖升级在提交消息与 `CHANGELOG.md` 中记录：新版本、锁文件命令、契约测试结果与完整
-验证基线。许可证影响见 `docs/governance/license.md`。
+验证基线。许可证影响见 `docs/governance/license.md`；易腐数字与长期文档更新时机见
+`docs/governance/documentation.md`。

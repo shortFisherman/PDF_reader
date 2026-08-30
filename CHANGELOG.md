@@ -1,5 +1,20 @@
 # 更新日志
 
+## 2026-08-30 — P3-06 上游契约与文档治理
+
+- 新增离线上游契约测试 `tests/test_upstream_contract.py`：固定 pdf2zh-next 2.9.0 / babeldoc 0.6.2
+  的版本一致性、`SettingsModel` 消费字段与 `ENGINE_REGISTRY` 字段映射、承诺事件映射与未知事件忽略/
+  心跳、`workspace/output` 注入与 mono→dual/glossary 路径、协作式取消/迟到丢弃/`join` 所有权；
+  全部使用确定性 fake，不联网、不运行真实翻译、不需要 API Key。
+- 新增文档治理测试 `tests/test_documentation_governance.py`：常青文档职责边界、链接可解析、
+  README/architecture/dependency-upgrade 上游契约命令一致、易腐数字基线。
+- 新增 `docs/governance/documentation.md`；同步更新 architecture/README/roadmap/
+  dependency-upgrade 的契约入口与职责边界；project.md 仅补充文档地图。
+- 不修改依赖版本、业务产品行为或工程清单状态；完整验证基线见本提交 verify 输出
+  （测试数量等易腐数字以本提交为核验基线，不再单独列举）。
+
+---
+
 ## 2026-08-27 — 长期文档系统
 
 - 建立四份常青文档：README 作为项目入口，`docs/project.md` 保存长期意图，`docs/architecture.md` 记录当前实现，`docs/roadmap.md` 保存非授权的未来方向与依赖。

@@ -4,11 +4,11 @@
 
 ## 核验基线
 
-- 核验日期：2026-08-30；代码基线 commit：`8652530`（P3-04 前置 HEAD）；本文件随 P3-04 更新，补充许可证与包元数据边界事实。
-- 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml` 和测试收集结果。
+- 核验日期：2026-08-30；代码基线 commit：`6cf2af2`（P3-06 前置 HEAD）；本文件随 P3-06 更新，补充上游最小契约与文档治理事实。
+- 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml`、`tests/test_upstream_contract.py` 和测试收集结果。
 - 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2。
-- 测试基线：`pytest --collect-only -q` 收集到 575 个 Python 测试（P3-04 核验值，含新增许可证契约用例）；`package.json` 的 `test:frontend` 定义六个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller）。
-- 基线说明：后续文档系统提交只修改文档，不改变实现；任何新的架构核对都应以当前源码、锁定文件和测试命令为准。
+- 测试基线：`pytest --collect-only -q` 收集到 594 个 Python 测试（P3-06 核验值，2026-08-30，代码基线 `6cf2af2` 工作区 + 本提交变更，含上游契约与文档治理用例）；`package.json` 的 `test:frontend` 定义六个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller）。
+- 基线说明：任何新的架构核对都应以当前源码、锁定文件和测试命令为准；测试数量等易腐数字以本行基线为准。
 
 ## 系统总览
 
@@ -37,6 +37,15 @@
 - `package.json` 无 `main` 字段，`type: "module"` 与浏览器 ES Modules 前端及 `.mjs` 测试运行器一致（P3-03 已删除无意义入口，P3-04 不再重做 ESM）。
 - 固定翻译依赖：`pdf2zh-next==2.9.0` 与 `babeldoc==0.6.2`（`requirements.lock`），两者官方元数据与发行物（PyPI、wheel、GitHub tag LICENSE）均标注 AGPL-3.0；核验日期、精确版本、直链与所见许可证标识记录在 [docs/governance/license.md](governance/license.md)。
 - 分发边界：本项目当前面向本地单用户运行；重新分发本项目、与上游组合分发或网络部署前，按实际组合方式单独核验 AGPL 义务（保留版权/许可证/源码提供义务等）。该记录不是法律意见。
+
+## 上游最小契约（P3-06）
+
+- 契约测试入口：`tests/test_upstream_contract.py`（离线、确定性，全部使用 fake 上游流，不联网、不运行真实翻译、不需要 API Key）；升级 pdf2zh-next/BabelDOC 前必须运行（命令见 [依赖升级流程](governance/dependency-upgrade.md)）。
+- 固定版本：pdf2zh-next 2.9.0 与 babeldoc 0.6.2 同时受 `pyproject.toml`/`requirements.lock` 与安装元数据约束；babeldoc 是传递依赖，只由 `requirements.lock` 固定。
+- SettingsModel 消费面：`basic.debug=False`；`translation` 的 `lang_in`/`lang_out`/`ignore_cache=True`/`save_auto_extracted_glossary=True`/`output`（由 SSE 生成器赋值注入）/`glossaries`（逗号连接）/`custom_system_prompt`；`pdf` 的 `pages`/`no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`；`translate_engine_settings` 按 `ENGINE_REGISTRY` 的字段映射构造。
+- 事件适配边界：本项目只承诺 `progress_start`、`progress_update`、`finish`、`error` 四种上游事件的映射；`progress_end` 等未承诺事件与未知事件被忽略（`format_sse_event` 返回 `None`），worker 空闲心跳（空串）原样透传为 SSE 空行。
+- 输出路径边界：`settings.translation.output` 在生成器中注入为任务工作区 `output/` 目录；`finish` 结果的 `mono_pdf_path` 优先、缺失时回退 `dual_pdf_path`，`auto_extracted_glossary_path` 直接交给术语合并。
+- 取消/流式边界：`do_translate_async_stream(settings, file)` 按两个位置参数调用；`TranslationStream` 的协作式取消、迟到事件丢弃（`late_result_dropped`）、`join(timeout)` 与 `is_alive` 所有权接口是升级契约的一部分。
 
 ## 仓库结构与文件职责
 
@@ -71,12 +80,15 @@
 | `static/app.js` | 前端入口与共享状态 |
 | `static/modules/` | dom、lazy-loader、scroll-sync、alignment-controller、zoom、sse-client、stages、translator、translation-ui-controller、reader-session |
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
-| `tests/` | 34 个 pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约与 P3-04 许可证用例）与前端 `.mjs` 测试运行器 |
+| `tests/test_upstream_contract.py` | P3-06 上游最小契约：固定版本、SettingsModel 消费字段/引擎字段映射、事件映射与未知事件忽略、输出路径与 mono→dual/glossary、协作式取消与 join/is_alive 所有权（离线确定性 fake） |
+| `tests/test_documentation_governance.py` | P3-06 文档治理：常青文档职责边界、链接可解析、上游契约命令一致、易腐数字基线 |
+| `tests/` | 36 个 pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证与 P3-06 上游契约/文档治理用例）与前端 `.mjs` 测试运行器 |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `scripts/secret_scan.py` | 高可信密钥扫描：只扫 Git 跟踪内容，占位示例放行，不输出 secret 值 |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
 | `.github/dependabot.yml` | pip/npm 月度依赖升级 PR |
-| `docs/governance/` | 工具目录治理、依赖升级流程与许可证核验基线（非法律意见） |
+| `docs/governance/documentation.md` | 三份长期文档的更新时机、上游升级步骤、易腐数字政策与事实冲突优先级 |
+| `docs/governance/` | 文档治理、工具目录治理、依赖升级流程与许可证核验基线（非法律意见） |
 | `docs/`、`docs/archive/`、`docs/reports/` | 常青文档、历史归档与上游研究资料 |
 
 ## 运行时进程、线程、队列与锁
@@ -227,9 +239,11 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
 
-覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（含 P2-03 测试）：全局 line 95.1%、branch 89.0%，五个关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
+覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（P3-06 核验值，2026-08-30，代码基线 `6cf2af2` 工作区 + 本提交变更，`scripts/verify.ps1` 输出）：全局 line 94.8%、branch 88.3%，五个关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
 
 测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
+
+上游契约与文档治理回归（P3-06）：`tests/test_upstream_contract.py` 用确定性 fake 验证固定版本、SettingsModel 消费字段与 ENGINE_REGISTRY 字段映射、承诺事件映射与未知事件忽略/心跳、workspace/output 注入与 mono/dual/glossary 路径、协作式取消/迟到丢弃/join 所有权，全部离线且不运行真实翻译；`tests/test_documentation_governance.py` 验证 architecture/project/roadmap 职责边界、常青文档链接可解析、README/architecture/dependency-upgrade 的契约命令一致与易腐数字基线。升级命令 `python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py` 与范围记录在 [依赖升级流程](governance/dependency-upgrade.md) 和 [长期文档治理](governance/documentation.md)。
 
 缓存生命周期回归（P3-05）：`tests/test_cache_ops.py` 覆盖任务工作区创建（前缀/标记/input/output）、创建中途失败与标记写入失败只清理本次新建目录、崩溃模拟（抽取与输出均在已标记根工作区内）的启动恢复且用户缓存不受影响、统计分类、dry-run/真删边界、未知/无标记/损坏/恶意标记、前缀同名文件与符号链接/junction 保守保留、存活 PID 保留、Windows PID 探测（当前进程 True、明确不存在 False、拒绝访问/未知/查询失败 True、句柄必关）与清理失败报告和 CLI（`stats`/`orphans`/`clean`）契约；`tests/test_sse_stream.py` 覆盖单页/批量共享同一根工作区边界（抽取 input/、输出 output/、标记存在、成功整体删除、join timeout 整体保留）；`tests/test_shutdown.py` 覆盖 coordinator `shutdown` 无任务/完成/超时/幂等/流异常容忍、`AppState.close` 幂等与 Windows 句柄释放、`main` 启动恢复与关闭日志、关闭期间单页/批量翻译被 409 拒绝。
 
@@ -237,7 +251,7 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 启动脚本安全回归：`tests/test_start_bat.py` 在 Windows 下把真实 `start.bat` 复制到 pytest 临时目录，用 fake `netstat.cmd`/`taskkill.cmd`/`python.cmd`/`activate.bat` 在 PATH 上执行真实脚本：断言源文件不含 `taskkill`/`tskill`/`Stop-Process`/`kill` 等终止命令；模拟 5000 被占用时脚本退出非零、不调用 python 也不调用 taskkill；无占用时激活 venv 并调用 `python -m pdf_reader`；`venv` 缺失时给出提示并非零退出。测试不绑定真实端口、不启动服务器、不杀任何进程。
 
-系统级回归：`tests/test_system_concurrency_failure.py` 的 16 个用例穿过真实 Flask route、真实 Response/SSE generator、`TranslationCoordinator`、真实 `TranslationStream` worker 线程、`AppState` 与磁盘缓存边界；仅 `translation_orchestrator.do_translate_async_stream` 使用确定性 fake（外部翻译引擎），故障注入只作用于 `tempfile.mkdtemp`、`cache_ops.write_temp_marker`、`pymupdf.Document.save` 与 `os.replace`。覆盖：翻译进行中打开 B 被 409 拒绝且 A 的结果只写回 A；两个 Flask 客户端只有一个任务被接受；SSE 断开后 worker 继续运行/最终失败/join timeout 三条所有权路径；工作区根创建/标记写入与 PDF 保存失败及重试；单页与批量提交失败后的 `right.pdf`/`translated_pages`/渲染恢复；PDF 提交与术语合并的部分提交语义；打开—翻译—渲染闭环的最终 PDF 字节/页内容、`document_id`、coordinator 与 worker 状态、工作区清理断言。
+系统级回归：`tests/test_system_concurrency_failure.py` 的用例穿过真实 Flask route、真实 Response/SSE generator、`TranslationCoordinator`、真实 `TranslationStream` worker 线程、`AppState` 与磁盘缓存边界；仅 `translation_orchestrator.do_translate_async_stream` 使用确定性 fake（外部翻译引擎），故障注入只作用于 `tempfile.mkdtemp`、`cache_ops.write_temp_marker`、`pymupdf.Document.save` 与 `os.replace`。覆盖：翻译进行中打开 B 被 409 拒绝且 A 的结果只写回 A；两个 Flask 客户端只有一个任务被接受；SSE 断开后 worker 继续运行/最终失败/join timeout 三条所有权路径；工作区根创建/标记写入与 PDF 保存失败及重试；单页与批量提交失败后的 `right.pdf`/`translated_pages`/渲染恢复；PDF 提交与术语合并的部分提交语义；打开—翻译—渲染闭环的最终 PDF 字节/页内容、`document_id`、coordinator 与 worker 状态、工作区清理断言。
 
 CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依赖（`pip install -r requirements.lock` + `pip install -e . --no-deps`），执行 `import flask, pymupdf, pdf2zh_next, pdf_reader` 冒烟检查，安装 Node 22 测试依赖（`npm ci`，Node 只承担前端测试且由 `package-lock.json` 锁定），再执行同一 `scripts/verify.ps1`。`tests/README.md` 说明正式测试与历史诊断脚本的区别。
 
@@ -257,6 +271,7 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
 ## 上游与历史参考
 
 - 项目长期意图：[project.md](project.md)；未来方向与开放问题：[roadmap.md](roadmap.md)。
+- 长期文档治理与事实冲突优先级：[governance/documentation.md](governance/documentation.md)；依赖升级流程：[governance/dependency-upgrade.md](governance/dependency-upgrade.md)。
 - 上游接口研究：[pdf2zh-next-development-guide.md](pdf2zh-next-development-guide.md) 与 `docs/reports/` 下两份报告，均按各自顶部标注的版本适用范围阅读。
 - 历史系统描述：`docs/archive/`、`docs/superpowers/`、`openspec/` 与 `CHANGELOG.md`，只用于追溯。
 
