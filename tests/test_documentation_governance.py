@@ -16,6 +16,7 @@ ARCHITECTURE = REPO_ROOT / "docs" / "architecture.md"
 PROJECT = REPO_ROOT / "docs" / "project.md"
 ROADMAP = REPO_ROOT / "docs" / "roadmap.md"
 DEP_UPGRADE = REPO_ROOT / "docs" / "governance" / "dependency-upgrade.md"
+GLOSSARY_UPSTREAM_BOUNDARY = REPO_ROOT / "docs" / "governance" / "glossary-upstream-boundary.md"
 DOCUMENTATION = REPO_ROOT / "docs" / "governance" / "documentation.md"
 LICENSE_DOC = REPO_ROOT / "docs" / "governance" / "license.md"
 TOOL_DIRS_DOC = REPO_ROOT / "docs" / "governance" / "tool-directories.md"
@@ -27,6 +28,7 @@ LINK_CHECKED_DOCS = (
     PROJECT,
     ROADMAP,
     DEP_UPGRADE,
+    GLOSSARY_UPSTREAM_BOUNDARY,
     DOCUMENTATION,
     LICENSE_DOC,
     TOOL_DIRS_DOC,

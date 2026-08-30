@@ -19,7 +19,13 @@ from unittest.mock import MagicMock, patch
 
 import pdf2zh_next
 import pytest
-from babeldoc.format.pdf.translation_config import TranslationConfig as BabelDOCTranslationConfig
+from babeldoc.format.pdf.translation_config import (
+    SharedContextCrossSplitPart,
+)
+from babeldoc.format.pdf.translation_config import (
+    TranslationConfig as BabelDOCTranslationConfig,
+)
+from babeldoc.glossary import Glossary, GlossaryEntry
 from pdf2zh_next import SettingsModel
 from pdf2zh_next.config.model import BasicSettings, PDFSettings, TranslationSettings
 
@@ -128,6 +134,25 @@ def _make_translate_result(
     )
 
 
+USER_TERM_SOURCE = "user authoritative term"
+USER_TERM_TARGET = "用户权威译法"
+AUTO_TERM_SOURCE = "auto candidate term"
+AUTO_TERM_TARGET = "自动候选译法"
+
+
+def _make_glossary(name: str, entries: list[tuple[str, str]]) -> Glossary:
+    return Glossary(name=name, entries=[GlossaryEntry(source, target) for source, target in entries])
+
+
+def _shared_context_with_user_and_auto_glossaries() -> SharedContextCrossSplitPart:
+    shared = SharedContextCrossSplitPart()
+    shared.initialize_glossaries([_make_glossary("user_glossary", [(USER_TERM_SOURCE, USER_TERM_TARGET)])])
+    # 自动提取器只“复述”出自动候选词，没有复述用户权威术语。
+    shared.add_raw_extracted_term_pair(AUTO_TERM_SOURCE, AUTO_TERM_TARGET)
+    shared.finalize_auto_extracted_glossary()
+    return shared
+
+
 def test_pinned_upstream_versions_match_pyproject_lock_and_installed_metadata():
     pyproject_pins = _pyproject_pins()
     lock_pins = _lock_pins()
@@ -231,6 +256,84 @@ def test_settings_assignment_compatibility(mock_config, monkeypatch):
     assert settings.basic.debug is False
 
 
+def test_build_settings_auto_extract_glossary_on_off_mapping(mock_config, monkeypatch, tmp_path):
+    """固定 build_settings 的 auto_extract_glossary → 上游三个翻译字段映射。"""
+    global_csv = tmp_path / "global_terms.csv"
+    global_csv.write_text("source,target\nGlobal Term,全局术语\n", encoding="utf-8")
+    monkeypatch.setattr(config, "GLOSSARY_PATH", global_csv)
+    user_csv = tmp_path / "user_terms.csv"
+    user_csv.write_text("source,target\nUser Term,用户术语\n", encoding="utf-8")
+    expected_glossaries = f"{global_csv},{user_csv}"
+
+    cases = (
+        (True, False, True),
+        (False, True, False),
+    )
+    for auto_extract, expected_no_auto, expected_save in cases:
+        translation = config.TranslationRuntimeConfig(
+            lang_in="en",
+            lang_out="zh",
+            auto_extract_glossary=auto_extract,
+        )
+        settings = build_settings(
+            _upstream(translation=translation),
+            "dummy.pdf",
+            glossary_paths=[str(user_csv)],
+        )
+
+        assert settings.translation.no_auto_extract_glossary is expected_no_auto
+        assert settings.translation.save_auto_extracted_glossary is expected_save
+        assert settings.translation.glossaries == expected_glossaries
+
+
+def test_auto_extract_flags_reach_babeldoc_config_and_user_glossaries(
+    mock_config,
+    monkeypatch,
+    tmp_path,
+):
+    """真实转换链：auto_extract_glossary → BabelDOC config，用户词表在两种开关下都加载。
+
+    pdf2zh-next 2.9.0 的 create_babeldoc_config 不把 save_auto_extracted_glossary
+    转发给 BabelDOC，因此 BabelDOC 侧恒为默认 True；auto-off 时自动词表不存在，
+    实际不会写自动词表文件。升级依赖时必须重新核对该转发缺口。
+    """
+    from pdf2zh_next.high_level import create_babeldoc_config
+
+    global_csv = tmp_path / "global_terms.csv"
+    global_csv.write_text("source,target\nGlobal Term,全局术语\n", encoding="utf-8")
+    monkeypatch.setattr(config, "GLOSSARY_PATH", global_csv)
+    user_csv = tmp_path / "user_terms.csv"
+    user_csv.write_text("source,target\nUser Term,用户术语\n", encoding="utf-8")
+    pdf = config.Pdf2zhRuntimeConfig(translate_table_text=False)
+
+    cases = (
+        (True, True),
+        (False, False),
+    )
+    for auto_extract, expected_auto in cases:
+        translation = config.TranslationRuntimeConfig(
+            lang_in="en",
+            lang_out="zh",
+            auto_extract_glossary=auto_extract,
+        )
+        settings = build_settings(
+            _upstream(translation=translation, pdf=pdf),
+            "dummy.pdf",
+            glossary_paths=[str(user_csv)],
+        )
+        with patch("pdf2zh_next.high_level.get_translator", return_value=object()):
+            babeldoc_cfg = create_babeldoc_config(settings, Path("dummy.pdf"))
+
+        assert babeldoc_cfg.auto_extract_glossary is expected_auto
+        assert babeldoc_cfg.save_auto_extracted_glossary is True
+        user_glossaries = babeldoc_cfg.shared_context_cross_split_part.user_glossaries
+        assert [g.name for g in user_glossaries] == ["global_terms", "user_terms"]
+        assert {(e.source, e.target) for g in user_glossaries for e in g.entries} == {
+            ("Global Term", "全局术语"),
+            ("User Term", "用户术语"),
+        }
+
+
 def test_babeldoc_falls_back_to_pool_only_when_term_pool_is_none():
     """BabelDOC 0.6.2 真实契约：None 跟随 pool_max_workers，0 不会。"""
 
@@ -247,6 +350,54 @@ def test_babeldoc_falls_back_to_pool_only_when_term_pool_is_none():
 
     assert make_config(None).term_pool_max_workers == 3
     assert make_config(0).term_pool_max_workers == 0
+
+
+def test_babeldoc_auto_on_selects_only_auto_glossary_for_translation():
+    """BabelDOC 0.6.2 契约：auto-on 且自动词表存在时，正文只选择自动词表。"""
+    shared = _shared_context_with_user_and_auto_glossaries()
+    assert shared.auto_extracted_glossary is not None
+
+    selected = shared.get_glossaries_for_translation(auto_extract_enabled=True)
+
+    assert [g.name for g in selected] == ["auto_extracted_glossary"]
+    selected_sources = {e.source for g in selected for e in g.entries}
+    assert selected_sources == {AUTO_TERM_SOURCE}
+    assert USER_TERM_SOURCE not in selected_sources
+
+
+def test_babeldoc_auto_off_selects_user_then_auto_for_translation():
+    """BabelDOC 0.6.2 契约：auto-off 时正文选择 user + auto（如存在）。"""
+    shared = _shared_context_with_user_and_auto_glossaries()
+
+    selected = shared.get_glossaries_for_translation(auto_extract_enabled=False)
+
+    assert [g.name for g in selected] == ["user_glossary", "auto_extracted_glossary"]
+    assert [(g.name, e.source, e.target) for g in selected for e in g.entries] == [
+        ("user_glossary", USER_TERM_SOURCE, USER_TERM_TARGET),
+        ("auto_extracted_glossary", AUTO_TERM_SOURCE, AUTO_TERM_TARGET),
+    ]
+
+
+def test_babeldoc_auto_on_without_auto_glossary_falls_back_to_user():
+    """边界事实：auto-on 但提取器没有任何产出时，BabelDOC 回退到用户词表。"""
+    shared = SharedContextCrossSplitPart()
+    shared.initialize_glossaries([_make_glossary("user_glossary", [(USER_TERM_SOURCE, USER_TERM_TARGET)])])
+    shared.finalize_auto_extracted_glossary()
+    assert shared.auto_extracted_glossary is None
+
+    selected = shared.get_glossaries_for_translation(auto_extract_enabled=True)
+
+    assert [g.name for g in selected] == ["user_glossary"]
+
+
+def test_auto_on_requires_extractor_to_repeat_user_terms_before_body_translation():
+    """固定当前限制：auto-on 时，未被提取器复述的用户术语不会进入正文词表。"""
+    shared = _shared_context_with_user_and_auto_glossaries()
+
+    selected = shared.get_glossaries_for_translation(auto_extract_enabled=True)
+    selected_sources = {e.source for g in selected for e in g.entries}
+
+    assert USER_TERM_SOURCE not in selected_sources
 
 
 def test_term_pool_zero_reaches_babeldoc_as_followed_positive(mock_config, monkeypatch):
