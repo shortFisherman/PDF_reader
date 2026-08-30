@@ -399,14 +399,15 @@ class TestThirdPartyLoggerRouting:
         with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
 
+        fake_api_key = "sk-third-party-" + "secret-001"
         sentinel = (
-            "api_key=sk-third-party-secret-001 Authorization: Bearer abcdefghijklmnop "
+            f"api_key={fake_api_key} Authorization: Bearer abcdefghijklmnop "
             "prompt=translate this confidential instruction"
         )
         logging.getLogger(logger_name).warning("third party %s", sentinel)
 
         content = (tmp_path / "logs" / "pdf_reader.log").read_text(encoding="utf-8")
-        assert "sk-third-party-secret-001" not in content
+        assert fake_api_key not in content
         assert "abcdefghijklmnop" not in content
         assert "translate this confidential instruction" not in content
         assert "api_key=<redacted>" in content
@@ -465,8 +466,9 @@ class TestThirdPartyLoggerRouting:
             assert werkzeug.disabled is False
             assert external not in werkzeug.handlers
 
-            logging.getLogger("werkzeug").warning("leak sk-secret-before-reset-123")
-            assert "sk-secret-before-reset-123" not in buffer.getvalue()
+            fake_api_key = "sk-secret-" + "before-reset-123"
+            logging.getLogger("werkzeug").warning("leak %s", fake_api_key)
+            assert fake_api_key not in buffer.getvalue()
 
             logging_config.reset_logging()
             assert werkzeug.level == original_level
