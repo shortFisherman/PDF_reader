@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from collections.abc import AsyncIterator
 from unittest.mock import MagicMock, patch
 
@@ -79,19 +80,30 @@ def test_translation_stream_cancel_stops_cooperative_worker():
 
 def test_translation_stream_join_timeout_reports_worker_alive():
     """A non-cooperative upstream that ignores cancellation stays alive after
-    join timeout; is_alive reports the real worker state."""
+    join timeout; is_alive reports the real worker state.  The fake upstream
+    blocks on a test-owned release gate, and the test always releases and joins
+    the real worker so no daemon thread outlives the case."""
+
+    release = threading.Event()
 
     async def stuck_stream(settings, file) -> AsyncIterator[dict]:
         yield {"type": "progress_start", "stage": "layout_analysis"}
-        await asyncio.sleep(3600)
+        release.wait(timeout=30)
 
-    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_stream):
-        stream = run_translation(MagicMock(), "fake.pdf")
-        assert isinstance(next(stream), dict)
-        stream.cancel()
-        stream.join(timeout=0.3)
+    stream = None
+    try:
+        with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_stream):
+            stream = run_translation(MagicMock(), "fake.pdf")
+            assert isinstance(next(stream), dict)
+            stream.cancel()
+            stream.join(timeout=0.3)
 
-    assert stream.is_alive
+        assert stream.is_alive
+    finally:
+        release.set()
+        if stream is not None:
+            stream.join(timeout=5.0)
+            assert not stream.is_alive
 
 
 def test_translation_stream_heartbeat_when_worker_silent():

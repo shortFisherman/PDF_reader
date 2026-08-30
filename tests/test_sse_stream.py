@@ -2,6 +2,7 @@ import asyncio
 import csv
 import json
 import tempfile
+import threading
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -774,11 +775,16 @@ def test_generate_keeps_dirs_when_worker_survives_join_timeout(tmp_path):
     """A non-cooperative worker still running when SSE closes must not lose its
     workspace: after the join timeout the whole owned workspace (input/output/
     marker) is kept for recovery, the job is released as cancelled, and nothing
-    is written to the document."""
+    is written to the document.  The fake upstream blocks on a test-owned
+    release gate, and the test always releases and joins the real worker so no
+    daemon thread outlives the case."""
+
+    release = threading.Event()
+    streams: list = []
 
     async def stuck_source(settings, file) -> AsyncIterator[dict]:
         yield {"type": "progress_start", "stage": "layout_analysis"}
-        await asyncio.sleep(3600)
+        release.wait(timeout=30)
 
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
@@ -790,24 +796,38 @@ def test_generate_keeps_dirs_when_worker_survives_join_timeout(tmp_path):
         replace_page=replace_page,
         cache_dir=cache_dir,
     )
+    ctx.register_stream = lambda job_id, stream: streams.append(stream)
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
-    with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
-        with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_source):
-            with patch("pdf_reader.sse_stream.WORKER_JOIN_TIMEOUT", 0.2):
-                with patch("pdf_reader.sse_stream.debug_trace"):
-                    gen = generate(ctx)
-                    next(gen)
-                    gen.close()
+    stream = None
+    try:
+        with patch("pdf_reader.cache_ops.tempfile.mkdtemp", return_value=str(workspace)):
+            with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_source):
+                with patch("pdf_reader.sse_stream.WORKER_JOIN_TIMEOUT", 0.2):
+                    with patch("pdf_reader.sse_stream.debug_trace"):
+                        gen = generate(ctx)
+                        next(gen)
+                        gen.close()
 
-    assert workspace.exists()
-    assert (workspace / "input").is_dir()
-    assert (workspace / "output").is_dir()
-    assert (workspace / cache_ops.TEMP_MARKER_NAME).is_file()
-    replace_page.assert_not_called()
-    cancel_job.assert_called_once_with("job-stuck")
+        stream = streams[0]
+        assert stream.is_alive, "non-cooperative worker survives join timeout"
+        assert workspace.exists()
+        assert (workspace / "input").is_dir()
+        assert (workspace / "output").is_dir()
+        assert (workspace / cache_ops.TEMP_MARKER_NAME).is_file()
+        replace_page.assert_not_called()
+        cancel_job.assert_called_once_with("job-stuck")
+    finally:
+        release.set()
+        if stream is not None:
+            stream.join(timeout=5.0)
+            assert not stream.is_alive
+            assert workspace.exists()
+            assert (workspace / "input").is_dir()
+            assert (workspace / "output").is_dir()
+            assert (workspace / cache_ops.TEMP_MARKER_NAME).is_file()
 
 
 def test_generate_batch_disconnect_cancels_worker(tmp_path):

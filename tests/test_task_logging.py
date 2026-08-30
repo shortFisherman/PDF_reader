@@ -531,6 +531,8 @@ def test_join_timeout_cleanup_deferred(caplog, tmp_path):
     task_ctx = task_context_from_indices(job.job_id, job.document_id, job.pdf_hash or "", [0])
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
+    release = threading.Event()
+    streams: list = []
     ctx = GenerateContext(
         settings=MagicMock(),
         job_id=job.job_id,
@@ -545,25 +547,35 @@ def test_join_timeout_cleanup_deferred(caplog, tmp_path):
         cache_dir=cache_dir,
         extract_page=MagicMock(return_value=tmp_path / "page.pdf"),
         task_ctx=task_ctx,
+        register_stream=lambda job_id, stream: streams.append(stream),
     )
 
     async def stuck_source(settings, file) -> None:
         yield {"type": "progress_start", "stage": "layout_analysis"}
-        await asyncio.sleep(3600)
+        release.wait(timeout=30)
 
-    with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_source):
-        with patch("pdf_reader.sse_stream.WORKER_JOIN_TIMEOUT", 0.2):
-            with patch("pdf_reader.sse_stream.debug_trace"):
-                with caplog.at_level(logging.INFO, logger="pdf_reader"):
-                    gen = generate(ctx)
-                    next(gen)
-                    gen.close()
+    stream = None
+    try:
+        with patch("pdf_reader.translation_orchestrator.do_translate_async_stream", stuck_source):
+            with patch("pdf_reader.sse_stream.WORKER_JOIN_TIMEOUT", 0.2):
+                with patch("pdf_reader.sse_stream.debug_trace"):
+                    with caplog.at_level(logging.INFO, logger="pdf_reader"):
+                        gen = generate(ctx)
+                        next(gen)
+                        gen.close()
 
-    statuses = _statuses(caplog)
-    assert _is_subsequence(["client_disconnected", "cancelling", "cleanup_deferred"], statuses)
-    assert "cleaned" not in statuses
-    warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("cleanup_deferred" in w and "job=" in w for w in warnings)
+        stream = streams[0]
+        assert stream.is_alive, "non-cooperative worker survives join timeout"
+        statuses = _statuses(caplog)
+        assert _is_subsequence(["client_disconnected", "cancelling", "cleanup_deferred"], statuses)
+        assert "cleaned" not in statuses
+        warnings = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("cleanup_deferred" in w and "job=" in w for w in warnings)
+    finally:
+        release.set()
+        if stream is not None:
+            stream.join(timeout=5.0)
+            assert not stream.is_alive
 
 
 def test_stale_release_does_not_emit_half_baked_task_log(caplog):
