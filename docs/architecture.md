@@ -78,10 +78,11 @@
 | `src/pdf_reader/glossary_service.py` | 累积术语路径解析与合并入口 |
 | `src/pdf_reader/glossary_merger.py` | 术语多数投票合并：模块级互斥锁 + cumulative 路径共享锁（与迁移同快照）+ 同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交（BOM 安全读写） |
 | `src/pdf_reader/term_model.py` | P0-02 术语状态模型：权威/候选/拒绝语义、source key 规范化、schema 版本、受保护文件名与共享错误 |
-| `src/pdf_reader/path_locks.py` | P0-02 按规范路径共享的进程内互斥锁（`lock_for_path`），同一文档路径的所有 Store 实例复用同一锁 |
+| `src/pdf_reader/path_locks.py` | P0-02 按规范路径共享的进程内可重入互斥锁（RLock，`lock_for_path`），同一文档路径的所有 Store 实例复用同一锁，允许同线程嵌套加锁（编译在输入锁内调用 Store.load 并计算摘要） |
 | `src/pdf_reader/user_glossary.py` | P0-02 文档级权威术语存储 `user_glossary.csv`（schema v1、按规范路径共享锁、revision、锁定、严格校验）与全局 `docs/glossary.csv` 只读加载 |
 | `src/pdf_reader/candidate_store.py` | P0-02 候选术语存储 `term_candidates.json`（schema v1、观察合并、accept/reject 状态保护、legacy 合入迁移、严格校验、原子读写） |
 | `src/pdf_reader/legacy_migration.py` | P0-02 旧 `cumulative_glossary.csv` → 候选存储的幂等合入迁移（保留用户状态、备份不覆盖、失败原样） |
+| `src/pdf_reader/glossary_compiler.py` | P0-03 确定性有效词表编译：文档权威 > accepted 候选 > 全局优先级、输入锁内一致快照摘要、同级冲突 fail-closed、CSV + sidecar 原子成对提交、严格 sidecar 校验与 stale 检测 |
 | `src/pdf_reader/logging_config.py` | 统一日志管线：同一对控制台 + `logs/pdf_reader.log` 轮转 handler 托管 `pdf_reader`/`werkzeug`/`pdf2zh_next`/`babeldoc`、ISO 元数据行格式与 run_id、sys/threading 未捕获异常钩子、reset 快照恢复 |
 | `src/pdf_reader/debug_trace.py` | 按任务的有界调试会话：`cache/<hash>/debug_trace.log`（2MB × 3，job 过滤，start/end/elapsed/traceback），debug 关闭时零 IO |
 | `templates/index.html` | 唯一 HTML 页面：打开区、双栏、工具栏、始终可见的“配置”按钮 |
@@ -90,7 +91,7 @@
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
 | `tests/test_upstream_contract.py` | P3-06 上游最小契约：固定版本、SettingsModel 消费字段/引擎字段映射、事件映射与未知事件忽略、输出路径与 mono→dual/glossary、协作式取消与 join/is_alive 所有权（离线确定性 fake） |
 | `tests/test_documentation_governance.py` | P3-06 文档治理：常青文档职责边界、链接可解析、上游契约命令一致、易腐数字基线 |
-| `tests/` | pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证、P3-05 缓存与关闭、P3-06 上游契约/文档治理、P3-07 密钥扫描与仓库治理、日志管线/调试轨迹/前端错误上报、配置示例契约、配置中心后端用例）与前端 `.mjs` 测试运行器（含 client-error 与 config panel 用例） |
+| `tests/` | pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证、P3-05 缓存与关闭、P3-06 上游契约/文档治理、P3-07 密钥扫描与仓库治理、P0-03 有效词表编译、日志管线/调试轨迹/前端错误上报、配置示例契约、配置中心后端用例）与前端 `.mjs` 测试运行器（含 client-error 与 config panel 用例） |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `scripts/secret_scan.py` | 高可信密钥扫描：只扫 Git 跟踪内容，占位示例放行，不输出 secret 值 |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
@@ -99,7 +100,7 @@
 | `docs/governance/` | 文档治理、工具目录治理、依赖升级流程与许可证核验基线（非法律意见） |
 | `docs/`、`docs/archive/`、`docs/reports/` | 常青文档、历史归档与上游研究资料 |
 
-## 术语状态模型与缓存组成（P0-02）
+## 术语状态模型与缓存组成（P0-02/P0-03）
 
 P0-02 起，术语持久化按“用户决定”和“模型候选”两类语义分离，自动流程不得跨类写入：
 
@@ -137,8 +138,44 @@ P0-02 起，术语持久化按“用户决定”和“模型候选”两类语�
   成功合入后写入 `legacy_migration` 标记，只有已存在成功标记才 noop。恢复副本
   `cumulative_glossary.csv.bak` 在合入前原子创建，已有副本绝不覆盖；失败时旧
   文件原样保留、不产生半备份或半迁移文件。
-- `cache/<pdf_hash>/effective_glossary.csv`：确定性编译产物，属于 P0-03，当前
-  HEAD 尚未实现。
+- `cache/<pdf_hash>/effective_glossary.csv`：P0-03 确定性编译产物，由
+  `glossary_compiler.compile_effective_glossary` 从权威输入生成，只含用户定义
+  或确认的词条；格式保持上游兼容的 `source,target` CSV（无注释头，空词表也
+  只有表头行）。优先级固定为：当前文档 `user_glossary.csv`（locked 或用户
+  定义）> `term_candidates.json` 中 `status=accepted` 的 `accepted_target`
+  > 全局 `docs/glossary.csv`；高优先级按规范化 source key 覆盖低优先级，
+  输出保留获胜记录的原始 source 展示文本。比较只统一英文大小写与连续空白
+  （`term_model.normalize_source_key`），不合并单复数、连字符、缩写/全称。
+  同一优先级同一规范化 source 出现不同 target 抛 `GlossaryCompileError`
+  fail closed，相同 target 确定性去重；candidate/rejected 无论观察次数都不
+  进入。输出按规范化 key 排序，相同输入重复编译字节一致；删除产物后可随时
+  从输入重建。
+- `cache/<pdf_hash>/effective_glossary.meta.json`：与 CSV 同目录的确定性
+  sidecar（schema v1、`glossary-compiler/1`），只记录输入文件存在性/
+  revision/行数/SHA-256 与输出 filename/SHA-256/行数，不含时间戳、Prompt、
+  正文或凭据。编译在 effective CSV 路径共享锁内完成（锁顺序：输出锁 → 输入
+  Store 锁，当前无反向持锁路径）；每个输入的“解析内容 + revision/rows +
+  字节 SHA-256”都在该输入路径的 RLock 内取得（Store.load 与哈希嵌套在同一
+  锁内），sidecar 记录的是实际参与本次编译的字节摘要，不读取编译后的新版本。
+  CSV 与 sidecar 各经同目录临时文件 flush/fsync/close 后 `os.replace`
+  提交：先替换 CSV、再替换 sidecar，sidecar 失败时从备份临时文件回滚 CSV，
+  尽量保持“旧 CSV + 旧 sidecar”整体不变；回滚也失败时抛
+  `inconsistent=True` 的 `GlossaryCompileError` 并清理临时文件。输入损坏时
+  拒绝覆盖旧产物。
+- 验证与读取语义（P0-03）：`verify_effective_glossary(document_dir,
+  global_glossary=None)` 在 effective CSV 锁内严格校验 sidecar（顶层/
+  inputs/output 键精确、present/rows/revision/sha256/accepted_projection
+  类型与取值严格），严格解析真实 CSV 并核对行数与 SHA-256，再用各输入锁取得
+  当前一致快照与 sidecar 记录比较。freshness 规则：user/global 比较完整
+  摘要；candidate 只比较 accepted 投影（仅 `status=accepted` 的 normalized
+  source + accepted_target 的 rows + sha256），完整文件摘要保留在 sidecar
+  中仅作历史审计。candidate/rejected 的新增、观察次数/页码/证据/策略/
+  last_seen 变化不报告 stale；accepted 新增、accepted_target 修改或
+  accepted→rejected/candidate 才抛 `GlossaryStaleError`，候选文件损坏时
+  读取本身 fail closed。`load_effective_glossary(document_dir,
+  global_glossary=None)` 不绕过 sidecar：产物对存在时先在同一锁内验证再返回
+  严格校验后的行；CSV/sidecar 任一缺失或损坏都报错，只有两者都不存在时才
+  返回空表（尚未编译）。
 
 路径控制：文档级存储只接受 64 位小写十六进制 PDF 哈希目录名
 （`user_glossary.validate_document_dir`），文件名固定。自动合并入口
@@ -344,6 +381,20 @@ debug 开启时，单页/批量翻译在 `debug_trace.debug_session(...)` 内把
 
 术语状态模型与迁移回归（P0-02）：`tests/test_term_model.py`、`tests/test_path_locks.py`、`tests/test_user_glossary.py`、`tests/test_candidate_store.py` 与 `tests/test_legacy_migration.py` 覆盖规范化/校验（含 strategy_version 与控制字符对称校验）、按规范路径共享锁（含两个不同 Store 实例并发写同一文档）、文档级权威词表 CRUD 与锁定、revision 冲突、原子写失败保留旧版本、损坏/schema/字段类型 fail-closed 且原字节不变、旧累计 CSV 的幂等合入迁移（保留 accepted/rejected 用户状态、并发迁移只合入一次、自动合并与迁移共用 cumulative 锁同一快照、备份不覆盖/目录 fail-closed、无半备份、失败重试）以及自动合并拒绝受保护文件名；全部使用 pytest 临时数据根。
 
+有效词表编译回归（P0-03）：`tests/test_glossary_compiler.py` 覆盖空词表、
+文档/锁定用户词条 > accepted 候选 > 全局优先级、accepted 编辑后的
+accepted_target、candidate/rejected 高观察次数排除、同级冲突 fail-closed、
+大小写/连续空白合并而保留原始展示文本、单复数/连字符/缩写/全称不合并、
+输出排序与确定性字节、删除重建、坏输入不覆盖旧产物、fsync/CSV replace/
+sidecar replace 失败保留旧产物对、回滚失败标记 inconsistent、并发编译、
+路径控制、输入快照期间更新被路径锁阻塞且 sidecar 哈希对应实际编译版本、
+用户/全局输入变化后的 stale 报告、候选 freshness 矩阵（candidate/rejected
+观察变化与 accepted 条目被自动观察保持 fresh；accepted 新增/改 target/降级
+为 rejected 报告 stale；候选文件新建无 accepted 保持 fresh、删除/损坏
+fail closed）、严格 sidecar 与 accepted_projection 字段校验、CSV 行数/哈希/
+规范性校验、产物对缺失时读取报错与两者都不存在时空表（不含时间戳/Prompt/
+正文）。
+
 缓存生命周期回归（P3-05）：`tests/test_cache_ops.py` 覆盖任务工作区创建（前缀/标记/input/output）、创建中途失败与标记写入失败只清理本次新建目录、崩溃模拟（抽取与输出均在已标记根工作区内）的启动恢复且用户缓存不受影响、统计分类、dry-run/真删边界、未知/无标记/损坏/恶意标记、前缀同名文件与符号链接/junction 保守保留、存活 PID 保留、Windows PID 探测（当前进程 True、明确不存在 False、拒绝访问/未知/查询失败 True、句柄必关）与清理失败报告和 CLI（`stats`/`orphans`/`clean`）契约；`tests/test_sse_stream.py` 覆盖单页/批量共享同一根工作区边界（抽取 input/、输出 output/、标记存在、成功整体删除、join timeout 整体保留）；`tests/test_shutdown.py` 覆盖 coordinator `shutdown` 无任务/完成/超时/幂等/流异常容忍、`AppState.close` 幂等与 Windows 句柄释放、`main` 启动恢复与关闭日志、关闭期间单页/批量翻译被 409 拒绝。
 
 任务日志回归：`tests/test_task_logging.py` 覆盖前缀格式/截断/1-based 页码、跨线程传播、全部生命周期状态序列（成功/失败/断开迟到丢弃/join timeout）、stale-result 与写回失败的任务上下文关联、`SafeFormatter` 与真实 `RotatingFileHandler` 落盘脱敏（sentinel 含 API key、Windows/Unix 路径、HTML；key/token 不落盘，路径保留）。
@@ -362,7 +413,7 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
 
 1. **单进程/全局状态。** 服务端只有一个全局 `AppState`，同一时刻只面向一个本地用户、一份打开的文档；没有多用户或并行文档隔离。
 2. **SSE 断开有协作式取消但无强制终止。** 消费者断开后，`generate`/`generate_batch` 请求协作式取消并等待 worker 退出（join timeout 30s），任务工作区只在 worker 确认退出后整体删除；join timeout 时工作区整体保留并记 WARNING。不响应取消的上游环节（含 BabelDOC 子进程）仍会运行到自然结束，其结果被丢弃，没有强制 kill 接口。
-3. **术语写入为进程内原子事务。** 自动累计合并与 `user_glossary.csv`/`term_candidates.json` 读写分别受模块级互斥锁与按规范路径共享的进程内互斥锁保护；自动累计合并与迁移还共用 cumulative 路径锁（锁顺序 cumulative → candidate），确保迁移的 rows 与备份来源同一快照。新内容经同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交；损坏文件或表头/schema/字段异常时 fail-closed 并保留旧文件，写入/`os.replace` 失败保留旧文件并清理临时文件；单任务协调器与 `document_id` 阻止跨文档迟到合并。旧 `cumulative_glossary.csv` 只在候选存储无成功迁移标记时合入（保留用户状态），备份不覆盖已有副本（非普通文件 fail-closed），失败时旧文件原样保留。
+3. **术语写入为进程内原子事务。** 自动累计合并与 `user_glossary.csv`/`term_candidates.json` 读写分别受模块级互斥锁与按规范路径共享的进程内可重入互斥锁（RLock）保护；自动累计合并与迁移还共用 cumulative 路径锁（锁顺序 cumulative → candidate），确保迁移的 rows 与备份来源同一快照。新内容经同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交；损坏文件或表头/schema/字段异常时 fail-closed 并保留旧文件，写入/`os.replace` 失败保留旧文件并清理临时文件；单任务协调器与 `document_id` 阻止跨文档迟到合并。旧 `cumulative_glossary.csv` 只在候选存储无成功迁移标记时合入（保留用户状态），备份不覆盖已有副本（非普通文件 fail-closed），失败时旧文件原样保留。有效词表编译在 effective CSV 路径锁内按“输出锁 → 输入锁”顺序读取权威输入并成对提交 CSV 与 sidecar：每个输入的解析与字节摘要在同一输入 RLock 内完成，sidecar 提交失败回滚 CSV（回滚失败时明确标记 inconsistent），任何失败都保留最后有效的旧产物对，输入损坏绝不覆盖旧产物；验证时再取当前输入快照与 sidecar 比较——user/global 比完整摘要、candidate 只比 accepted 投影（完整文件摘要仅用于审计），只有权威投影变化才报 stale，避免旧有效词表被误用，同时不受自动候选观察干扰。
 4. **PNG 无文本层。** 页面以图片显示，没有文本选择、搜索、复制、高亮、批注、目录、内部链接或 OCR 流程。
 5. **无队列/暂停/取消/重启续传。** 不存在持久任务队列、暂停、取消、重试队列、进度恢复或进程重启后的翻译续传。
 6. **部分提交语义。** 单页/批量翻译结束时先提交 `right.pdf` 再合并术语表；术语表合并失败被包含（记录 WARNING），不会回滚已提交的 PDF，也不改变任务终态；PDF 提交失败则术语合并不执行。不存在跨两个文件的全局事务。
