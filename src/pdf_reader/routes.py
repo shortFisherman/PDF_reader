@@ -1,4 +1,5 @@
 import io
+import ipaddress
 import logging
 import os
 from typing import cast
@@ -15,7 +16,7 @@ from flask import (
 )
 from werkzeug.exceptions import HTTPException
 
-from pdf_reader import config, glossary_service, sse_stream
+from pdf_reader import config, config_editor, glossary_service, sse_stream
 from pdf_reader.file_hash import sha256
 from pdf_reader.pdf_renderer import render_page
 from pdf_reader.task_logging import STATUS_STARTED, task_context_from_indices, task_log
@@ -46,6 +47,39 @@ def _get_settings() -> config.AppSettings:
 
 def _get_coordinator() -> TranslationCoordinator:
     return cast(TranslationCoordinator, current_app.config["translation_coordinator"])
+
+
+def _get_config_path():
+    return current_app.config.get("config_path", config.CONFIG_PATH)
+
+
+def _is_loopback_remote_addr(remote_addr: str | None) -> bool:
+    """仅按 ``request.remote_addr`` 判断本机来源（不信任 Host/X-Forwarded-For）。
+
+    接受 127/8、::1 以及 IPv4-mapped loopback（如 ``::ffff:127.0.0.1``）；
+    remote_addr 缺失、非字符串或非法时 fail closed。
+    """
+    if not isinstance(remote_addr, str) or not remote_addr.strip():
+        return False
+    try:
+        return ipaddress.ip_address(remote_addr.strip()).is_loopback
+    except ValueError:
+        return False
+
+
+def _loopback_config_guard() -> tuple | None:
+    """配置中心读写共享的 loopback-only 检查；非本机返回 403 响应。"""
+    if _is_loopback_remote_addr(request.remote_addr):
+        return None
+    logger.warning(
+        "config center access rejected from non-loopback remote_addr=%r",
+        request.remote_addr,
+    )
+    return error_response(
+        "配置中心仅允许本机访问，请通过 127.0.0.1 或 ::1 操作",
+        403,
+        "config_local_only",
+    )
 
 
 def translation_busy_response(active_job: TranslationJob | None = None) -> tuple:
@@ -355,6 +389,39 @@ def translate_batch():
 def translated_pages():
     state = _get_state()
     return jsonify({"pages": sorted(list(state.translated_pages))})
+
+
+@bp.route("/api/config", methods=["GET"])
+def get_config_center():
+    denied = _loopback_config_guard()
+    if denied is not None:
+        return denied
+    try:
+        return jsonify(config_editor.load_config_state(_get_config_path()))
+    except config_editor.ConfigEditError as exc:
+        logger.warning("config center GET failed: code=%s", exc.code)
+        return error_response(exc.message, 500, exc.code)
+
+
+@bp.route("/api/config", methods=["PUT"])
+def put_config_center():
+    denied = _loopback_config_guard()
+    if denied is not None:
+        return denied
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("请求体必须是 JSON 对象", 400, "invalid_payload")
+    try:
+        result = config_editor.save_config(data, _get_config_path())
+    except config_editor.RevisionConflictError as exc:
+        logger.warning("config center PUT conflict: code=%s", exc.code)
+        return error_response(exc.message, 409, exc.code)
+    except config_editor.ConfigEditError as exc:
+        status = 500 if exc.code in ("config_read_failed", "config_write_failed") else 400
+        logger.warning("config center PUT rejected: code=%s status=%d", exc.code, status)
+        return error_response(exc.message, status, exc.code)
+    logger.info("config center PUT saved")
+    return jsonify(result)
 
 
 @bp.route("/api/stages")

@@ -6,9 +6,9 @@
 
 - 核验日期：2026-08-30。事实来源、锁定版本与测试/覆盖率基线见下。
 - 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml`、`tests/test_upstream_contract.py` 和测试收集结果。
-- 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2。
-- 测试基线：`pytest --collect-only -q` 收集到 702 个 Python 测试（2026-08-30 核验值，含上游契约、文档治理、配置示例契约与全部 P0–P3 用例）；`package.json` 的 `test:frontend` 定义六个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller）。
-- 覆盖率基线：全局 line 93.9%、branch 86.2%（2026-08-30 核验值；策略与关键模块 floor 见“测试、CI 与验证入口”）。
+- 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2、tomlkit 0.13.3。
+- 测试基线：`pytest --collect-only -q` 收集到 735 个 Python 测试（2026-08-30 核验值，含上游契约、文档治理、配置示例契约、配置中心后端用例与全部 P0–P3 用例）；`package.json` 的 `test:frontend` 定义七个正式前端套件（UI copy、error-safety、translation-ui、translator、zoom、alignment controller、config panel）。
+- 覆盖率基线：全局 line 93.8%、branch 85.7%（2026-08-30 核验值；策略与关键模块 floor 见“测试、CI 与验证入口”）。
 - 基线说明：测试数量与覆盖率是易腐数字，任何新的架构核对都应以当前源码、锁定文件、测试收集结果与 coverage 报告为准；本文数值只代表 2026-08-30 的核验结果。
 
 ## 系统总览
@@ -28,8 +28,9 @@
 | PyMuPDF | 1.25.2 | PDF 打开、单页/多页抽取、PNG 渲染、译文页替换 |
 | pdf2zh-next | 2.9.0 | 全页版面翻译编排与事件流 |
 | BabelDOC | 0.6.2 | 上游版面重建、字体处理与 PDF 生成底层 |
+| tomlkit | 0.13.3 | 直接运行依赖：保留注释/顺序/未知字段的 TOML 编辑（配置中心保存 config.toml） |
 | 前端 | 原生 HTML/CSS/ES Modules | 无构建步骤，浏览器直接加载 |
-| Node.js | >=22（仅测试需要，CI 固定 22） | 运行六个前端测试套件 |
+| Node.js | >=22（仅测试需要，CI 固定 22） | 运行七个前端测试套件 |
 | ruff / pytest | 锁定在 `requirements.lock` | 代码检查与 Python 测试 |
 
 ## 许可证与包元数据
@@ -59,9 +60,10 @@
 | `docs/governance/license.md` | 本项目与固定上游依赖（pdf2zh-next/BabelDOC）的许可证核验基线、四种使用/分发场景与发布前核验清单（非法律意见） |
 | `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python -m pdf_reader` |
 | `src/pdf_reader/config.py` | 读取 `config.toml`、定义冻结运行时配置（`ModelRuntimeConfig`/`TranslationRuntimeConfig`/`Pdf2zhRuntimeConfig`/`UpstreamRuntimeConfig`）、严格/宽松解析、`EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
+| `src/pdf_reader/config_editor.py` | 配置中心后端：41 字段 schema（分组/控件/说明/默认与常用值/Provider 适用性）、GET 密钥脱敏（只返回 configured/source）、已知字段白名单、复用 `validate_startup_requirements`/`resolve_server_config` 严格校验、revision 乐观冲突、模块级 RLock、同目录临时文件 fsync + `os.replace` 原子写并保留权限/未知字段/注释与顺序（tomlkit）；只写 `config.toml`，不热改冻结 `AppSettings`，保存返回 `restart_required=true` |
 | `src/pdf_reader/paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
 | `src/pdf_reader/task_logging.py` | 集中任务日志上下文：不可变 `TaskContext`、`contextvars` 传播、统一前缀/截断/1-based 页码、生命周期状态、`SafeFormatter` 脱敏 |
-| `src/pdf_reader/routes.py` | Blueprint：9 个 HTTP/SSE 端点；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器与 409 `translation_busy` |
+| `src/pdf_reader/routes.py` | Blueprint：11 个 HTTP/SSE 端点（含配置中心 GET/PUT `/api/config` 的 loopback-only 守卫）；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器与 409 `translation_busy`、403 `config_local_only` |
 | `src/pdf_reader/state.py` | `AppState`：不可变文档会话身份、锁内翻译快照、左右文档、缓存路径、哈希、页数/尺寸、翻译页集合、阅读进度、非重入锁 |
 | `scripts/cache_manage.py` | 缓存只读统计与孤儿临时工作区清理 CLI：`stats`（只读/可 `--json`）、`orphans`、`clean`（默认 dry-run，`--yes` 才删除） |
 | `src/pdf_reader/file_hash.py` | `sha256()` 流式文件哈希 |
@@ -77,13 +79,13 @@
 | `src/pdf_reader/glossary_merger.py` | 术语多数投票合并：模块级互斥锁 + 同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交（BOM 安全读写） |
 | `src/pdf_reader/logging_config.py` | 根命名空间、控制台 + 轮转文件 handler、第三方降噪 |
 | `src/pdf_reader/debug_trace.py` | 调试会话、步骤/Token/术语合并日志（`config.DEBUG` 关闭时零开销） |
-| `templates/index.html` | 唯一 HTML 页面：打开区、双栏、工具栏 |
+| `templates/index.html` | 唯一 HTML 页面：打开区、双栏、工具栏、始终可见的“配置”按钮 |
 | `static/app.js` | 前端入口与共享状态 |
-| `static/modules/` | dom、lazy-loader、scroll-sync、alignment-controller、zoom、sse-client、stages、translator、translation-ui-controller、reader-session |
+| `static/modules/` | dom、lazy-loader、scroll-sync、alignment-controller、zoom、sse-client、stages、translator、translation-ui-controller、reader-session、config-panel |
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
 | `tests/test_upstream_contract.py` | P3-06 上游最小契约：固定版本、SettingsModel 消费字段/引擎字段映射、事件映射与未知事件忽略、输出路径与 mono→dual/glossary、协作式取消与 join/is_alive 所有权（离线确定性 fake） |
 | `tests/test_documentation_governance.py` | P3-06 文档治理：常青文档职责边界、链接可解析、上游契约命令一致、易腐数字基线 |
-| `tests/` | 37 个 pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证、P3-05 缓存与关闭、P3-06 上游契约/文档治理、P3-07 密钥扫描与仓库治理、配置示例契约用例）与前端 `.mjs` 测试运行器 |
+| `tests/` | pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证、P3-05 缓存与关闭、P3-06 上游契约/文档治理、P3-07 密钥扫描与仓库治理、配置示例契约、配置中心后端用例）与前端 `.mjs` 测试运行器（含 config panel 用例） |
 | `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
 | `scripts/secret_scan.py` | 高可信密钥扫描：只扫 Git 跟踪内容，占位示例放行，不输出 secret 值 |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
@@ -129,6 +131,15 @@
 - `ENGINE_REGISTRY` 用声明式 `EngineSpec` 注册 10 个 Provider，顺序为：`deepseek`、`zhipu`、`siliconflow`、`aliyun`、`gemini`、`groq`、`grok`、`modelscope`、`openai`、`openai_compatible`。
 - `resolve_engine()` 对未知 Provider 抛 `ConfigError`（不再回退 `openai_compatible`）；`build_engine_kwargs(spec, model_cfg)` 显式接收 `ModelRuntimeConfig`，按 `ENGINE_REGISTRY.field_map` 映射（含发送开关：OpenAI → 历史拼写 `openai_send_temprature`，Compatible/Aliyun → 各自 `send_temperature`；发送开关为 `False` 时省略以保持旧请求行为，`enable_json_mode=False` 等普通字段仍显式透传）。
 - `translation_settings.build_settings(upstream, input_pdf, ...)`：设置 `lang_in`/`lang_out`/`min_text_length`/`qps`/worker 与 term 字段/`no_auto_extract_glossary`+`save_auto_extracted_glossary`（由 `auto_extract_glossary` 映射）/`primary_font_family`；Prompt 优先级为页面非空 Prompt > `default_system_prompt` > 上游默认；`ignore_cache=True`；把非空的 `docs/glossary.csv` 与累积术语路径拼为 `glossaries`；`output` 由生成器设置；PDF 参数为 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，并把 `[pdf2zh]` 的 15 个字段显式传入（`formula_*` → 上游 `formular_*`）。
+
+## 配置中心（config_editor 与 config-panel）
+
+- 后端 `src/pdf_reader/config_editor.py` 定义 41 字段 schema（覆盖 `[model]`/`[pdf_reader]`/`[translation]`/`[server]`/`[pdf2zh]`），每字段含中文名、TOML 路径、必填/可选/进阶分组、控件类型、用途说明、默认/常用值、Provider 适用性与条件必填；`GET /api/config` 返回 schema、当前值与文件 sha256 revision，API Key 只返回 `{source: file|environment|missing, configured}`，不返回明文。
+- 保存只接受 schema 白名单字段；合并后的文档先过滤到已知 section/字段，再复用 `config.validate_startup_requirements()` 与 `config.resolve_server_config()` 做同一套类型/范围/枚举/条件依赖校验，不维护第二套规则。
+- 写入用 tomlkit 解析既有 `config.toml`：保留注释、字段顺序与未知字段；模块级 `RLock` 串行化同进程写入；临时文件创建在目标同目录，flush/fsync 后 `os.replace` 原子替换并保留原权限；失败清理临时文件且原文件不变。API Key 为空/缺失时保留文件旧值；保存成功返回 `restart_required=true`，只写文件，不修改 `config.CONFIG` 或运行中的冻结 `AppSettings`。
+- 前端 `static/modules/config-panel.js` 由始终可见的“配置”按钮打开可关闭 modal：字段按必填/可选/进阶分组，显示中文名、TOML 路径、说明与默认/常用值提示；provider 为固定友好下拉（DeepSeek、智谱、硅基流动、阿里云百炼、Gemini、Groq、Grok、ModelScope、OpenAI、自定义 OpenAI 兼容接口→`openai_compatible`），按 provider 显示/隐藏适用字段，`openai_compatible` 时 Base URL 标记必填；枚举/布尔用 select，数字与字符串带 datalist 但允许自定义，API Key 用密码框且不回显；环境变量 `MODEL_API_KEY` 覆盖时显示优先提示；Esc、关闭按钮与遮罩点击均可关闭。
+- 访问边界：`GET/PUT /api/config` 共享 loopback-only 守卫，只依据 `request.remote_addr`（不信任 Host/X-Forwarded-For）用 `ipaddress` 判定 127/8、`::1` 与 IPv4-mapped loopback；remote_addr 缺失/非法 fail closed，其余来源一律 HTTP 403 `config_local_only`。
+- 配置写入不改变缓存语义：`right.pdf`、累计术语表与阅读进度仍按原 PDF 哈希复用，不产生配置指纹、缓存分支或自动失效（见“状态、缓存与持久化”）。
 
 ## 打开 PDF 与页面渲染
 
@@ -193,6 +204,7 @@
 | `sse-client.js` | `readSSEStream()` 纯解析（TextDecoder + 行缓冲） |
 | `stages.js` | `GET /api/stages` 拉取阶段标签，失败回退内置副本 |
 | `translator.js` | `translateCurrentPage()` / `translateBatch()`：fetch + SSE 回调编排 |
+| `config-panel.js` | 配置中心面板：分组渲染、provider 联动、API Key 密码框不回显、加载/保存状态与重启提示 |
 
 对齐事实：打开 PDF 时 `createAlignmentController` 安装滚动监听；翻译图片加载完成、Ctrl+滚轮/重置缩放、`scrollToPage` 均显式走 controller 的 `onImageLoaded`/`onZoomChange`/`setLockTarget+realign`。前端重叠操作保护由翻译 UI 状态机承担（运行中拒绝/忽略新操作并禁用控件），只阻止同一浏览器页内的重叠操作，不是服务端锁。
 
@@ -209,8 +221,10 @@
 | `POST /api/translate-batch` | 一基闭区间批量翻译，SSE 事件流 |
 | `GET /api/translated-pages` | 返回已翻译零基页码列表 |
 | `GET /api/stages` | 返回阶段标签映射 |
+| `GET /api/config` | 返回配置中心 schema + 当前值 + revision（API Key 脱敏）；仅 loopback 来源可访问，否则 403 `config_local_only` |
+| `PUT /api/config` | 白名单校验并原子保存 config.toml（revision 乐观并发）；成功返回 `restart_required=true`；仅 loopback 来源可访问，否则 403 `config_local_only` |
 
-Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路由。SSE 事件类型包括 `batch_info`、`progress`（含 stage/stage_current/stage_total）、`error`、`finish`，以及空行心跳。
+Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不计入上述路由表。SSE 事件类型包括 `batch_info`、`progress`（含 stage/stage_current/stage_total）、`error`、`finish`，以及空行心跳。
 
 互斥响应：active job 存在时，新的单页/批量翻译请求以及 `/api/open` 返回 HTTP 409，JSON 至少包含 `error`（明确中文提示）、稳定 `code="translation_busy"` 和 `active_job_id`。前端已有的非 2xx JSON 错误路径会直接显示服务端提示。
 
@@ -235,19 +249,21 @@ Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不属于第 10 个路�
 
 前端装配与翻译 UI 状态（P2-02）：`static/modules/translation-ui-controller.js` 是单页/批量共享的翻译 UI 状态机（idle → running → succeeded/failed/aborted → idle），集中 busy 控件禁用、进度条、stage/status 文本、成功/失败恢复、延时清理与 operation generation 迟到回调隔离；单页与批量差异（范围文案、完成后刷新页集合）通过 operation descriptor/callback 注入，`app.js` 不再复制两套 busy/progress/error DOM 逻辑。每次翻译操作创建 `AbortController` 并把 `signal` 传入 `translator.js` 的 fetch；新操作、成功打开新文档（session dispose）与页面卸载时 abort 浏览器请求并使旧回调失效；浏览器 abort 只终止客户端请求/消费，不是可靠的服务端取消确认，服务端生命周期仍由 SSE 断开与后端机制决定。`static/modules/reader-session.js` 把 zoom/alignment/intersection observer/settle gate/page 生命周期清理收束为幂等 `dispose` 边界：仅在新文档 open 成功、准备替换 DOM 时 dispose 旧 session，失败打开保留旧 session（409 语义不变）。
 
-错误契约（P2-05）：所有 API 4xx/5xx 返回顶层 `{"code": <stable_code>, "error": <safe_message>}`；`409` 保留 `translation_busy`、中文安全提示与 `active_job_id`（P0-02/P1-04 回归依赖），其余 400 分支使用稳定 code（`invalid_file_path`、`invalid_page`、`no_document_opened`、`page_out_of_range`、`invalid_side`、`invalid_page_numbers`、`invalid_page_range`），`404` 使用 `not_found`，其它 HTTP 错误使用 `http_<status>`，`500` 固定为 `internal_error`。`routes.http_error` 处理 `HTTPException`（不吞成 500），`routes.internal_error` 记录完整异常（含 traceback）后只返回安全摘要。SSE 统一经 `sse_stream.format_sse_error(code, message)` 输出 `{"type":"error","code","error"}`；上游原始 error、`TranslationError` 消息、普通异常消息与“无翻译结果”均只进服务端日志，不返回浏览器。前端 `static/modules/dom.js` 提供 `showError()`（DOM 节点 + `textContent`），`app.js` 不再使用 `insertAdjacentHTML` 插入错误文本；`static/modules/translator.js` 对非 JSON 响应、网络异常与缺失错误字段使用固定安全 fallback。非 loopback host（非 `localhost`、`127/8`、`::1`）在 `app.main` 中、`app.run` 前输出安全 WARNING（不记录 API Key，不阻止启动）。
+错误契约（P2-05）：所有 API 4xx/5xx 返回顶层 `{"code": <stable_code>, "error": <safe_message>}`；`409` 保留 `translation_busy`、中文安全提示与 `active_job_id`（P0-02/P1-04 回归依赖），其余 400 分支使用稳定 code（`invalid_file_path`、`invalid_page`、`no_document_opened`、`page_out_of_range`、`invalid_side`、`invalid_page_numbers`、`invalid_page_range`），`403` 使用 `config_local_only`（仅配置中心 loopback 守卫），`404` 使用 `not_found`，其它 HTTP 错误使用 `http_<status>`，`500` 固定为 `internal_error`。`routes.http_error` 处理 `HTTPException`（不吞成 500），`routes.internal_error` 记录完整异常（含 traceback）后只返回安全摘要。SSE 统一经 `sse_stream.format_sse_error(code, message)` 输出 `{"type":"error","code","error"}`；上游原始 error、`TranslationError` 消息、普通异常消息与“无翻译结果”均只进服务端日志，不返回浏览器。前端 `static/modules/dom.js` 提供 `showError()`（DOM 节点 + `textContent`），`app.js` 不再使用 `insertAdjacentHTML` 插入错误文本；`static/modules/translator.js` 对非 JSON 响应、网络异常与缺失错误字段使用固定安全 fallback。非 loopback host（非 `localhost`、`127/8`、`::1`）在 `app.main` 中、`app.run` 前输出安全 WARNING（不记录 API Key，不阻止启动）。
 
 ## 测试、CI 与验证入口
 
 `pyproject.toml` 是唯一直接依赖声明源（`project.dependencies` 运行依赖、`project.optional-dependencies.dev` 开发工具）；已删除 `requirements.txt`/`requirements-dev.txt`。`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从 `pyproject.toml`（含 dev extra）生成，header 记录真实命令（用 `CUSTOM_COMPILE_COMMAND` 规避 pip-tools 7.6.1 在本环境写入多余 `--no-index` 的怪癖）。锁文件不包含 editable、本机路径或 `file:///` 来源。安装契约：`pip install -r requirements.lock` 后 `pip install -e . --no-deps`；便捷安装 `pip install -e .[dev]` 与可复现安装明确区分。
 
-统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
+统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`、`run-config-panel-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
 
 覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-08-30 核验值）：全局 line 93.9%、branch 86.2%，五个关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
 
 测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
 
 上游契约与文档治理回归（P3-06）：`tests/test_upstream_contract.py` 用确定性 fake 验证固定版本、SettingsModel 消费字段与 ENGINE_REGISTRY 字段映射、承诺事件映射与未知事件忽略/心跳、workspace/output 注入与 mono/dual/glossary 路径、协作式取消/迟到丢弃/join 所有权，全部离线且不运行真实翻译；`tests/test_documentation_governance.py` 验证 architecture/project/roadmap 职责边界、常青文档链接可解析、README/architecture/dependency-upgrade 的契约命令一致与易腐数字基线。升级命令 `python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py` 与范围记录在 [依赖升级流程](governance/dependency-upgrade.md) 和 [长期文档治理](governance/documentation.md)。
+
+配置中心回归：`tests/test_config_editor.py` 覆盖 GET 脱敏、PUT 保存与密钥保留、注释/未知字段保留、非法 provider/类型/范围、`openai_compatible` 缺 `base_url`、revision 冲突、原子失败不破坏原文件、环境变量状态与 loopback-only 访问；`tests/run-config-panel-tests.mjs` 覆盖面板打开/关闭、分组与说明、provider 映射、加载/保存、API Key 不回显、错误/成功与重启提示。
 
 缓存生命周期回归（P3-05）：`tests/test_cache_ops.py` 覆盖任务工作区创建（前缀/标记/input/output）、创建中途失败与标记写入失败只清理本次新建目录、崩溃模拟（抽取与输出均在已标记根工作区内）的启动恢复且用户缓存不受影响、统计分类、dry-run/真删边界、未知/无标记/损坏/恶意标记、前缀同名文件与符号链接/junction 保守保留、存活 PID 保留、Windows PID 探测（当前进程 True、明确不存在 False、拒绝访问/未知/查询失败 True、句柄必关）与清理失败报告和 CLI（`stats`/`orphans`/`clean`）契约；`tests/test_sse_stream.py` 覆盖单页/批量共享同一根工作区边界（抽取 input/、输出 output/、标记存在、成功整体删除、join timeout 整体保留）；`tests/test_shutdown.py` 覆盖 coordinator `shutdown` 无任务/完成/超时/幂等/流异常容忍、`AppState.close` 幂等与 Windows 句柄释放、`main` 启动恢复与关闭日志、关闭期间单页/批量翻译被 409 拒绝。
 

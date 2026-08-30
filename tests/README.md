@@ -16,6 +16,8 @@ The supported suite contains:
 - `run-translator-tests.mjs` — SSE parsing and translation callbacks.
 - `run-zoom-tests.mjs` — zoom behavior.
 - `run-alignment-controller-tests.mjs` — dual-column alignment behavior and write exclusivity.
+- `run-config-panel-tests.mjs` — 配置中心打开/关闭、分组与说明、provider 映射、
+  API Key 不回显、加载/保存状态与重启提示。
 
 All supported suites import production ES modules directly (`await import(...)`),
 with jsdom globals set before import and browser dependencies injected through

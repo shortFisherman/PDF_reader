@@ -25,6 +25,7 @@ export function getElements() {
     const fullTranslateBtn = document.getElementById('full-translate-btn');
     const toolbarToggle = document.getElementById('toolbar-toggle');
     const toolbarExtras = document.getElementById('toolbar-extras');
+    const configBtn = document.getElementById('config-btn');
 
     _cache = {
         leftCol,
@@ -49,6 +50,7 @@ export function getElements() {
         fullTranslateBtn,
         toolbarToggle,
         toolbarExtras,
+        configBtn,
     };
 
     return _cache;

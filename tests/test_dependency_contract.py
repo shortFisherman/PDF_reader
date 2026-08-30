@@ -23,7 +23,7 @@ def test_pyproject_is_only_direct_declaration_source():
 
 def test_runtime_dependencies_declared_in_pyproject():
     deps = set(_pyproject()["project"]["dependencies"])
-    assert deps == {"flask==3.1.3", "pymupdf==1.25.2", "pdf2zh-next==2.9.0"}
+    assert deps == {"flask==3.1.3", "pymupdf==1.25.2", "pdf2zh-next==2.9.0", "tomlkit==0.13.3"}
 
 
 def test_dev_extra_declares_tools():

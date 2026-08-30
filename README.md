@@ -79,6 +79,65 @@ powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable .\
 每个字段的类型/默认值/范围/Provider 适用性与副作用、Provider 配方和内部固定值都在该文件中。
 配置扩展的设计决策与实施说明见 [PDF2ZH 配置能力扩展设计](docs/pdf2zh-configuration-expansion-design.md)。
 
+> **普通用户提示：只改你确定的字段。** 高级参数不了解就保持注释或删除，全部都有可直接使用的
+> 默认值；不要猜阈值或并发值。41 键的完整类型、默认值与副作用手册仍在
+> [config.example.toml](config.example.toml)。
+
+### DeepSeek 最小 config.toml
+
+最简可用配置如下（`api_key` 是占位符，必须换成真实值，或用 `MODEL_API_KEY` 环境变量提供）：
+
+```toml
+[model]
+provider = "deepseek"
+api_key = "sk-your-api-key-here"
+model = "deepseek-chat"
+
+[translation]
+lang_in = "en"
+lang_out = "zh"
+qps = 4
+```
+
+启动时会拒绝 `sk-your-api-key-here` 这类示例占位符：换成真实值，或删除该行后设置
+`$env:MODEL_API_KEY = '你的真实密钥'`（环境变量优先于文件）。其他高级字段全部省略即可运行。
+
+### 普通用户并发速查
+
+| 用法 | `qps` | `pool_max_workers` | 说明 |
+|---|---|---|---|
+| 稳定 | `1` | `1` | 最保守，适合低配额/免费账号或经常遇到 429 |
+| 默认 | `4` | 省略（跟随 `qps`） | 项目内置默认，普通用户推荐起点 |
+| 高速试用 | `8` | `8` | 仅当 API 配额允许时；一出现 429/超时马上降回 4 或 1 |
+
+`qps` 是“每秒最多启动多少个模型 API 请求”，不是页/秒，也不是完成数保证；1/4/8 的每分钟
+理论上限约为 60/240/480 个新请求，实际吞吐受响应延迟、worker 数、供应商 RPM/TPM、网络和
+文本块数量限制。调大不一定线性变快，但额度与费用消耗会更快。普通用户不建议超过 8。
+
+### 常见故障调参
+
+| 现象 | 调整 | 说明 |
+|---|---|---|
+| 429 / 限流 | 降 `qps`，同时降 `pool_max_workers`（8→4→1 逐级降） | 不要继续调大；等配额恢复再试 |
+| 超时频繁 | 先降 `qps`/`pool_max_workers`，或增大 `model.timeout` | `timeout` 仅 `aliyun`/`openai`/`openai_compatible` 支持，其它 provider 设置会被忽略 |
+| 速度慢但无 429 | 逐级 1→4→8 | 每级观察是否出现限流或超时 |
+| 费用增长过快 | 降 `qps`；或关闭自动术语（`auto_extract_glossary = false`） | 自动术语会额外调用模型，换取术语一致性和累计术语表；关闭后请求更少，但自动术语一致性收益消失 |
+
+### 其它常用参数怎么选
+
+| 参数 | 默认 | 怎么选 |
+|---|---|---|
+| `translation.min_text_length` | `5` | 短标题/图注被漏翻可尝试 `2`；噪声碎片太多可尝试 `10`；一次只小幅调整 |
+| `translation.auto_extract_glossary` | `true` | 保持默认；关闭会减少术语提取请求，但失去自动累计术语和一致性收益；不会关闭正文翻译 |
+| `translation.primary_font_family` | `auto` | 只有字体视觉明显不合适才改 `serif`/`sans-serif`/`script` |
+| `translation.default_system_prompt` | 省略 | 只有希望每次任务固定附加翻译指令时才设置；页面非空 Prompt 仍优先 |
+| `model.timeout` | provider 默认 | 仅 `aliyun`/`openai`/`openai_compatible` 生效；调大只允许更久等待，不会让模型变快；其它 provider 设置被忽略 |
+| `model` 的 temperature / reasoning / 发送开关 | 省略 | 普通翻译不了解就全部省略；不要为了“更快”打开 reasoning |
+| `[pdf2zh]` 整段 | 省略 | 普通用户默认整段省略；遇到明确的排版/OCR/公式问题时一次只改一个字段，重启后先重译单页对比；已译的其它页不会失效 |
+
+更完整的字段类型/默认值/范围/副作用见 [config.example.toml](config.example.toml)；不要在
+README 里背 41 个键。
+
 当前支持 41 个键：`[pdf_reader]`（2）、`[model]`（11）、`[translation]`（10）、
 `[server]`（3）、`[pdf2zh]`（15）。启动时会严格校验类型、范围、组合与正则：
 未知 section/key、未知 provider、非法数值（含 nan/inf）、`openai_compatible` 缺少

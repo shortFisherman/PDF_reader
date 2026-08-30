@@ -22,6 +22,7 @@ export function createReaderAppController({
     setupZoom,
     TranslationUIController,
     createReaderSession,
+    createConfigPanel = null,
     fetchImpl = fetch,
     windowObj = window,
     documentObj = document,
@@ -41,6 +42,7 @@ export function createReaderAppController({
     let alignController = null;
     let zoomInst = null;
     let progressCleanup = null;
+    let configPanel = null;
 
     function createProgressCleanup() {
         function onPageHide() {
@@ -352,6 +354,13 @@ export function createReaderAppController({
         els = getElements();
         translationController = new TranslationUIController({ els });
 
+        if (createConfigPanel && els.configBtn) {
+            configPanel = createConfigPanel({ fetchImpl, windowObj, documentObj, api: API });
+            els.configBtn.addEventListener('click', () => {
+                configPanel.open(els.configBtn);
+            });
+        }
+
         els.openBtn.addEventListener('click', openPdf);
         els.pdfPathInput.addEventListener('keydown', e => {
             if (e.key === 'Enter') openPdf();
@@ -389,6 +398,9 @@ export function createReaderAppController({
         if (translationController) {
             translationController.dispose();
         }
+        if (configPanel) {
+            configPanel.dispose();
+        }
     }
 
     return {
@@ -397,5 +409,6 @@ export function createReaderAppController({
         dispose,
         getSession: () => session,
         getTranslationController: () => translationController,
+        getConfigPanel: () => configPanel,
     };
 }

@@ -404,7 +404,9 @@ tiktoken==0.14.0
 toml==0.10.2
     # via babeldoc
 tomlkit==0.13.3
-    # via gradio
+    # via
+    #   gradio
+    #   pdf_reader (pyproject.toml)
 toposort==1.10
     # via xsdata
 tqdm==4.70.0

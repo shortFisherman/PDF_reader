@@ -8,6 +8,7 @@ import { setupZoom } from './modules/zoom.js';
 import { TranslationUIController } from './modules/translation-ui-controller.js';
 import { createReaderSession } from './modules/reader-session.js';
 import { createReaderAppController } from './modules/app-controller.js';
+import { createConfigPanel } from './modules/config-panel.js';
 
 const controller = createReaderAppController({
     getElements,
@@ -25,6 +26,7 @@ const controller = createReaderAppController({
     setupZoom,
     TranslationUIController,
     createReaderSession,
+    createConfigPanel,
 });
 
 controller.init();

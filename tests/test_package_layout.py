@@ -20,6 +20,7 @@ PRODUCTION_MODULES = [
     "app",
     "cache_ops",
     "config",
+    "config_editor",
     "debug_trace",
     "engine_resolver",
     "file_hash",

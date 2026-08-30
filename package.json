@@ -9,12 +9,13 @@
   "scripts": {
     "test": "npm run test:frontend",
     "lint:js": "eslint .",
-    "test:frontend": "npm run test:ui-copy && npm run test:error-safety && npm run test:translation-ui && npm run test:translator && npm run test:zoom && node tests/run-alignment-controller-tests.mjs",
+    "test:frontend": "npm run test:ui-copy && npm run test:error-safety && npm run test:translation-ui && npm run test:translator && npm run test:zoom && node tests/run-alignment-controller-tests.mjs && node tests/run-config-panel-tests.mjs",
     "test:translation-ui": "node tests/run-translation-ui-tests.mjs",
     "test:error-safety": "node tests/run-error-safety-tests.mjs",
     "test:ui-copy": "node tests/run-ui-copy-tests.mjs",
     "test:translator": "node tests/run-translator-tests.mjs",
-    "test:zoom": "node tests/run-zoom-tests.mjs"
+    "test:zoom": "node tests/run-zoom-tests.mjs",
+    "test:config-panel": "node tests/run-config-panel-tests.mjs"
   },
   "keywords": [],
   "author": "",
