@@ -23,6 +23,25 @@ from pdf_reader.term_extraction import STRATEGY_VERSION, TermCandidate
 CANDIDATE_FILTER_VERSION = "candidate-filter/1"
 CANDIDATE_STRATEGY_VERSION = f"{STRATEGY_VERSION}+{CANDIDATE_FILTER_VERSION}"
 
+# 稳定过滤 reason 白名单（P2-02 诊断字段的唯一允许集合；新增拒绝原因必须同步）。
+FILTER_REASONS = frozenset(
+    {
+        "placeholder",
+        "invalid_source",
+        "too_long",
+        "too_many_words",
+        "numeric",
+        "formula",
+        "variable",
+        "page_number",
+        "complete_sentence",
+        "common_word",
+        "bad_target",
+        "no_source_match",
+        "no_evidence_page",
+    }
+)
+
 MAX_SOURCE_CHARS = 80
 MAX_SOURCE_WORDS = 6
 EVIDENCE_WINDOW_CHARS = 80

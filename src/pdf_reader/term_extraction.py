@@ -80,6 +80,34 @@ class TermCandidate:
     target: str
 
 
+@dataclass(frozen=True)
+class TokenUsage:
+    """chat completions 响应中的 token 用量。
+
+    契约：三个字段全部为非负 int 才视为可用（``available`` 三者全真）；
+    解析器只在该条件下构造对象，缺失/部分/非法一律返回 ``None``。
+    """
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+
+    @property
+    def available(self) -> bool:
+        return all(
+            value is not None and not isinstance(value, bool) and isinstance(value, int) and value >= 0
+            for value in (self.prompt_tokens, self.completion_tokens, self.total_tokens)
+        )
+
+
+@dataclass(frozen=True)
+class TermExtractionResult:
+    """一次候选提取的完整结果：受控术语列表 + 可选 token 用量。"""
+
+    terms: list[TermCandidate]
+    usage: TokenUsage | None = None
+
+
 class _RateLimiter:
     """进程内简单令牌间隔限速：两次请求之间至少间隔 ``1 / qps`` 秒。"""
 
@@ -152,6 +180,10 @@ class TermExtractionClient:
 
     def extract_terms(self, text: str) -> list[TermCandidate]:
         """执行一次候选提取；失败抛 ``TermExtractionError`` 子类。"""
+        return self.extract_terms_with_usage(text).terms
+
+    def extract_terms_with_usage(self, text: str) -> TermExtractionResult:
+        """执行一次候选提取并返回术语与可选 token 用量；失败抛 ``TermExtractionError`` 子类。"""
         if not self.supported:
             raise UnsupportedProviderError(f"unsupported provider: {self._model_cfg.provider}")
         # 客户端自身也强制确定性前缀截断（service 层同样截断，双保险），
@@ -177,8 +209,7 @@ class TermExtractionClient:
                 response = self._urlopen(request, timeout=self._cfg.timeout)
                 try:
                     raw = self._read_bounded(response)
-                    content = self._extract_content(raw)
-                    return self._parse_terms(content)
+                    return parse_model_response_with_usage(raw)
                 finally:
                     response.close()
             except TermExtractionParseError:
@@ -271,6 +302,18 @@ def parse_model_response(raw: bytes) -> list[TermCandidate]:
     return _parse_terms(_extract_content(raw))
 
 
+def parse_model_response_with_usage(raw: bytes) -> TermExtractionResult:
+    """公开纯解析入口：术语 + 可选 token 用量。
+
+    usage 属于可选诊断信息：缺失、非法或畸形时返回 ``None``（unavailable），
+    绝不伪造计数，也绝不让 usage 问题影响术语解析。
+    """
+    return TermExtractionResult(
+        terms=_parse_terms(_extract_content(raw)),
+        usage=_extract_usage(raw),
+    )
+
+
 def _extract_content(raw: bytes) -> str:
     try:
         data = json.loads(raw.decode("utf-8"))
@@ -291,6 +334,31 @@ def _extract_content(raw: bytes) -> str:
     if not isinstance(content, str) or not content.strip():
         raise TermExtractionParseError("empty message content")
     return content
+
+
+def _extract_usage(raw: bytes) -> TokenUsage | None:
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    usage = data.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    values: list[int] = []
+    for name in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        parsed = _non_negative_int(usage.get(name))
+        if parsed is None:
+            return None
+        values.append(parsed)
+    return TokenUsage(prompt_tokens=values[0], completion_tokens=values[1], total_tokens=values[2])
+
+
+def _non_negative_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
 
 
 def _parse_terms(content: str) -> list[TermCandidate]:

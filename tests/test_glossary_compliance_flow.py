@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -58,6 +59,8 @@ def _task_ctx(
     job_id: str,
     context: StrictTranslationContext,
     page_indices: list[int],
+    *,
+    glossary_revision: str = "",
 ) -> TaskContext:
     return task_context_from_indices(
         job_id,
@@ -65,6 +68,7 @@ def _task_ctx(
         context.pdf_hash,
         page_indices,
         status=STATUS_STARTED,
+        glossary_revision=glossary_revision,
     )
 
 
@@ -136,6 +140,7 @@ def _single_ctx(
     register_stream=None,
     unregister_stream=None,
     settings=None,
+    glossary_revision="",
 ) -> GenerateContext:
     if replace_page is None:
         replace_page = MagicMock()
@@ -174,7 +179,7 @@ def _single_ctx(
         cache_dir=cache_dir,
         extract_page=extract_page,
         strict_context=context,
-        task_ctx=_task_ctx(job_id, context, [page]),
+        task_ctx=_task_ctx(job_id, context, [page], glossary_revision=glossary_revision),
         register_stream=register_stream,
         unregister_stream=unregister_stream,
     )
@@ -197,6 +202,7 @@ def _batch_ctx(
     finish_job=None,
     fail_job=None,
     cancel_job=None,
+    glossary_revision="",
 ) -> GenerateBatchContext:
     if replace_pages is None:
         replace_pages = MagicMock()
@@ -239,7 +245,7 @@ def _batch_ctx(
         cache_dir=cache_dir,
         extract_pages=extract_pages,
         strict_context=context,
-        task_ctx=_task_ctx(job_id, context, page_indices),
+        task_ctx=_task_ctx(job_id, context, page_indices, glossary_revision=glossary_revision),
     )
 
 
@@ -1038,3 +1044,122 @@ def test_coordinator_release_and_cleanup_after_compliance_failure(tmp_path):
     assert coordinator.active_job is None
     assert coordinator.is_busy is False
     assert not list(cache_dir.glob("pdf-reader-translation-*"))
+
+
+def test_single_compliance_logs_stable_events_and_revision(tmp_path, managed_caplog):
+    source_pdf = _pdf(tmp_path, ["AD appears here."], name="source.pdf")
+    wrong_pdf = _pdf(tmp_path, ["AD 出现了。"], name="wrong.pdf")
+    ok_pdf = _pdf(tmp_path, ["阿尔茨海默病 是诊断结果。"], name="ok.pdf")
+    context, doc_dir = _strict_ctx(tmp_path, [("AD", "阿尔茨海默病")])
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    calls: list[str] = []
+
+    def fake_run(settings, file, flow_label="", task_ctx=None) -> Iterator[dict]:
+        calls.append("run")
+        pdf = wrong_pdf if len(calls) == 1 else ok_pdf
+        return iter(_finish_events(_result(mono=pdf)))
+
+    replace_page = MagicMock()
+    ctx = _single_ctx(
+        tmp_path=tmp_path,
+        context=context,
+        doc_dir=doc_dir,
+        job_id="job-diag-retry",
+        cache_dir=cache_dir,
+        source_pdf=source_pdf,
+        replace_page=replace_page,
+        glossary_revision="d" * 64,
+    )
+
+    with (
+        patch("pdf_reader.sse_stream.run_translation", side_effect=fake_run),
+        patch("pdf_reader.sse_stream.debug_trace"),
+        managed_caplog.at_level(logging.INFO, logger="pdf_reader"),
+    ):
+        output = list(generate(ctx))
+
+    body = "".join(output)
+    assert '"type": "finish"' in body
+    text = managed_caplog.text
+    assert f"rev={'d' * 12}" in text
+    assert "event=glossary_active_terms active=1 sources=1" in text
+    assert "event=compliance_fail attempt=1" in text
+    assert "event=compliance_retry_scheduled attempt=1" in text
+    assert "event=compliance_pass attempt=2" in text
+    assert "SECRET" not in text
+
+
+def test_batch_compliance_final_failure_logs_stable_event_and_code(tmp_path, managed_caplog):
+    source_pdf = _pdf(tmp_path, ["AD on page one", "TCS on page two"], name="source.pdf")
+    wrong_pdf = _pdf(tmp_path, ["AD 第一页", "TCS 第二页"], name="wrong-batch.pdf")
+    context, doc_dir = _strict_ctx(tmp_path, [("AD", "阿尔茨海默病"), ("TCS", "外用糖皮质激素")])
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+
+    def fake_run(settings, file, flow_label="", task_ctx=None) -> Iterator[dict]:
+        return iter(_finish_events(_result(mono=wrong_pdf)))
+
+    ctx = _batch_ctx(
+        tmp_path=tmp_path,
+        context=context,
+        doc_dir=doc_dir,
+        job_id="job-batch-diag-fail",
+        cache_dir=cache_dir,
+        page_indices=[0, 1],
+        from_page=1,
+        to_page=2,
+        source_pdf=source_pdf,
+        glossary_revision="9" * 64,
+    )
+
+    with (
+        patch("pdf_reader.sse_stream.run_translation", side_effect=fake_run),
+        patch("pdf_reader.sse_stream.debug_trace"),
+        managed_caplog.at_level(logging.INFO, logger="pdf_reader"),
+    ):
+        output = list(generate_batch(ctx))
+
+    body = "".join(output)
+    assert f'"code": "{GLOSSARY_COMPLIANCE_FAILED_CODE}"' in body
+    text = managed_caplog.text
+    assert f"rev={'9' * 12}" in text
+    assert "event=compliance_fail attempt=1" in text
+    assert "event=compliance_retry_scheduled attempt=1" in text
+    assert "event=compliance_fail attempt=2" in text
+    assert "event=compliance_failed_final" in text
+
+
+def test_compliance_diagnostics_failure_does_not_block_finish(tmp_path, managed_caplog):
+    source_pdf = _pdf(tmp_path, ["AD appears here."], name="source.pdf")
+    ok_pdf = _pdf(tmp_path, ["阿尔茨海默病 是诊断结果。"], name="ok.pdf")
+    context, doc_dir = _strict_ctx(tmp_path, [("AD", "阿尔茨海默病")])
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    replace_page = MagicMock()
+    ctx = _single_ctx(
+        tmp_path=tmp_path,
+        context=context,
+        doc_dir=doc_dir,
+        job_id="job-diag-safe",
+        cache_dir=cache_dir,
+        source_pdf=source_pdf,
+        replace_page=replace_page,
+    )
+
+    with (
+        patch(
+            "pdf_reader.term_diagnostics.log_compliance",
+            side_effect=RuntimeError("compliance diagnostics boom"),
+        ),
+        patch("pdf_reader.sse_stream.run_translation", return_value=iter(_finish_events(_result(mono=ok_pdf)))),
+        patch("pdf_reader.sse_stream.debug_trace"),
+        managed_caplog.at_level(logging.WARNING, logger="pdf_reader"),
+    ):
+        output = list(generate(ctx))
+
+    body = "".join(output)
+    assert '"type": "finish"' in body
+    replace_page.assert_called_once_with(str(ok_pdf))
+    assert "diagnostics unavailable" in managed_caplog.text
+    assert "compliance diagnostics boom" not in managed_caplog.text

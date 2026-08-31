@@ -27,6 +27,7 @@ from dataclasses import dataclass, replace
 
 DOCUMENT_ID_LOG_LENGTH = 8
 PDF_HASH_LOG_LENGTH = 12
+GLOSSARY_REVISION_LOG_LENGTH = 12
 
 STATUS_CREATED = "created"
 STATUS_STARTED = "started"
@@ -57,7 +58,7 @@ _PROMPT_PLAIN = re.compile(
 
 @dataclass(frozen=True)
 class TaskContext:
-    """不可变任务日志上下文。document_id/pdf_hash 均为截断后的展示值。"""
+    """不可变任务日志上下文。document_id/pdf_hash/glossary_revision 均为截断展示值。"""
 
     job_id: str
     document_id: str
@@ -66,11 +67,13 @@ class TaskContext:
     from_page: int | None = None
     to_page: int | None = None
     status: str = STATUS_STARTED
+    glossary_revision: str = ""
 
     def __post_init__(self) -> None:
         """中心截断不变量：无论调用方传入多长的值，日志上下文只保留截断形式。"""
         object.__setattr__(self, "document_id", truncate_document_id(self.document_id))
         object.__setattr__(self, "pdf_hash", truncate_pdf_hash(self.pdf_hash))
+        object.__setattr__(self, "glossary_revision", truncate_glossary_revision(self.glossary_revision))
 
 
 _current_task: ContextVar[TaskContext | None] = ContextVar("pdf_reader_current_task", default=None)
@@ -101,6 +104,10 @@ def truncate_pdf_hash(value: str) -> str:
     return value[:PDF_HASH_LOG_LENGTH] if value else "-"
 
 
+def truncate_glossary_revision(value: str) -> str:
+    return value[:GLOSSARY_REVISION_LOG_LENGTH] if value else "-"
+
+
 def pages_label(ctx: TaskContext) -> str:
     if ctx.page is not None:
         return f"page={ctx.page}"
@@ -123,6 +130,7 @@ def task_context_from_indices(
     pdf_hash: str,
     page_indices: list[int] | tuple[int, ...],
     status: str = STATUS_STARTED,
+    glossary_revision: str = "",
 ) -> TaskContext:
     """从 0-based 页码列表构造 1-based 日志上下文。"""
     indices = list(page_indices or [])
@@ -132,6 +140,7 @@ def task_context_from_indices(
             document_id=truncate_document_id(document_id),
             pdf_hash=truncate_pdf_hash(pdf_hash),
             status=status,
+            glossary_revision=glossary_revision,
         )
     if len(indices) == 1 or min(indices) == max(indices):
         return TaskContext(
@@ -140,6 +149,7 @@ def task_context_from_indices(
             pdf_hash=truncate_pdf_hash(pdf_hash),
             page=min(indices) + 1,
             status=status,
+            glossary_revision=glossary_revision,
         )
     return TaskContext(
         job_id=job_id,
@@ -148,6 +158,7 @@ def task_context_from_indices(
         from_page=min(indices) + 1,
         to_page=max(indices) + 1,
         status=status,
+        glossary_revision=glossary_revision,
     )
 
 
@@ -163,6 +174,8 @@ def task_log(
     ctx = task if task is not None else _current_task.get()
     if ctx is not None:
         fields = [f"job={ctx.job_id}", f"doc={ctx.document_id}", f"hash={ctx.pdf_hash}"]
+        if ctx.glossary_revision and ctx.glossary_revision != "-":
+            fields.append(f"rev={ctx.glossary_revision}")
         label = pages_label(ctx)
         if label:
             fields.append(label)

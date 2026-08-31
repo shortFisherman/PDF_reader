@@ -23,6 +23,7 @@ from pdf_reader.candidate_service import (
 )
 from pdf_reader.candidate_store import CandidateStore
 from pdf_reader.config import CandidateExtractionRuntimeConfig, ModelRuntimeConfig
+from pdf_reader.term_diagnostics import candidate_failed_count
 from pdf_reader.term_model import TermStoreError
 
 
@@ -118,9 +119,15 @@ def _cfg(**overrides: object) -> CandidateExtractionRuntimeConfig:
     return CandidateExtractionRuntimeConfig(**values)  # type: ignore[arg-type]
 
 
-def _ok(terms: list[dict[str, str]]) -> tuple[int, bytes, dict[str, str]]:
+def _ok(
+    terms: list[dict[str, str]],
+    usage: dict[str, int] | None = None,
+) -> tuple[int, bytes, dict[str, str]]:
     content = json.dumps({"terms": terms}, ensure_ascii=False)
-    payload = json.dumps({"choices": [{"message": {"content": content}}]}, ensure_ascii=False).encode("utf-8")
+    data: dict[str, object] = {"choices": [{"message": {"content": content}}]}
+    if usage is not None:
+        data["usage"] = usage
+    payload = json.dumps(data, ensure_ascii=False).encode("utf-8")
     return 200, payload, {}
 
 
@@ -176,6 +183,86 @@ def test_success_writes_candidates_with_pages_and_strategy(tmp_path, fake_server
     assert by_source["tcs"].targets[0].target == "外用糖皮质激素"
     assert by_source["tcs"].targets[0].pages == (2,)
     assert by_source["tcs"].targets[0].evidence == ("TCS is another term.",)
+
+
+def test_success_report_includes_proposed_elapsed_and_usage(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD is a common term.", "TCS is another term."])
+    _FakeHandler.responses.append(
+        _ok(
+            [{"source": "AD", "target": "阿尔茨海默病"}, {"source": "TCS", "target": "外用糖皮质激素"}],
+            usage={"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28},
+        )
+    )
+    document_dir = _doc_dir(tmp_path)
+    service = _service(fake_server)
+
+    report = _run(service, pdf, [0, 1], document_dir)
+
+    assert report.status == "ok"
+    assert report.proposed == 2
+    assert report.candidates == 2
+    assert report.filtered == 0
+    assert report.elapsed_ms >= 0
+    assert report.usage is not None
+    assert report.usage.prompt_tokens == 20
+    assert report.usage.completion_tokens == 8
+    assert report.usage.total_tokens == 28
+    assert candidate_failed_count(report) == 0
+
+
+def test_missing_usage_reports_unavailable_in_log(tmp_path, fake_server, managed_caplog):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    document_dir = _doc_dir(tmp_path)
+    service = _service(fake_server)
+
+    with managed_caplog.at_level(logging.INFO, logger="pdf_reader.candidate"):
+        report = _run(service, pdf, [0], document_dir)
+
+    assert report.status == "ok"
+    assert report.usage is None
+    assert "usage=unavailable" in managed_caplog.text
+    assert "candidate summary" in managed_caplog.text
+
+
+def test_proposed_counts_model_output_before_filter(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD appears in the guideline."])
+    _FakeHandler.responses.append(
+        _ok(
+            [
+                {"source": "AD", "target": "阿尔茨海默病"},
+                {"source": "benefits", "target": "获益"},
+                {"source": "nonexistentterm", "target": "不存在的术语"},
+            ]
+        )
+    )
+    document_dir = _doc_dir(tmp_path)
+    service = _service(fake_server)
+
+    report = _run(service, pdf, [0], document_dir)
+
+    assert report.status == "ok"
+    assert report.proposed == 3
+    assert report.candidates == 1
+    assert report.filtered == 2
+    assert candidate_failed_count(report) == 0
+
+
+def test_failed_report_carries_elapsed_and_failed_count(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD text"])
+    document_dir = _doc_dir(tmp_path)
+    _FakeHandler.responses.append((503, b"", {}))
+    _FakeHandler.responses.append((503, b"", {}))
+    service = _service(fake_server)
+
+    report = _run(service, pdf, [0], document_dir)
+
+    assert report.status == "failed"
+    assert candidate_failed_count(report) == 1
+    assert report.elapsed_ms >= 0
+    assert report.proposed == 0
+    assert report.candidates == 0
+    assert report.usage is None
 
 
 def test_nonzero_single_page_maps_local_pdf_to_original_page(tmp_path, fake_server):
@@ -698,7 +785,7 @@ def test_commit_cannot_upgrade_identityless_prepared(tmp_path, fake_server):
     assert not (dir_a / "term_candidates.json").exists()
 
 
-def test_commit_without_observations_is_noop(tmp_path, fake_server):
+def test_commit_without_observations_is_noop(tmp_path, fake_server, managed_caplog):
     pdf = _pdf(tmp_path, ["Benefits are important for patients."])
     document_dir = _doc_dir(tmp_path)
     store = CandidateStore(document_dir)
@@ -711,9 +798,11 @@ def test_commit_without_observations_is_noop(tmp_path, fake_server):
 
     assert prepared.report.status == "all_filtered"
     assert prepared.observations == ()
-    report = service.commit(prepared, document_dir)
+    with managed_caplog.at_level(logging.INFO, logger="pdf_reader.candidate"):
+        report = service.commit(prepared, document_dir)
     assert report.status == "all_filtered"
     assert store.path.read_bytes() == old_bytes
+    assert "event=candidate_commit" in managed_caplog.text
 
 
 def test_logs_never_contain_text_prompt_targets_or_keys(tmp_path, fake_server, managed_caplog):
@@ -731,6 +820,7 @@ def test_logs_never_contain_text_prompt_targets_or_keys(tmp_path, fake_server, m
     with managed_caplog.at_level(logging.INFO, logger="pdf_reader.candidate"):
         report = _run(service, pdf, [0], document_dir)
     assert report.status == "ok"
+    assert report.proposed == 2
     assert report.candidates == 1
     assert report.filtered == 1
     text = managed_caplog.text
@@ -742,8 +832,120 @@ def test_logs_never_contain_text_prompt_targets_or_keys(tmp_path, fake_server, m
     assert str(pdf) not in text
     assert "Traceback" not in text
     assert "common_word" in text
-    assert "candidates=1" in text
+    assert "candidate summary" in text
+    assert "proposed=2" in text
+    assert "kept=1" in text
+    assert "filtered=1" in text
+    assert "failed=0" in text
+    assert "usage=" in text
     assert "pages=(1,)" in text
+
+
+def test_commit_summary_logs_store_state_counts(tmp_path, fake_server, managed_caplog):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    document_dir = _doc_dir(tmp_path)
+    service = _service(fake_server)
+
+    with managed_caplog.at_level(logging.INFO, logger="pdf_reader.candidate"):
+        _run(service, pdf, [0], document_dir)
+
+    assert "event=candidate_commit" in managed_caplog.text
+    assert "pending=1" in managed_caplog.text
+    assert "accepted=0" in managed_caplog.text
+    assert "rejected=0" in managed_caplog.text
+
+
+def test_commit_pending_stat_failure_degrades_without_store_damage(tmp_path, fake_server, monkeypatch, managed_caplog):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    document_dir = _doc_dir(tmp_path)
+    service = _service(fake_server)
+
+    def boom(self) -> None:
+        raise TermStoreError("summary stat unavailable")
+
+    monkeypatch.setattr(CandidateStore, "candidate_summaries", boom)
+    with managed_caplog.at_level(logging.INFO, logger="pdf_reader.candidate"):
+        report = _run(service, pdf, [0], document_dir)
+
+    assert report.status == "ok"
+    assert "event=candidate_commit" in managed_caplog.text
+    assert "pending=unavailable" in managed_caplog.text
+    assert "accepted=unavailable" in managed_caplog.text
+    assert "rejected=unavailable" in managed_caplog.text
+    entries, _, _ = CandidateStore(document_dir).load()
+    assert len(entries) == 1
+
+
+def test_commit_summary_counts_real_store_states(tmp_path, fake_server, managed_caplog):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    document_dir = _doc_dir(tmp_path)
+    store = CandidateStore(document_dir)
+    store.record_observation("TCS", "外用糖皮质激素")
+    store.accept("TCS")
+    store.record_observation("benefits", "福利")
+    store.reject("benefits")
+    service = _service(fake_server)
+
+    with managed_caplog.at_level(logging.INFO, logger="pdf_reader.candidate"):
+        report = _run(service, pdf, [0], document_dir)
+
+    assert report.status == "ok"
+    text = managed_caplog.text
+    assert "event=candidate_commit" in text
+    assert "pending=1" in text
+    assert "accepted=1" in text
+    assert "rejected=1" in text
+    for secret in ("AD", "TCS", "benefits", "阿尔茨海默病", "外用糖皮质激素", "福利"):
+        assert secret not in text
+
+
+def test_commit_identity_rejected_emits_summary(tmp_path, fake_server, managed_caplog):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    document_dir = _doc_dir(tmp_path)
+    service = _service(fake_server)
+    identity = CandidateIdentity(
+        job_id="job-a",
+        document_id="doc-a",
+        pdf_hash=document_dir.name,
+        document_dir=document_dir,
+    )
+    active = MagicMock(job_id="job-a", document_id="doc-a", pdf_hash=document_dir.name)
+    other = MagicMock(job_id="job-b", document_id="doc-a", pdf_hash=document_dir.name)
+    prepared = service.prepare(pdf, [0], document_dir, identity=identity, active_job_provider=lambda: active)
+    assert prepared.report.status == "ok"
+
+    with managed_caplog.at_level(logging.INFO, logger="pdf_reader.candidate"):
+        report = service.commit(prepared, document_dir, identity=identity, active_job_provider=lambda: other)
+
+    assert report.status == "identity_rejected"
+    assert "event=candidate_commit" in managed_caplog.text
+    assert "status=identity_rejected" in managed_caplog.text
+    assert "failed=0" in managed_caplog.text
+    assert not (document_dir / "term_candidates.json").exists()
+
+
+def test_commit_store_failed_emits_summary_with_failed(tmp_path, fake_server, monkeypatch, managed_caplog):
+    pdf = _pdf(tmp_path, ["AD text"])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    document_dir = _doc_dir(tmp_path)
+    service = _service(fake_server)
+
+    def boom(self, observations: object, **kwargs: object) -> None:
+        raise TermStoreError("disk failure")
+
+    monkeypatch.setattr(CandidateStore, "record_observations", boom)
+    with managed_caplog.at_level(logging.INFO, logger="pdf_reader.candidate"):
+        report = _run(service, pdf, [0], document_dir)
+
+    assert report.status == "store_failed"
+    assert "event=candidate_commit" in managed_caplog.text
+    assert "status=store_failed" in managed_caplog.text
+    assert "failed=1" in managed_caplog.text
+    assert not (document_dir / "term_candidates.json").exists()
 
 
 def test_candidate_term_service_exposes_deterministic_summaries(tmp_path):

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,7 +40,8 @@ from pdf_reader.candidate_filter import (
 from pdf_reader.candidate_store import CandidateObservation, CandidateStore
 from pdf_reader.config import CandidateExtractionRuntimeConfig, ModelRuntimeConfig
 from pdf_reader.task_logging import TaskContext, task_log
-from pdf_reader.term_extraction import TermExtractionClient, TermExtractionError
+from pdf_reader.term_diagnostics import CandidateStoreCounts, log_candidate_summary
+from pdf_reader.term_extraction import TermExtractionClient, TermExtractionError, TokenUsage
 from pdf_reader.term_model import (
     CandidateSuggestionSummary,
     CandidateTargetSummary,
@@ -61,6 +63,9 @@ class CandidateExtractionReport:
     job_id: str = ""
     document_id: str = ""
     pdf_hash: str = ""
+    proposed: int = 0
+    elapsed_ms: int = 0
+    usage: TokenUsage | None = None
 
 
 @dataclass(frozen=True)
@@ -136,6 +141,7 @@ class CandidateExtractionService:
             )
             if identity is not None:
                 report = self._with_identity(report, identity)
+            self._log_diagnostics(report, task_ctx=task_ctx, event="candidate_prepare")
             return PreparedCandidates(
                 observations=observations,
                 report=report,
@@ -163,59 +169,85 @@ class CandidateExtractionService:
         终态。
         """
         with self._semaphore:
-            frozen_identity = prepared.identity
-            if frozen_identity is not None:
-                if identity is not None and identity != frozen_identity:
-                    return self._identity_rejected(prepared.report, task_ctx)
-                target_dir = document_dir
-                if target_dir is None:
-                    target_dir = frozen_identity.document_dir
-                if target_dir != frozen_identity.document_dir:
-                    return self._identity_rejected(prepared.report, task_ctx)
-                if not self._identity_is_current(frozen_identity, active_job_provider):
-                    return self._identity_rejected(prepared.report, task_ctx)
-            elif identity is not None:
-                # 无身份 prepared 不允许在 commit 时被升级为带身份。
+            report = self._commit_locked(
+                prepared,
+                document_dir,
+                task_ctx,
+                identity=identity,
+                active_job_provider=active_job_provider,
+            )
+            self._log_commit_diagnostics(
+                report,
+                self._commit_stats_dir(prepared, document_dir),
+                task_ctx,
+            )
+            return report
+
+    def _commit_locked(
+        self,
+        prepared: PreparedCandidates,
+        document_dir: Path | None,
+        task_ctx: TaskContext | None,
+        *,
+        identity: CandidateIdentity | None,
+        active_job_provider: Callable[[], object | None] | None,
+    ) -> CandidateExtractionReport:
+        """commit 身份门与原子写入；所有返回路径都由外层补发 commit 摘要。"""
+        frozen_identity = prepared.identity
+        if frozen_identity is not None:
+            if identity is not None and identity != frozen_identity:
                 return self._identity_rejected(prepared.report, task_ctx)
-            else:
-                # 原有无身份兼容路径：不校验 active job，直接写调用方目录。
-                target_dir = document_dir
-            if not prepared.observations:
-                return prepared.report
-            try:
-                if target_dir is None:
-                    raise TermStoreError("missing document cache dir")
-                CandidateStore(target_dir).record_observations(
-                    list(prepared.observations),
-                    strategy_version=CANDIDATE_STRATEGY_VERSION,
-                )
-            except TermStoreError as exc:
-                task_log(
-                    logger,
-                    logging.WARNING,
-                    "candidate store write failed: reason=%s",
-                    type(exc).__name__,
-                    task=task_ctx,
-                )
-                return self._report_with_status(prepared.report, "store_failed")
-            except Exception as exc:
-                task_log(
-                    logger,
-                    logging.WARNING,
-                    "candidate store write failed: reason=%s",
-                    type(exc).__name__,
-                    task=task_ctx,
-                )
-                return self._report_with_status(prepared.report, "store_failed")
+            target_dir = document_dir
+            if target_dir is None:
+                target_dir = frozen_identity.document_dir
+            if target_dir != frozen_identity.document_dir:
+                return self._identity_rejected(prepared.report, task_ctx)
+            if not self._identity_is_current(frozen_identity, active_job_provider):
+                return self._identity_rejected(prepared.report, task_ctx)
+        elif identity is not None:
+            # 无身份 prepared 不允许在 commit 时被升级为带身份。
+            return self._identity_rejected(prepared.report, task_ctx)
+        else:
+            # 原有无身份兼容路径：不校验 active job，直接写调用方目录。
+            target_dir = document_dir
+        if not prepared.observations:
+            return prepared.report
+        try:
+            if target_dir is None:
+                raise TermStoreError("missing document cache dir")
+            CandidateStore(target_dir).record_observations(
+                list(prepared.observations),
+                strategy_version=CANDIDATE_STRATEGY_VERSION,
+            )
+        except TermStoreError as exc:
             task_log(
                 logger,
-                logging.INFO,
-                "candidate commit done: candidates=%d pages=%s",
-                len(prepared.observations),
-                prepared.report.pages,
+                logging.WARNING,
+                "candidate store write failed: reason=%s",
+                type(exc).__name__,
                 task=task_ctx,
             )
-            return self._report_with_status(prepared.report, "ok")
+            return self._report_with_status(prepared.report, "store_failed")
+        except Exception as exc:
+            task_log(
+                logger,
+                logging.WARNING,
+                "candidate store write failed: reason=%s",
+                type(exc).__name__,
+                task=task_ctx,
+            )
+            return self._report_with_status(prepared.report, "store_failed")
+        return self._report_with_status(prepared.report, "ok")
+
+    @staticmethod
+    def _commit_stats_dir(
+        prepared: PreparedCandidates,
+        document_dir: Path | None,
+    ) -> Path | None:
+        """commit 摘要的持久状态统计目录：冻结身份目录优先，与写入权威一致。"""
+        if prepared.identity is not None:
+            return prepared.identity.document_dir
+        return document_dir
 
     def _prepare_locked(
         self,
@@ -278,13 +310,15 @@ class CandidateExtractionService:
 
         pages = tuple(sorted({page for page, _ in page_texts}))
         full_text = "\n".join(text for _, text in page_texts)
-        truncated = len(full_text) > self._cfg.max_input_chars
         # 确定性有界策略：超限时保留前缀，不随机/不按行猜测边界；逐页截断块
         # 与送给模型的 sent_text 完全一致，保证页码/证据只来自实际输入。
         sent_text = full_text[: self._cfg.max_input_chars]
         page_chunks = _truncate_pages(page_texts, sent_text)
+        extract_started = time.monotonic()
         try:
-            candidates = self._client.extract_terms(sent_text)
+            result = self._client.extract_terms_with_usage(sent_text)
+            candidates = result.terms
+            usage = result.usage
         except TermExtractionError as exc:
             task_log(
                 logger,
@@ -293,7 +327,11 @@ class CandidateExtractionService:
                 type(exc).__name__,
                 task=task_ctx,
             )
-            return CandidateExtractionReport(status="failed", pages=pages), ()
+            return CandidateExtractionReport(
+                status="failed",
+                pages=pages,
+                elapsed_ms=_elapsed_ms(extract_started),
+            ), ()
         except Exception as exc:
             task_log(
                 logger,
@@ -302,45 +340,33 @@ class CandidateExtractionService:
                 type(exc).__name__,
                 task=task_ctx,
             )
-            return CandidateExtractionReport(status="failed", pages=pages), ()
+            return CandidateExtractionReport(
+                status="failed",
+                pages=pages,
+                elapsed_ms=_elapsed_ms(extract_started),
+            ), ()
+        elapsed_ms = _elapsed_ms(extract_started)
         if not candidates:
-            task_log(
-                logger,
-                logging.INFO,
-                "candidate extraction done: no candidates pages=%s",
-                pages,
-                task=task_ctx,
-            )
-            return CandidateExtractionReport(status="no_candidates", pages=pages), ()
+            return CandidateExtractionReport(
+                status="no_candidates",
+                pages=pages,
+                elapsed_ms=elapsed_ms,
+                usage=usage,
+            ), ()
 
         filtered = filter_candidates(candidates, sent_text, page_chunks)
         kept = [item for item in filtered if item.reason is None]
         rejected = [item for item in filtered if item.reason is not None]
         reasons = _reason_counts(filtered)
-        if rejected:
-            task_log(
-                logger,
-                logging.INFO,
-                "candidate filter: filtered=%d reasons=%s",
-                len(rejected),
-                reasons,
-                task=task_ctx,
-            )
         if not kept:
-            task_log(
-                logger,
-                logging.INFO,
-                "candidate extraction done: no candidates pages=%s filtered=%d",
-                pages,
-                len(rejected),
-                task=task_ctx,
-            )
             return CandidateExtractionReport(
                 status="all_filtered",
-                candidates=0,
+                proposed=len(candidates),
                 pages=pages,
                 filtered=len(rejected),
                 filtered_by_reason=reasons,
+                elapsed_ms=elapsed_ms,
+                usage=usage,
             ), ()
 
         observations = [
@@ -352,23 +378,70 @@ class CandidateExtractionService:
             )
             for item in kept
         ]
-        task_log(
-            logger,
-            logging.INFO,
-            "candidate extraction done: candidates=%d pages=%s truncated=%s filtered=%d",
-            len(kept),
-            pages,
-            truncated,
-            len(rejected),
-            task=task_ctx,
-        )
         return CandidateExtractionReport(
             status="ok",
+            proposed=len(candidates),
             candidates=len(kept),
             pages=pages,
             filtered=len(rejected),
             filtered_by_reason=reasons,
+            elapsed_ms=elapsed_ms,
+            usage=usage,
         ), tuple(observations)
+
+    @staticmethod
+    def _log_diagnostics(
+        report: CandidateExtractionReport,
+        *,
+        task_ctx: TaskContext | None,
+        event: str,
+        store_counts: CandidateStoreCounts | None = None,
+    ) -> None:
+        """发射候选诊断摘要；任何异常只降级，不改变候选/正文流程。"""
+        try:
+            log_candidate_summary(
+                logger,
+                logging.INFO,
+                report,
+                task_ctx=task_ctx,
+                event=event,
+                store_counts=store_counts,
+            )
+        except Exception:
+            try:
+                task_log(
+                    logger,
+                    logging.WARNING,
+                    "candidate diagnostics unavailable; candidate flow continues",
+                    task=task_ctx,
+                )
+            except Exception:
+                pass
+
+    @staticmethod
+    def _log_commit_diagnostics(
+        report: CandidateExtractionReport,
+        target_dir: Path | None,
+        task_ctx: TaskContext | None,
+    ) -> None:
+        """提交后统计真实持久状态并发射摘要；统计故障三个计数均 unavailable。"""
+        store_counts: CandidateStoreCounts | None = None
+        if target_dir is not None:
+            try:
+                summaries = CandidateStore(target_dir).candidate_summaries()
+                store_counts = CandidateStoreCounts(
+                    pending=sum(1 for summary in summaries if summary.status == "candidate"),
+                    accepted=sum(1 for summary in summaries if summary.status == "accepted"),
+                    rejected=sum(1 for summary in summaries if summary.status == "rejected"),
+                )
+            except Exception:
+                store_counts = None
+        CandidateExtractionService._log_diagnostics(
+            report,
+            task_ctx=task_ctx,
+            event="candidate_commit",
+            store_counts=store_counts,
+        )
 
     @staticmethod
     def _with_identity(report: CandidateExtractionReport, identity: CandidateIdentity) -> CandidateExtractionReport:
@@ -382,6 +455,9 @@ class CandidateExtractionService:
             job_id=identity.job_id,
             document_id=identity.document_id,
             pdf_hash=identity.pdf_hash,
+            proposed=report.proposed,
+            elapsed_ms=report.elapsed_ms,
+            usage=report.usage,
         )
 
     @staticmethod
@@ -396,6 +472,9 @@ class CandidateExtractionService:
             job_id=report.job_id,
             document_id=report.document_id,
             pdf_hash=report.pdf_hash,
+            proposed=report.proposed,
+            elapsed_ms=report.elapsed_ms,
+            usage=report.usage,
         )
 
     @staticmethod
@@ -498,6 +577,10 @@ def _reason_counts(filtered: Sequence[FilteredCandidate]) -> tuple[tuple[str, in
         if item.reason is not None:
             counts[item.reason] = counts.get(item.reason, 0) + 1
     return tuple(sorted(counts.items()))
+
+
+def _elapsed_ms(started: float) -> int:
+    return max(0, int((time.monotonic() - started) * 1000))
 
 
 class CandidateTermService:

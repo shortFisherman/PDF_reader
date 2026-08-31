@@ -53,7 +53,12 @@ from pdf_reader.file_hash import sha256
 from pdf_reader.routes import register_routes
 from pdf_reader.state import AppState
 from pdf_reader.strict_glossary import StrictTranslationContext
-from pdf_reader.term_extraction import TermCandidate, TermExtractionClient, TermExtractionError
+from pdf_reader.term_extraction import (
+    TermCandidate,
+    TermExtractionClient,
+    TermExtractionError,
+    TermExtractionResult,
+)
 from pdf_reader.term_model import TermStoreError
 from pdf_reader.translation_coordinator import TranslationCoordinator
 
@@ -917,8 +922,11 @@ def _install_candidate_service(system_app, monkeypatch, *, raise_store: bool) ->
     system_app.config["candidate_extraction_service"] = service
     monkeypatch.setattr(
         TermExtractionClient,
-        "extract_terms",
-        lambda self, text: [TermCandidate(source="AD", target="阿尔茨海默病")],
+        "extract_terms_with_usage",
+        lambda self, text: TermExtractionResult(
+            terms=[TermCandidate(source="AD", target="阿尔茨海默病")],
+            usage=None,
+        ),
     )
     if raise_store:
 
@@ -993,7 +1001,7 @@ def test_single_page_candidate_extraction_failure_finishes_and_preserves_state(
     def fail_extract(self, text: str) -> None:
         raise TermExtractionError("injected extraction failure")
 
-    monkeypatch.setattr(TermExtractionClient, "extract_terms", fail_extract)
+    monkeypatch.setattr(TermExtractionClient, "extract_terms_with_usage", fail_extract)
     source.release.set()
 
     body = _consume(system_client.post("/api/translate/0", json={}, buffered=False))
@@ -1058,7 +1066,7 @@ def test_batch_candidate_extraction_failure_finishes_and_preserves_state(
     def fail_extract(self, text: str) -> None:
         raise TermExtractionError("injected extraction failure")
 
-    monkeypatch.setattr(TermExtractionClient, "extract_terms", fail_extract)
+    monkeypatch.setattr(TermExtractionClient, "extract_terms_with_usage", fail_extract)
     source.release.set()
 
     body = _consume(system_client.post("/api/translate-batch", json={"from": 1, "to": 2}, buffered=False))

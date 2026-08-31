@@ -21,7 +21,7 @@ from pdf_reader.sse_stream import (
 )
 from pdf_reader.strict_glossary import StrictTranslationContext, build_strict_settings
 from pdf_reader.task_logging import STATUS_STARTED, TaskContext, task_context_from_indices
-from pdf_reader.term_extraction import TermCandidate, TermExtractionClient
+from pdf_reader.term_extraction import TermCandidate, TermExtractionClient, TermExtractionResult, TokenUsage
 
 _CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]")
 
@@ -535,8 +535,11 @@ def test_candidates_never_enter_effective_or_settings(tmp_path, monkeypatch):
     service = CandidateExtractionService(upstream.term_extraction, upstream.model)
     monkeypatch.setattr(
         TermExtractionClient,
-        "extract_terms",
-        lambda self, text: [TermCandidate(source="AD", target="候选译法")],
+        "extract_terms_with_usage",
+        lambda self, text: TermExtractionResult(
+            terms=[TermCandidate(source="AD", target="候选译法")],
+            usage=None,
+        ),
     )
     ctx = _single_ctx(
         context=context,
@@ -619,8 +622,11 @@ def test_identity_rejected_candidate_does_not_change_finish_and_writes_nothing(t
     service = CandidateExtractionService(upstream.term_extraction, upstream.model)
     monkeypatch.setattr(
         TermExtractionClient,
-        "extract_terms",
-        lambda self, text: [TermCandidate(source="AD", target="候选译法")],
+        "extract_terms_with_usage",
+        lambda self, text: TermExtractionResult(
+            terms=[TermCandidate(source="AD", target="候选译法")],
+            usage=None,
+        ),
     )
     other = MagicMock(job_id="other-job", document_id=context.document_id, pdf_hash=context.pdf_hash)
     ctx = _single_ctx(
@@ -661,8 +667,11 @@ def test_identity_changed_after_prepare_rejects_commit_but_finishes(tmp_path, mo
     service = CandidateExtractionService(upstream.term_extraction, upstream.model)
     monkeypatch.setattr(
         TermExtractionClient,
-        "extract_terms",
-        lambda self, text: [TermCandidate(source="AD", target="候选译法")],
+        "extract_terms_with_usage",
+        lambda self, text: TermExtractionResult(
+            terms=[TermCandidate(source="AD", target="候选译法")],
+            usage=None,
+        ),
     )
     active = MagicMock(job_id="job-candidate", document_id=context.document_id, pdf_hash=context.pdf_hash)
     other = MagicMock(job_id="other-job", document_id=context.document_id, pdf_hash=context.pdf_hash)
@@ -694,3 +703,145 @@ def test_identity_changed_after_prepare_rejects_commit_but_finishes(tmp_path, mo
     ctx.finish_job.assert_called_once_with("job-candidate")
     assert not (doc_dir / "term_candidates.json").exists()
     assert "candidate identity rejected at commit" in managed_caplog.text
+
+
+def test_single_info_logs_carry_revision_and_candidate_summary(tmp_path, monkeypatch, managed_caplog):
+    source_pdf = _pdf(tmp_path, ["AD appears here."], name="source.pdf")
+    ok_pdf = _pdf(tmp_path, ["阿尔茨海默病 是诊断结果。"], name="ok.pdf")
+    context, doc_dir = _strict_ctx(tmp_path, [("AD", "阿尔茨海默病")])
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    upstream = config.UpstreamRuntimeConfig(
+        model=config.ModelRuntimeConfig(provider="deepseek", api_key="sk-test", model="deepseek-chat"),
+        translation=config.TranslationRuntimeConfig(lang_in="en", lang_out="zh"),
+        pdf=config.Pdf2zhRuntimeConfig(),
+    )
+    service = CandidateExtractionService(upstream.term_extraction, upstream.model)
+    monkeypatch.setattr(
+        TermExtractionClient,
+        "extract_terms_with_usage",
+        lambda self, text: TermExtractionResult(
+            terms=[TermCandidate(source="AD", target="候选译法")],
+            usage=TokenUsage(prompt_tokens=9, completion_tokens=4, total_tokens=13),
+        ),
+    )
+    task_ctx = TaskContext(
+        job_id="job-diag",
+        document_id=context.document_id,
+        pdf_hash=context.pdf_hash,
+        page=1,
+        status=STATUS_STARTED,
+        glossary_revision="c" * 64,
+    )
+    ctx = _single_ctx(
+        context=context,
+        doc_dir=doc_dir,
+        cache_dir=cache_dir,
+        source_pdf=source_pdf,
+        service=service,
+        job_id="job-diag",
+    )
+    ctx.task_ctx = task_ctx
+
+    with (
+        patch("pdf_reader.sse_stream.run_translation", return_value=iter(_finish(_result(mono=ok_pdf)))),
+        patch("pdf_reader.sse_stream.debug_trace"),
+        managed_caplog.at_level(logging.INFO, logger="pdf_reader"),
+    ):
+        output = list(generate(ctx))
+
+    assert '"type": "finish"' in "".join(output)
+    text = managed_caplog.text
+    assert f"rev={'c' * 12}" in text
+    assert "candidate summary" in text
+    assert "proposed=1" in text
+    assert "kept=1" in text
+    assert "event=candidate_prepare" in text
+    assert "event=candidate_commit" in text
+    assert "pending=1" in text
+    assert "accepted=0" in text
+    assert "rejected=0" in text
+    assert "usage=prompt=9 completion=4 total=13" in text
+    assert "候选译法" not in text
+
+
+def test_diagnostics_function_failure_does_not_block_finish(tmp_path, monkeypatch, managed_caplog):
+    source_pdf = _pdf(tmp_path, ["AD appears here."], name="source.pdf")
+    ok_pdf = _pdf(tmp_path, ["阿尔茨海默病 是诊断结果。"], name="ok.pdf")
+    context, doc_dir = _strict_ctx(tmp_path, [("AD", "阿尔茨海默病")])
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    service = MagicMock()
+    service.prepare.return_value = _prepared()
+    service.commit.return_value = _commit_report()
+    ctx = _single_ctx(
+        context=context,
+        doc_dir=doc_dir,
+        cache_dir=cache_dir,
+        source_pdf=source_pdf,
+        service=service,
+    )
+
+    with (
+        patch(
+            "pdf_reader.term_diagnostics.log_candidate_summary",
+            side_effect=RuntimeError("candidate diagnostics boom"),
+        ),
+        patch(
+            "pdf_reader.term_diagnostics.log_glossary_active_terms",
+            side_effect=RuntimeError("glossary diagnostics boom"),
+        ),
+        patch("pdf_reader.sse_stream.run_translation", return_value=iter(_finish(_result(mono=ok_pdf)))),
+        patch("pdf_reader.sse_stream.debug_trace"),
+        managed_caplog.at_level(logging.WARNING, logger="pdf_reader"),
+    ):
+        output = list(generate(ctx))
+
+    body = "".join(output)
+    assert '"type": "finish"' in body
+    ctx.replace_page.assert_called_once_with(str(ok_pdf))
+    ctx.finish_job.assert_called_once_with("job-candidate")
+    service.commit.assert_called_once()
+    assert "diagnostics unavailable" in managed_caplog.text
+    assert "diagnostics boom" not in managed_caplog.text
+
+
+def test_batch_info_logs_carry_revision(managed_caplog, tmp_path):
+    source_pdf = _pdf(tmp_path, ["AD page one", "TCS page two"], name="source.pdf")
+    ok_pdf = _pdf(tmp_path, ["阿尔茨海默病 第一页", "外用糖皮质激素 第二页"], name="ok.pdf")
+    context, doc_dir = _strict_ctx(tmp_path, [("AD", "阿尔茨海默病"), ("TCS", "外用糖皮质激素")])
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    service = MagicMock()
+    service.prepare.return_value = _prepared()
+    service.commit.return_value = _commit_report()
+    ctx = _batch_ctx(
+        context=context,
+        doc_dir=doc_dir,
+        cache_dir=cache_dir,
+        source_pdf=source_pdf,
+        service=service,
+        page_indices=[0, 1],
+        job_id="job-diag-batch",
+    )
+    ctx.task_ctx = TaskContext(
+        job_id="job-diag-batch",
+        document_id=context.document_id,
+        pdf_hash=context.pdf_hash,
+        from_page=1,
+        to_page=2,
+        status=STATUS_STARTED,
+        glossary_revision="e" * 64,
+    )
+
+    with (
+        patch("pdf_reader.sse_stream.run_translation", return_value=iter(_finish(_result(mono=ok_pdf)))),
+        patch("pdf_reader.sse_stream.debug_trace"),
+        managed_caplog.at_level(logging.INFO, logger="pdf_reader"),
+    ):
+        output = list(generate_batch(ctx))
+
+    assert '"type": "finish"' in "".join(output)
+    text = managed_caplog.text
+    assert f"rev={'e' * 12}" in text
+    assert "pages=1-2" in text

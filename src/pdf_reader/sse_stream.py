@@ -8,7 +8,14 @@ from pathlib import Path
 
 from pdf2zh_next import SettingsModel
 
-from pdf_reader import cache_ops, debug_trace, pdf_extraction, strict_glossary, terminology_compliance
+from pdf_reader import (
+    cache_ops,
+    debug_trace,
+    pdf_extraction,
+    strict_glossary,
+    term_diagnostics,
+    terminology_compliance,
+)
 from pdf_reader.candidate_service import (
     CandidateExtractionService,
     CandidateIdentity,
@@ -434,10 +441,38 @@ def _log_compliance(
     reason: str = "",
 ) -> None:
     """只记录 job/page/数量/状态等必要诊断，不记录正文、target、路径或异常原文。"""
-    detail = f"attempt={attempt} status={status} sources={sources} failed={failed}"
-    if reason:
-        detail += f" reason={reason}"
-    task_log(logger, level, "compliance %s", detail, task=task_ctx)
+    event = f"compliance_{status}"
+    _safe_diagnostics(
+        lambda: term_diagnostics.log_compliance(
+            logger,
+            level,
+            task_ctx=task_ctx,
+            event=event,
+            attempt=attempt,
+            status=status,
+            sources=sources,
+            failed=failed,
+            reason=reason,
+        ),
+        fallback="compliance diagnostics unavailable; translation continues",
+        task_ctx=task_ctx,
+    )
+
+
+def _safe_diagnostics(
+    call: Callable[[], object],
+    *,
+    fallback: str,
+    task_ctx: TaskContext | None,
+) -> None:
+    """非关键诊断调用：任何异常只降级为固定 fallback，绝不影响正文/终态。"""
+    try:
+        call()
+    except Exception:
+        try:
+            task_log(logger, logging.WARNING, fallback, task=task_ctx)
+        except Exception:
+            pass
 
 
 def generate(ctx: GenerateContext) -> Iterator[str]:
@@ -486,6 +521,19 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                     active_terms = strict_glossary.apply_resolved_active_terms(
                         ctx.settings,
                         resolution.active_terms,
+                    )
+                    active_count = len(active_terms)
+                    sources_count = len(ctx.strict_context.effective_rows)
+                    _safe_diagnostics(
+                        lambda: term_diagnostics.log_glossary_active_terms(
+                            logger,
+                            logging.INFO,
+                            task_ctx=ctx.task_ctx,
+                            active=active_count,
+                            sources=sources_count,
+                        ),
+                        fallback="glossary diagnostics unavailable; translation continues",
+                        task_ctx=ctx.task_ctx,
                     )
 
                 # P1-05 两阶段候选：prepare 在严格翻译前读取输入 PDF；任何失败
@@ -613,23 +661,35 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                         return
                     failed_terms = verdict.failed_terms
                     if attempt < max_attempts:
-                        task_log(
-                            logger,
-                            logging.INFO,
-                            "compliance retry scheduled: attempt=%d failed=%d",
-                            attempt,
-                            len(failed_terms),
-                            task=ctx.task_ctx,
+                        _safe_diagnostics(
+                            lambda: term_diagnostics.log_compliance(
+                                logger,
+                                logging.INFO,
+                                task_ctx=ctx.task_ctx,
+                                event="compliance_retry_scheduled",
+                                attempt=attempt,
+                                status="fail",
+                                sources=len(active_terms),
+                                failed=len(failed_terms),
+                            ),
+                            fallback="compliance diagnostics unavailable; translation continues",
+                            task_ctx=ctx.task_ctx,
                         )
                         yield _format_sse_glossary_retry(attempt + 1, max_attempts)
                         continue
-                    task_log(
-                        logger,
-                        logging.WARNING,
-                        "compliance failed after attempts: sources=%d failed=%d",
-                        len(active_terms),
-                        len(failed_terms),
-                        task=with_status(ctx.task_ctx, STATUS_FAILED),
+                    _safe_diagnostics(
+                        lambda: term_diagnostics.log_compliance(
+                            logger,
+                            logging.WARNING,
+                            task_ctx=with_status(ctx.task_ctx, STATUS_FAILED),
+                            event="compliance_failed_final",
+                            attempt=attempt,
+                            status="fail",
+                            sources=len(active_terms),
+                            failed=len(failed_terms),
+                        ),
+                        fallback="compliance diagnostics unavailable; translation continues",
+                        task_ctx=ctx.task_ctx,
                     )
                     yield format_sse_error(GLOSSARY_COMPLIANCE_FAILED_CODE, "术语合规验证未通过")
                     return
@@ -779,6 +839,19 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
                         ctx.settings,
                         resolution.active_terms,
                     )
+                    active_count = len(active_terms)
+                    sources_count = len(ctx.strict_context.effective_rows)
+                    _safe_diagnostics(
+                        lambda: term_diagnostics.log_glossary_active_terms(
+                            logger,
+                            logging.INFO,
+                            task_ctx=ctx.task_ctx,
+                            active=active_count,
+                            sources=sources_count,
+                        ),
+                        fallback="glossary diagnostics unavailable; translation continues",
+                        task_ctx=ctx.task_ctx,
+                    )
 
                 # 同单页：prepare 在严格翻译前，commit 在整批 PDF 提交后。
                 candidate_prepared = _prepare_candidate_extraction(ctx, multi_page_pdf, ctx.page_indices)
@@ -906,23 +979,35 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
                         return
                     failed_terms = verdict.failed_terms
                     if attempt < max_attempts:
-                        task_log(
-                            logger,
-                            logging.INFO,
-                            "compliance retry scheduled: attempt=%d failed=%d",
-                            attempt,
-                            len(failed_terms),
-                            task=ctx.task_ctx,
+                        _safe_diagnostics(
+                            lambda: term_diagnostics.log_compliance(
+                                logger,
+                                logging.INFO,
+                                task_ctx=ctx.task_ctx,
+                                event="compliance_retry_scheduled",
+                                attempt=attempt,
+                                status="fail",
+                                sources=len(active_terms),
+                                failed=len(failed_terms),
+                            ),
+                            fallback="compliance diagnostics unavailable; translation continues",
+                            task_ctx=ctx.task_ctx,
                         )
                         yield _format_sse_glossary_retry(attempt + 1, max_attempts)
                         continue
-                    task_log(
-                        logger,
-                        logging.WARNING,
-                        "compliance failed after attempts: sources=%d failed=%d",
-                        len(active_terms),
-                        len(failed_terms),
-                        task=with_status(ctx.task_ctx, STATUS_FAILED),
+                    _safe_diagnostics(
+                        lambda: term_diagnostics.log_compliance(
+                            logger,
+                            logging.WARNING,
+                            task_ctx=with_status(ctx.task_ctx, STATUS_FAILED),
+                            event="compliance_failed_final",
+                            attempt=attempt,
+                            status="fail",
+                            sources=len(active_terms),
+                            failed=len(failed_terms),
+                        ),
+                        fallback="compliance diagnostics unavailable; translation continues",
+                        task_ctx=ctx.task_ctx,
                     )
                     yield format_sse_error(GLOSSARY_COMPLIANCE_FAILED_CODE, "术语合规验证未通过")
                     return

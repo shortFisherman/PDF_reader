@@ -416,6 +416,7 @@ def translate_page(page: int):
             snapshot.pdf_hash,
             [page],
             status=STATUS_STARTED,
+            glossary_revision=strict_ctx.effective_glossary_revision,
         ),
         extract_page=lambda page, tmpdir, func: state.extract_page(
             page,
@@ -543,6 +544,7 @@ def translate_batch():
             snapshot.pdf_hash,
             page_indices,
             status=STATUS_STARTED,
+            glossary_revision=strict_ctx.effective_glossary_revision,
         ),
         extract_pages=lambda indices, tmpdir, func: state.extract_pages(
             indices,
