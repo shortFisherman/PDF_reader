@@ -170,7 +170,7 @@
 | P2-01 | P2 | 建立术语黄金样本与质量门槛 | `已完成` | P0-01，可提前建立基线 |
 | P2-02 | P2 | 增加术语诊断、统计和可解释性 | `已完成` | P0/P1 数据模型稳定后 |
 | P2-03 | P2 | 收口配置、旧累计词表兼容与用户文档 | `已完成` | P0/P1 主流程完成后 |
-| P2-04 | P2 | 建立上游升级和无补丁治理回归 | `待处理` | P0-01，持续事项 |
+| P2-04 | P2 | 建立上游升级和无补丁治理回归 | `已完成` | P0-01，持续事项 |
 
 建议严格按以下阶段执行：
 
@@ -823,11 +823,11 @@ compliance_retry_count = 1
 
 ### P2-04 建立上游升级和无补丁治理回归
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：—
+- 状态：`已完成`
+- 完成日期：2026-09-01
+- 完成提交：`67ac7ce`
+- 验证证据：`python scripts/upgrade_governance_gate.py` 全绿（静态治理检查 + 固定 7 个契约文件，198 passed）；P2-04/依赖/上游边界/文档/verify 定向验收 77 passed；`scripts/verify.ps1` 全绿（1495 Python tests，coverage line 92.8% / branch 86.6%，secret scan 696 个已跟踪文件，升级治理门静态检查、Ruff、Mypy、术语质量门、ESLint 与九个前端套件全部通过）。
+- 剩余问题：无（P0-01 跟踪内容守卫与 P2-04 全工作树治理门有意保持独立并在统一验证中同时运行；未来如合并，必须保留违规 fixture 检测能力与完整升级门契约）。
 
 #### 持续要求
 
@@ -841,11 +841,11 @@ compliance_retry_count = 1
 
 #### 验收标准
 
-- [ ] 依赖升级流程包含术语选择与严格正文路径契约命令。
-- [ ] CI/仓库治理测试能发现常见上游源码复制或影子包。
-- [ ] 上游升级不会把候选重新变成正文权威词表。
-- [ ] 严格正文路径和合规提交门不因上游内部实现变化被静默绕过。
-- [ ] 没有 fork、vendor、Monkey-patch 或未锁定依赖。
+- [x] 依赖升级流程包含术语选择与严格正文路径契约命令。
+- [x] CI/仓库治理测试能发现常见上游源码复制或影子包。
+- [x] 上游升级不会把候选重新变成正文权威词表。
+- [x] 严格正文路径和合规提交门不因上游内部实现变化被静默绕过。
+- [x] 没有 fork、vendor、Monkey-patch 或未锁定依赖。
 
 ---
 
@@ -921,3 +921,4 @@ compliance_retry_count = 1
 | 2026-08-31 | P2-01 | 已完成 | `4686598` | 建立三类黄金文本 fixture（医学指南/技术论文/教材）与受控模型响应（解析与后置过滤分别评测），带 AGPL-3.0-only 原创/合成 provenance 元数据；新增 `src/pdf_reader/term_quality.py` 与 `scripts/term_quality_gate.py`：固定普通词污染、`AD` 子串边界、TCS 全称/缩写多表述、错误首译不锁死、rejected 不重复提示；candidate precision（术语识别）与 candidate_target_accuracy（黄金中文）分离考核；有方向指标 batch_minus_single_core_recall_delta 只防批量相对单页退化；所有指标分子/分母/方向/空集合语义进入版本化 metric_definitions；fixture 必需维度（compliance pass/fail/unknown、boundary kept/rejected、store wrong-first/rejected、每响应解析与过滤期望、每类文档 core_terms/common_words）fail-closed；基线校验键集合/值类型/有限性/fixture_sha256；版本化基线 `docs/reports/term-quality-baseline.json` 支持漂移检测与前后对比，质量门已接入 `scripts/verify.ps1`，全部离线、无 API Key、只写临时目录；`scripts/verify.ps1` 全绿（1393 Python tests）。 |
 | 2026-08-31 | P2-02 | 已完成 | `a357860` | 新增 `src/pdf_reader/term_diagnostics.py` 与 `term_extraction.TokenUsage/TermExtractionResult/extract_terms_with_usage`：候选报告扩展 `proposed/elapsed_ms/usage`（failed 由受控 status 集合计算，不存冗余字段），prepare 摘要只含批内 proposed/kept/filtered/failed，commit 的所有返回路径都发 `candidate_commit` 摘要并追加 best-effort 真实持久状态计数 pending/accepted/rejected（统计失败三者均 unavailable）；任务日志前缀增加截断 12 字符的 `rev=`（路由冻结 `effective_glossary_revision`），正文活跃词条数量摘要 `glossary_active_terms`，合规稳定事件 `compliance_pass/fail/unknown/unavailable/retry_scheduled/failed_final`（SSE 错误码不变）；event/status/reason 全部走显式常量白名单（未知 → unknown，先类型/白名单判断再派生 event，任意对象绝不进入格式化），`TokenUsage.available` 三字段全真、缺失/部分/非法一律 unavailable 不伪造；全部诊断经 `safe_task_log`/`_safe_diagnostics`/`_log_diagnostics` 多层故障隔离，格式化/发射/统计/合规诊断抛错均不阻止正文、不改变终态、不损坏术语数据；普通 INFO 日志仍不泄露 source/target/证据/正文/Prompt/凭据；`scripts/verify.ps1` 全绿（1447 Python tests，coverage line 92.8%、branch 86.4%，静态与九个前端套件全部通过）。 |
 | 2026-08-31 | P2-03 | 已完成 | `56aee18` | 收口配置与旧累计词表兼容：`[term_extraction]` 为候选提取规范段且优先于旧 `translation.auto_extract_glossary`（段缺失时才作为 enabled 兼容来源）；三个 1.x 兼容键（auto_extract_glossary/term_qps/term_pool_max_workers）仍严格校验读取，启动输出不含敏感值的 WARNING 迁移提示，计划 2.0.0 移除，未知键仍严格拒绝；配置中心 schema 收口为 45 字段（不再展示/写入旧键，磁盘旧键保存时原样保留并有测试）；README 补充术语新建/编辑/锁定、候选接受/拒绝、CSV 导入导出与备份恢复指南（`effective_glossary.csv` 可重建产物、`cumulative_glossary.csv` 历史输入非权威、迁移备份 `.bak` 不覆盖、停服务/文档哈希/原子文件边界）；config.example.toml 与 docs/architecture.md 同步当前事实；旧 cumulative_glossary.csv 只读幂等迁移为未审核候选并保留备份、不进入 user/effective 权威词表（新增直接覆盖该不变量的测试）；`scripts/verify.ps1` 全绿（1459 Python tests，coverage line 92.8%/branch 86.5%，Mypy/Ruff/secret scan/ESLint/九个前端套件与术语质量门全部通过）。 |
+| 2026-09-01 | P2-04 | 已完成 | `67ac7ce` | 新增离线一键上游升级治理门：拒绝 VCS/editable/path/URL/未锁定依赖，递归扫描影子包、fork/vendor/补丁目录、上游源码副本与生产 Monkey-patch；固定运行上游词表选择、严格正文路径、候选隔离和合规提交门契约，静态部分接入 `verify.ps1`/CI；36 项违规 fixture 回归证明守卫能发现问题且不误报 tests/真实安装目录；完整验证 1495 tests 全绿。 |
