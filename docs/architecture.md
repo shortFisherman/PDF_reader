@@ -67,7 +67,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/config_editor.py` | 配置中心后端：48 字段 schema（分组/控件/说明/默认与常用值/Provider 适用性）、GET 密钥脱敏（只返回 configured/source）、已知字段白名单、复用 `validate_startup_requirements`/`resolve_server_config` 严格校验、revision 乐观冲突、模块级 RLock、同目录临时文件 fsync + `os.replace` 原子写并保留权限/未知字段/注释与顺序（tomlkit）；只写 `config.toml`，不热改冻结 `AppSettings`，保存返回 `restart_required=true` |
 | `src/pdf_reader/term_extraction.py` | P1-01 项目自有 `TermExtractionClient`：标准库 urllib 走 OpenAI-compatible `/chat/completions`（支持 deepseek/openai/openai_compatible，其余 Provider 稳定 unsupported）、严格受控 JSON 解析（条数/长度/控制字符/正文大小有界）、独立 QPS/timeout/有界重试（只重试超时/429/5xx），请求/响应/Prompt/Key 不入日志 |
 | `src/pdf_reader/candidate_filter.py` | P1-02 候选后置过滤：确定性前后标点清理/异常空白折叠、英文单词/缩写边界感知匹配、小型普通词/功能词/通用学术词精确拒绝、完整句/超词数/超字符/纯数字/公式/变量/页码/占位符结构拒绝、target 必须含 Han 字符、幻觉 source 拒绝、逐页命中页码与有界证据窗口；每条被过滤候选带稳定原因，规则版本 `candidate-filter/1` 组合进候选 `strategy_version`；只作用于模型自动候选，绝不删除/降级/重写用户权威决定 |
-| `src/pdf_reader/candidate_service.py` | P1-01/P1-02 旁路候选提取服务：正文最终验证并提交成功后运行（单页/批量同规则），PyMuPDF 读取已抽取逐页文本（1-based 页码、空跳过、与 `max_input_chars` 前缀截断完全一致的逐页块），候选先经 `candidate_filter` 过滤再只经 `CandidateStore.record_observations` 原子写（保留候选携带实际命中页+有界证据，策略版本 `term-extraction-client/1+candidate-filter/1`），任何失败降级安全日志且不阻正文 finish |
+| `src/pdf_reader/candidate_service.py` | P1-01/P1-02/P1-03 旁路候选提取服务（正文最终验证并提交成功后运行，单页/批量同规则，PyMuPDF 读取已抽取逐页文本，候选先经 `candidate_filter` 过滤再只经 `CandidateStore.record_observations` 原子写，任何失败降级安全日志且不阻正文 finish）与 P1-03 `CandidateTermService` 服务层摘要边界（候选 target 列表/统计，供未来 P1-04 UI/API 复用，不新增 HTTP） |
 | `src/pdf_reader/paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
 | `src/pdf_reader/task_logging.py` | 集中任务日志上下文：不可变 `TaskContext`、`contextvars` 传播、统一前缀/截断/1-based 页码、生命周期状态、`SafeFormatter` 脱敏（API Key、sk-/Bearer、api_key、prompt 类字段） |
 | `src/pdf_reader/routes.py` | Blueprint：12 个 HTTP/SSE 端点（含配置中心 GET/PUT `/api/config` 与 `POST /api/client-errors` 的 loopback-only 守卫）；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器与 409 `translation_busy`、403 `config_local_only`/`client_errors_local_only` |
@@ -84,10 +84,10 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/translation_lifecycle.py` | `finish_translation()` / `merge_glossary_only()`：译文持久化与术语合并 |
 | `src/pdf_reader/glossary_service.py` | 累积术语路径解析与合并入口 |
 | `src/pdf_reader/glossary_merger.py` | 术语多数投票合并：模块级互斥锁 + cumulative 路径共享锁（与迁移同快照）+ 同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交（BOM 安全读写） |
-| `src/pdf_reader/term_model.py` | P0-02 术语状态模型：权威/候选/拒绝语义、source key 规范化、schema 版本、受保护文件名与共享错误 |
+| `src/pdf_reader/term_model.py` | P0-02/P1-03 术语状态模型：权威/候选/拒绝语义、source key 规范化、候选 schema 版本、target 级统计字段、确定性推荐排序与摘要形状、受保护文件名与共享错误 |
 | `src/pdf_reader/path_locks.py` | P0-02 按规范路径共享的进程内可重入互斥锁（RLock，`lock_for_path`），同一文档路径的所有 Store 实例复用同一锁，允许同线程嵌套加锁（编译在输入锁内调用 Store.load 并计算摘要） |
 | `src/pdf_reader/user_glossary.py` | P0-02 文档级权威术语存储 `user_glossary.csv`（schema v1、按规范路径共享锁、revision、锁定、严格校验）与全局 `docs/glossary.csv` 只读加载 |
-| `src/pdf_reader/candidate_store.py` | P0-02 候选术语存储 `term_candidates.json`（schema v1、观察合并、P1-01 批量原子 `record_observations`、accept/reject 状态保护、legacy 合入迁移、严格校验、原子读写） |
+| `src/pdf_reader/candidate_store.py` | P0-02/P1-03 候选术语存储 `term_candidates.json`（schema v2 + v1 兼容读取/写时升级、观察合并、P1-01 批量原子 `record_observations`、P1-03 target 级真实观察次数/页覆盖/最近观察时间与确定性推荐排序、accept/reject 状态保护、legacy 合入迁移、严格校验、原子读写、候选摘要方法） |
 | `src/pdf_reader/legacy_migration.py` | P0-02 旧 `cumulative_glossary.csv` → 候选存储的幂等合入迁移（保留用户状态、备份不覆盖、失败原样） |
 | `src/pdf_reader/glossary_compiler.py` | P0-03 确定性有效词表编译：文档权威 > accepted 候选 > 全局优先级、输入锁内一致快照摘要、同级冲突 fail-closed、CSV + sidecar 原子成对提交、严格 sidecar 校验与 stale 检测 |
 | `src/pdf_reader/strict_glossary.py` | P0-04 严格正文术语路径：迁移→编译→验证的单一准备入口、活跃词条边界匹配与约束 Prompt 合成 |
@@ -109,7 +109,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `docs/governance/` | 文档治理、工具目录治理、依赖升级流程与许可证核验基线（非法律意见） |
 | `docs/`、`docs/archive/`、`docs/reports/` | 常青文档、历史归档与上游研究资料 |
 
-## 术语状态模型与缓存组成（P0-02/P0-03/P0-04）
+## 术语状态模型与缓存组成（P0-02/P0-03/P0-04/P1-03）
 
 P0-02 起，术语持久化按“用户决定”和“模型候选”两类语义分离，自动流程不得跨类写入：
 
@@ -126,18 +126,32 @@ P0-02 起，术语持久化按“用户决定”和“模型候选”两类语�
   持久文件读取 fail closed：表头必须精确匹配、`locked` 只接受
   `true`/`false`、重复规范化 source 与缺字段/坏时间戳都拒绝加载并保留原字节。
 - `cache/<pdf_hash>/term_candidates.json`：自动候选存储，由 `CandidateStore`
-  独占读写，同一文档的多个实例共享同一路径锁。schema v1 顶层含
-  `schema_version/revision/updated_at`，条目按
-  规范化 source key 索引，保存原始 source、状态
-  （`candidate`/`rejected`/`accepted`）、首次与最近观察时间、策略版本、多个
-  target 建议（各自观察次数/页码/有界原文证据）、用户接受的最终 target 与
-  被拒绝 target 列表。自动流程唯一写入口是 `record_observation`（P1-01 起批量
-  原子入口 `record_observations`）只合并观察，永不改变状态或
-  `accepted_target`；`accept`/`reject` 是用户操作。持久文件读取
-  fail closed：字段缺失/类型异常、normalized key 与 source 不一致、重复规范化
-  source、accepted/rejected 状态与 accepted_target 不一致、无效
-  pages/evidence/rejected_targets、损坏 migration 标记或未知 schema 版本都
-  拒绝加载并保留原字节，绝不静默过滤/更正后写回。
+  独占读写，同一文档的多个实例共享同一路径锁。当前写入 schema v2 顶层含
+  `schema_version/revision/updated_at`，条目按规范化 source key 索引，保存
+  原始 source、状态（`candidate`/`rejected`/`accepted`）、条目级首次与最近
+  观察时间、策略版本、多个 target 建议、用户接受的最终 target 与被拒绝
+  target 列表。P1-03 起每个 target 建议持久保存真实观察次数
+  （`observations`）、去重页码（`pages`，不同页覆盖数可由
+  `distinct_page_count` 审计）与 target 级最近观察时间（`last_observed_at`）；
+  同一批 `record_observations` 先按（规范化 source、target、页码、证据）
+  确定性排序再合并，同一批任意排列得到相同统计、target 时间与持久化字节，
+  并发往返不再退化为 1 票。推荐排序固定为：accepted target 最高优先 >
+  普通未拒绝建议 > rejected target；组内按不同页覆盖数降序 → 观察次数降序
+  → target 字典序升序，与批输入/线程完成顺序无关。`accept(source,
+  target=None)` 使用该确定性首选；显式 `accepted_target` 后即使其他自动
+  建议统计更高也不改写。source 整体 rejected 的 target 全部默认抑制
+  （摘要 `suppressed=True`），后台观察计数/页覆盖/最近观察时间仍继续增长；
+  自动流程唯一写入口 `record_observation`/`record_observations` 只合并观察，
+  永不改变状态、`accepted_target` 或拒绝记录。schema v1 文件仍严格读取
+  （target 时间以条目 `last_seen_at` 回填），下一次写入原子升级为 v2；持久
+  文件读取 fail closed：字段缺失/类型异常、normalized key 与 source 不一致、
+  重复规范化 source、accepted/rejected 状态与 accepted_target 不一致、无效
+  pages/evidence/rejected_targets、v2 缺/坏 target `last_observed_at`、损坏
+  migration 标记或未知 schema 版本都拒绝加载并保留原字节，绝不静默过滤/
+  更正后写回。`CandidateStore.candidate_summaries()`/`target_summaries(source)`
+  与 `CandidateTermService` 提供确定性服务层摘要：target、用户状态/是否默认
+  抑制、observations、distinct page count/pages、last observed time 与推荐
+  顺序。
 - `cache/<pdf_hash>/cumulative_glossary.csv`：旧自动累计词表，兼容期内仍由现有
   合并管线维护。`merge_glossary_csvs` 与迁移共用 cumulative 路径锁，读取与
   `os.replace` 提交全程互斥，保证迁移看到的 rows 与备份来源是同一快照。
@@ -486,7 +500,8 @@ P1-01 候选提取回归：`tests/test_term_extraction.py` 用 fake local HTTP s
 rejected 不被覆盖、unsupported/disabled/empty/超限/网络失败/存储失败全部降级；
 `tests/test_candidate_sse.py` 固定单页/批量只在正文提交成功后调用、正文失败/
 合规失败不调用、候选失败不阻 finish、候选不进 effective/Settings；
-`tests/test_candidate_store.py` 覆盖 `record_observations` 批量原子性与状态保护。
+`tests/test_candidate_store.py` 覆盖 `record_observations` 批量原子性、状态保护
+与 P1-03 统计/排序/兼容升级（见下）。
 
 P1-02 候选过滤回归：`tests/test_candidate_filter.py` 固定 AD 边界（独立 `AD`
 可命中，`adherence`/`adverse`/`shadow` 内部不命中）、大小写与内部空白折叠、
@@ -497,6 +512,24 @@ P1-02 候选过滤回归：`tests/test_candidate_filter.py` 固定 AD 边界（�
 `tests/test_candidate_service.py` 扩展固定实际写入候选数/页码/证据、
 all_filtered 不写空 revision、rejected source/target 自动观察保持用户状态；
 `tests/test_candidate_store.py` 增加 rejected 再观察不创建重复条目的回归。
+
+P1-03 候选统计与确定性建议回归：`tests/test_term_model.py` 固定候选 schema
+版本、target 级 `distinct_page_count`/`last_observed_at`、确定性推荐排序
+（accepted target > 普通未拒绝 > rejected target；组内不同页覆盖数降序 →
+观察次数降序 → 字典序）与摘要形状；`tests/test_candidate_store.py` 固定
+“错误首译 1 次 + 正确译法 10 次后正确译法成为首选且 `accept` 无参取它”、
+同一批 observations 任意排列（含重复项）统计与持久化字节一致、v1
+`term_candidates.json` 可读且下一次写原子升级为 v2、v2 严格校验 target
+`last_observed_at`（缺失/坏时间戳 fail-closed 且原字节不变）、`accept`
+无参使用确定性首选而非插入顺序、显式 accepted_target 在更高统计自动观察
+下不变、rejected target 后续观察计数/页覆盖/最近观察时间增长但
+`suppressed=True` 且状态不变、`candidate_summaries`/`target_summaries`
+暴露 target/状态/抑制/observations/distinct page count/pages/last observed
+time/推荐顺序；`tests/test_candidate_service.py` 固定 `CandidateTermService`
+服务层摘要边界与缺失 source 报错；`tests/test_glossary_compiler.py` 固定
+更高统计自动建议不能改写 accepted target/有效词表，且 v1 候选文件经兼容
+读取仍可编译。并发合并、失败恢复、64-hex 文档目录与 stale/document identity
+回归沿用既有用例继续通过。
 
 术语状态模型与迁移回归（P0-02）：`tests/test_term_model.py`、`tests/test_path_locks.py`、`tests/test_user_glossary.py`、`tests/test_candidate_store.py` 与 `tests/test_legacy_migration.py` 覆盖规范化/校验（含 strategy_version 与控制字符对称校验）、按规范路径共享锁（含两个不同 Store 实例并发写同一文档）、文档级权威词表 CRUD 与锁定、revision 冲突、原子写失败保留旧版本、损坏/schema/字段类型 fail-closed 且原字节不变、旧累计 CSV 的幂等合入迁移（保留 accepted/rejected 用户状态、并发迁移只合入一次、自动合并与迁移共用 cumulative 锁同一快照、备份不覆盖/目录 fail-closed、无半备份、失败重试）以及自动合并拒绝受保护文件名；全部使用 pytest 临时数据根。
 
@@ -539,6 +572,12 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
 7. **启动脚本不自动释放端口。** `start.bat` 只检测并报告端口 5000 的 `LISTENING` 占用，不包含任何进程终止命令；端口冲突需要用户自行确认归属并处理（命令见 README「启动」），或改用 `config.toml` 中 `[server].port` 指定的其他端口。
 8. **临时工作区清理有明确安全边界。** 每个翻译任务拥有 cache 根下带前缀+标记的根工作区（`input/`/`output/`）；只有名称带固定前缀、含有效标记（`kind` 匹配且 `pid` 为正整数）、非符号链接/junction 且 PID 已不存活的 `cache/` 直接子目录才会被启动恢复或 `cache_manage.py clean --yes` 删除；未知、无标记、标记损坏、链接路径或可能仍在使用的目录一律保守保留；持久用户数据（`right.pdf`、术语表、阅读进度）永不作为清理目标。Windows PID 探测只读，且只把明确不存在（`ERROR_INVALID_PARAMETER` 等）判为不存活；PID 复用或查询失败时按“可能存活”保留，可能留下少量无法自动清理的目录，需要用户确认后手动处理。
 9. **候选提取是正文提交后的同步旁路，页码/证据为逐页精确命中。** 候选提取在提交成功后于同一 SSE 生成器内同步执行，严格 timeout（1-120s）与有界重试保证不会无限阻塞；客户端断开时若正阻塞在候选请求上，最多等待一次请求 timeout 后在 finally 以 finished 释放 job（PDF 已提交）。P1-02 起，模型候选先经本地确定性过滤：普通词/结构异常/幻觉 source 被拒绝，保留候选携带实际命中页与有界证据；过滤后为空返回稳定 `all_filtered` 摘要且不写空 revision；候选失败只降级日志，不改正文终态。
+   P1-03 起，候选统计为可审计真实值：每个 target 保存观察次数、去重页覆盖与
+   最近观察时间，批合并先确定性排序；推荐排序固定为 accepted target > 普通
+   未拒绝建议 > rejected target（组内不同页覆盖数 → 观察次数 → 字典序），
+   `accept` 与未来 UI/API 摘要都走该顺序，拒绝状态只抑制提示、不冻结后台
+   统计。候选排序与统计变化仍不影响有效词表与正文（仅 accepted 投影参与
+   编译/stale 判断）。
 
 ## 上游与历史参考
 

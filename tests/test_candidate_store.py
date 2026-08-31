@@ -3,6 +3,7 @@
 import json
 import os
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from pdf_reader.term_model import (
     CANDIDATE_SCHEMA_VERSION,
     GlossaryRevisionConflictError,
     TermStoreError,
+    rank_target_suggestions,
 )
 from pdf_reader.user_glossary import USER_GLOSSARY_FILENAME, UserGlossaryStore
 
@@ -328,6 +330,257 @@ def test_persisted_payload_has_schema_version_and_revision(tmp_path):
     assert payload["candidates"]["ad"]["status"] == "candidate"
     assert payload["candidates"]["ad"]["accepted_target"] is None
     assert payload["candidates"]["ad"]["rejected_targets"] == []
+    assert payload["candidates"]["ad"]["targets"][0]["last_observed_at"]
+
+
+def test_wrong_first_translation_does_not_win_after_correct_observations(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    store.record_observation("TCS", "错误首译", pages=[1], evidence=["page one"])
+    for page in range(2, 12):
+        store.record_observation("TCS", "正确译法", pages=[page], evidence=[f"page {page}"])
+    entries, _, _ = store.load()
+    entry = entries[0]
+    ranked = rank_target_suggestions(entry)
+    assert ranked[0].target == "正确译法"
+    assert ranked[0].observations == 10
+    assert ranked[0].distinct_page_count == 10
+    accepted, _ = store.accept("TCS")
+    assert accepted.accepted_target == "正确译法"
+
+
+def test_batch_permutation_yields_identical_stats_and_persistence(tmp_path, monkeypatch):
+    class _FixedDatetime:
+        fixed = datetime(2026, 8, 31, 12, 0, 0, tzinfo=UTC)
+
+        @classmethod
+        def now(cls, tz=UTC) -> datetime:
+            return cls.fixed
+
+    monkeypatch.setattr(candidate_store, "datetime", _FixedDatetime)
+    batch = [
+        CandidateObservation(source="AD", target="译法甲", pages=(1,), evidence=("e1",)),
+        CandidateObservation(source="AD", target="译法甲", pages=(2,), evidence=("e2",)),
+        CandidateObservation(source="AD", target="译法甲", pages=(2,), evidence=("e2",)),
+        CandidateObservation(source="AD", target="译法乙", pages=(1, 2), evidence=("e3", "e4")),
+        CandidateObservation(source="TCS", target="外用糖皮质激素", pages=(3,), evidence=("e5",)),
+    ]
+    permutations = [
+        batch,
+        list(reversed(batch)),
+        [batch[3], batch[1], batch[4], batch[0], batch[2]],
+    ]
+    stores = []
+    for index in range(len(permutations)):
+        directory = tmp_path / f"{index:064x}"
+        directory.mkdir()
+        stores.append(CandidateStore(directory))
+    for store, observations in zip(stores, permutations):
+        store.record_observations(observations, strategy_version="extractor/1")
+    payloads = [store.path.read_bytes() for store in stores]
+    assert payloads[0] == payloads[1] == payloads[2]
+
+    loaded = [store.load()[0] for store in stores]
+    for entries in loaded:
+        ad = next(entry for entry in entries if entry.source_key == "ad")
+        targets = {suggestion.target: suggestion for suggestion in ad.targets}
+        assert targets["译法甲"].observations == 3
+        assert targets["译法甲"].pages == (1, 2)
+        assert targets["译法乙"].observations == 1
+        assert targets["译法乙"].pages == (1, 2)
+    assert [s.target for s in rank_target_suggestions(loaded[0][0])] == [
+        s.target for s in rank_target_suggestions(loaded[1][0])
+    ]
+    assert [s.target for s in rank_target_suggestions(loaded[0][0])] == [
+        s.target for s in rank_target_suggestions(loaded[2][0])
+    ]
+
+
+def test_v1_payload_reads_and_upgrades_on_next_write(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    payload = _valid_candidate_payload()
+    store.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    entries, revision, _ = store.load()
+    assert revision == 1
+    assert len(entries) == 1
+    suggestion = entries[0].targets[0]
+    assert suggestion.observations == 1
+    assert suggestion.last_observed_at == entries[0].last_seen_at
+
+    store.record_observation("TCS", "外用糖皮质激素")
+    stored = json.loads(store.path.read_text(encoding="utf-8"))
+    assert stored["schema_version"] == CANDIDATE_SCHEMA_VERSION
+    assert stored["revision"] == 2
+    assert stored["candidates"]["ad"]["targets"][0]["last_observed_at"]
+    assert stored["candidates"]["tcs"]["targets"][0]["last_observed_at"]
+
+
+def _valid_candidate_payload_v2() -> dict:
+    payload = _valid_candidate_payload()
+    payload["schema_version"] = CANDIDATE_SCHEMA_VERSION
+    payload["candidates"]["ad"]["targets"][0]["last_observed_at"] = "2026-08-31T10:00:00+00:00"
+    return payload
+
+
+def test_v2_payload_with_target_time_loads(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    payload = _valid_candidate_payload_v2()
+    store.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    entries, revision, _ = store.load()
+    assert revision == 1
+    assert entries[0].targets[0].last_observed_at == datetime(2026, 8, 31, 10, 0, 0, tzinfo=UTC)
+
+
+def test_v2_requires_target_last_observed_at(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    payload = _valid_candidate_payload_v2()
+    del payload["candidates"]["ad"]["targets"][0]["last_observed_at"]
+    _assert_fail_closed(store, payload, "last_observed_at")
+
+
+def test_v2_rejects_invalid_target_last_observed_at(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    payload = _valid_candidate_payload_v2()
+    payload["candidates"]["ad"]["targets"][0]["last_observed_at"] = "not-a-date"
+    _assert_fail_closed(store, payload, "last_observed_at")
+
+
+def test_accept_without_target_uses_deterministic_ranked_first(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    store.record_observation("TCS", "乙译法", pages=[1])
+    store.record_observation("TCS", "甲译法", pages=[1, 2, 3])
+    store.record_observation("TCS", "甲译法", pages=[4])
+    store.record_observation("TCS", "甲译法", pages=[5])
+    store.record_observation("TCS", "甲译法", pages=[6])
+    entry, _ = store.accept("TCS")
+    assert entry.accepted_target == "甲译法"
+    assert entry.targets[0].target == "乙译法"
+
+
+def test_accept_explicit_target_clears_its_own_rejection(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    store.record_observation("AD", "译法")
+    store.reject("AD", target="译法")
+    entry, _ = store.accept("AD", target="译法")
+    assert entry.status == "accepted"
+    assert entry.accepted_target == "译法"
+    assert entry.rejected_targets == []
+    entries, _, _ = store.load()
+    assert entries[0].rejected_targets == []
+    summary = store.target_summaries("AD")[0]
+    assert summary.accepted is True
+    assert summary.rejected is False
+    assert summary.suppressed is False
+
+    # 自动观察不得把已接受的 target 重新标记为拒绝或改变状态。
+    store.record_observation("AD", "译法", pages=[2])
+    entries, _, _ = store.load()
+    assert entries[0].status == "accepted"
+    assert entries[0].accepted_target == "译法"
+    assert entries[0].rejected_targets == []
+
+
+def test_accept_without_target_clears_ranked_first_rejection(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    store.record_observation("AD", "译法")
+    store.reject("AD", target="译法")
+    entry, _ = store.accept("AD")
+    assert entry.status == "accepted"
+    assert entry.accepted_target == "译法"
+    assert entry.rejected_targets == []
+    summary = store.target_summaries("AD")[0]
+    assert summary.accepted is True
+    assert summary.rejected is False
+    assert summary.suppressed is False
+
+
+def test_accept_keeps_other_rejected_targets(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    store.record_observation("AD", "译法A")
+    store.record_observation("AD", "译法B")
+    store.reject("AD", target="译法A")
+    store.reject("AD", target="译法B")
+    entry, _ = store.accept("AD", target="译法A")
+    assert entry.status == "accepted"
+    assert entry.accepted_target == "译法A"
+    assert entry.rejected_targets == ["译法B"]
+    summaries = store.target_summaries("AD")
+    by_target = {item.target: item for item in summaries}
+    assert by_target["译法A"].accepted is True
+    assert by_target["译法A"].rejected is False
+    assert by_target["译法A"].suppressed is False
+    assert by_target["译法B"].rejected is True
+    assert by_target["译法B"].suppressed is True
+
+
+def test_accepted_target_survives_higher_stat_auto_observations(tmp_path):
+    document_dir = doc_dir(tmp_path)
+    store = CandidateStore(document_dir)
+    store.record_observation("AD", "自动建议")
+    store.accept("AD", target="用户确认")
+    for page in range(1, 21):
+        store.record_observation("AD", "高票自动建议", pages=[page])
+    entries, _, _ = store.load()
+    entry = entries[0]
+    assert entry.status == "accepted"
+    assert entry.accepted_target == "用户确认"
+    assert rank_target_suggestions(entry)[0].target == "用户确认"
+    again, _ = store.accept("AD")
+    assert again.accepted_target == "用户确认"
+
+    summaries = store.target_summaries("AD")
+    assert [item.target for item in summaries] == ["用户确认", "高票自动建议", "自动建议"]
+    assert summaries[0].accepted is True
+    assert summaries[0].rejected is False
+    assert summaries[0].suppressed is False
+    assert summaries[0].rank == 1
+    assert summaries[1].target == "高票自动建议"
+    assert summaries[1].observations == 20
+    assert summaries[1].distinct_page_count == 20
+
+
+def test_rejected_target_stats_grow_but_stay_suppressed(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    store.record_observation("benefits", "福利", pages=[1])
+    store.reject("benefits", target="福利")
+    store.record_observation("benefits", "福利", pages=[2, 3], evidence=["again"])
+    store.record_observation("benefits", "新建议", pages=[4])
+    entries, revision, _ = store.load()
+    assert revision == 4
+    entry = entries[0]
+    assert entry.status == "rejected"
+    assert entry.rejected_targets == ["福利"]
+    by_target = {suggestion.target: suggestion for suggestion in entry.targets}
+    assert by_target["福利"].observations == 2
+    assert by_target["福利"].pages == (1, 2, 3)
+
+    summaries = store.target_summaries("benefits")
+    assert [item.target for item in summaries] == ["新建议", "福利"]
+    assert all(item.suppressed for item in summaries)
+    assert summaries[1].rejected is True
+    assert summaries[1].observations == 2
+    assert summaries[1].distinct_page_count == 3
+
+
+def test_candidate_summaries_expose_deterministic_service_boundary(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    store.record_observation("TCS", "外用糖皮质激素", pages=[1])
+    store.record_observation("AD", "自动建议", pages=[1, 2])
+    summaries = store.candidate_summaries()
+    assert [summary.source_key for summary in summaries] == ["ad", "tcs"]
+    ad = summaries[0]
+    assert ad.status == "candidate"
+    assert ad.accepted_target is None
+    target = ad.targets[0]
+    assert target.target == "自动建议"
+    assert target.observations == 1
+    assert target.distinct_page_count == 2
+    assert target.pages == (1, 2)
+    assert target.rank == 1
+    assert isinstance(target.last_observed_at, datetime)
+    assert target.accepted is False
+    assert target.rejected is False
+    assert target.suppressed is False
 
 
 def test_two_store_instances_concurrent_writes_do_not_lose_observations(tmp_path):

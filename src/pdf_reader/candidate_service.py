@@ -31,7 +31,11 @@ from pdf_reader.candidate_store import CandidateObservation, CandidateStore
 from pdf_reader.config import CandidateExtractionRuntimeConfig, ModelRuntimeConfig
 from pdf_reader.task_logging import TaskContext, task_log
 from pdf_reader.term_extraction import TermExtractionClient, TermExtractionError
-from pdf_reader.term_model import TermStoreError
+from pdf_reader.term_model import (
+    CandidateSuggestionSummary,
+    CandidateTargetSummary,
+    TermStoreError,
+)
 
 logger = logging.getLogger("pdf_reader.candidate")
 
@@ -291,3 +295,23 @@ def _reason_counts(filtered: Sequence[FilteredCandidate]) -> tuple[tuple[str, in
         if item.reason is not None:
             counts[item.reason] = counts.get(item.reason, 0) + 1
     return tuple(sorted(counts.items()))
+
+
+class CandidateTermService:
+    """P1-03 服务层边界：候选 target 列表与统计摘要（供未来 P1-04 UI/API 复用）。
+
+    只做 Python 服务层：不新增 HTTP/UI。所有摘要由 ``CandidateStore`` 在路径
+    锁内读取并应用确定性推荐排序（accepted target > 普通未拒绝建议 > rejected
+    target；组内不同页覆盖数降序 → 观察次数降序 → target 字典序）。
+    """
+
+    def __init__(self, document_dir: Path) -> None:
+        self._store = CandidateStore(document_dir)
+
+    def list_summaries(self) -> tuple[CandidateSuggestionSummary, ...]:
+        """全部 source 的候选摘要，按规范化 source key 确定性排序。"""
+        return self._store.candidate_summaries()
+
+    def target_summaries(self, source: str) -> tuple[CandidateTargetSummary, ...]:
+        """单个 source 的确定性推荐 target 列表；source 不存在抛 TermNotFoundError。"""
+        return self._store.target_summaries(source)

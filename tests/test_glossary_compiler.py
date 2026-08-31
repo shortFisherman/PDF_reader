@@ -126,6 +126,55 @@ def test_candidate_and_rejected_never_enter_regardless_of_observations(tmp_path)
     assert rows == [("fallback", "全局词条")]
 
 
+def test_higher_stat_auto_suggestion_cannot_override_accepted_target(tmp_path):
+    document_dir = doc_dir(tmp_path)
+    global_path = tmp_path / "missing_global.csv"
+    candidate_store = CandidateStore(document_dir)
+    candidate_store.record_observation("AD", "错误首译", pages=[1])
+    candidate_store.accept("AD", target="用户确认译法")
+    for page in range(2, 12):
+        candidate_store.record_observation("AD", "高票自动建议", pages=[page])
+
+    compile_effective_glossary(document_dir, global_path)
+    assert _read_output_csv(document_dir / EFFECTIVE_GLOSSARY_FILENAME) == [("AD", "用户确认译法")]
+    verify_effective_glossary(document_dir, global_path)
+
+
+def test_v1_candidate_file_compiles_with_compat_read(tmp_path):
+    document_dir = doc_dir(tmp_path)
+    global_path = tmp_path / "missing_global.csv"
+    payload = {
+        "schema_version": 1,
+        "revision": 1,
+        "updated_at": "2026-08-31T10:00:00+00:00",
+        "candidates": {
+            "ad": {
+                "source": "AD",
+                "normalized_source": "ad",
+                "status": "accepted",
+                "strategy_version": "auto/1",
+                "first_seen_at": "2026-08-31T10:00:00+00:00",
+                "last_seen_at": "2026-08-31T10:00:00+00:00",
+                "targets": [
+                    {
+                        "target": "自动建议已接受",
+                        "observations": 1,
+                        "pages": [1],
+                        "evidence": ["e"],
+                    }
+                ],
+                "accepted_target": "自动建议已接受",
+                "rejected_targets": [],
+            }
+        },
+    }
+    (document_dir / CANDIDATE_FILENAME).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    compile_effective_glossary(document_dir, global_path)
+    assert _read_output_csv(document_dir / EFFECTIVE_GLOSSARY_FILENAME) == [("AD", "自动建议已接受")]
+    verify_effective_glossary(document_dir, global_path)
+
+
 def test_accepted_candidate_uses_edited_target_and_source_display(tmp_path):
     document_dir = doc_dir(tmp_path)
     global_path = _write_global(tmp_path / "global.csv", [("Atopic  Dermatitis", "全局译法")])

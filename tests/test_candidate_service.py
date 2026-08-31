@@ -14,7 +14,7 @@ import pymupdf
 import pytest
 
 from pdf_reader.candidate_filter import CANDIDATE_STRATEGY_VERSION
-from pdf_reader.candidate_service import CandidateExtractionService
+from pdf_reader.candidate_service import CandidateExtractionService, CandidateTermService
 from pdf_reader.candidate_store import CandidateStore
 from pdf_reader.config import CandidateExtractionRuntimeConfig, ModelRuntimeConfig
 from pdf_reader.term_model import TermStoreError
@@ -408,3 +408,47 @@ def test_logs_never_contain_text_prompt_targets_or_keys(tmp_path, fake_server, m
     assert "common_word" in text
     assert "candidates=1" in text
     assert "pages=(1,)" in text
+
+
+def test_candidate_term_service_exposes_deterministic_summaries(tmp_path):
+    document_dir = _doc_dir(tmp_path)
+    store = CandidateStore(document_dir)
+    store.record_observation("AD", "自动建议")
+    store.accept("AD", target="用户确认")
+    store.record_observation("AD", "高票建议", pages=[1, 2, 3])
+    store.record_observation("benefits", "福利", pages=[1])
+    store.reject("benefits", target="福利")
+
+    service = CandidateTermService(document_dir)
+    summaries = service.list_summaries()
+    assert [summary.source_key for summary in summaries] == ["ad", "benefits"]
+
+    ad = summaries[0]
+    assert ad.status == "accepted"
+    assert ad.accepted_target == "用户确认"
+    assert [item.target for item in ad.targets] == ["用户确认", "高票建议", "自动建议"]
+    assert ad.targets[0].accepted is True
+    assert ad.targets[0].suppressed is False
+    assert ad.targets[0].rank == 1
+    assert ad.targets[1].target == "高票建议"
+    assert ad.targets[1].observations == 1
+    assert ad.targets[1].distinct_page_count == 3
+    assert ad.targets[1].pages == (1, 2, 3)
+
+    benefits = summaries[1]
+    assert benefits.status == "rejected"
+    assert all(item.suppressed for item in benefits.targets)
+    assert [item.target for item in benefits.targets] == ["福利"]
+    assert benefits.targets[0].rejected is True
+    assert benefits.targets[0].rank == 1
+
+    targets = service.target_summaries("benefits")
+    assert [item.target for item in targets] == ["福利"]
+    assert targets[0].rejected is True
+    assert targets[0].suppressed is True
+
+
+def test_candidate_term_service_raises_for_missing_source(tmp_path):
+    service = CandidateTermService(_doc_dir(tmp_path))
+    with pytest.raises(TermStoreError, match="not found"):
+        service.target_summaries("missing")

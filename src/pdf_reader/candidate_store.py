@@ -1,9 +1,15 @@
-"""P0-02 候选术语存储（``term_candidates.json``）。
+"""P0-02/P1-03 候选术语存储（``term_candidates.json``）。
 
 - 自动流程唯一写入口是 ``record_observation``：只新增/追加 target 观察，
   永不改变 candidate/accepted/rejected 状态，也不改写 ``accepted_target``。
 - 用户接受/拒绝通过 ``accept``/``reject``；被拒绝的 target 保留在
   ``rejected_targets``，自动观察不会把拒绝记录恢复为可提示状态。
+- P1-03 起每个 target 持久保存真实观察次数、去重页码/不同页覆盖数与最近
+  观察时间；``accept`` 与推荐摘要使用确定性排序（accepted target > 普通未
+  拒绝建议 > rejected target，组内不同页覆盖数降序 → 观察次数降序 → target
+  字典序），不再依赖历史插入/批输入顺序。
+- schema v2 新增 target 级 ``last_observed_at``；v1 文件仍可严格读取（用条目
+  ``last_seen_at`` 回填），下一次写入原子升级为 v2，读取绝不静默改写磁盘。
 - 同一规范路径的所有实例共享同一把进程内锁；读—改—写全程互斥，原子提交。
 - 持久文件读取 fail closed：字段缺失、类型异常、状态与 accepted_target 不一致、
   normalized key 与 source 不一致、重复规范化 source、无效 pages/evidence/
@@ -27,9 +33,12 @@ from typing import Literal, cast
 from pdf_reader.path_locks import lock_for_path
 from pdf_reader.term_model import (
     CANDIDATE_SCHEMA_VERSION,
+    CANDIDATE_SCHEMA_VERSION_V1,
     LEGACY_CUMULATIVE_STRATEGY,
     CandidateEntry,
     CandidateStatus,
+    CandidateSuggestionSummary,
+    CandidateTargetSummary,
     GlossaryRevisionConflictError,
     TargetSuggestion,
     TermNotFoundError,
@@ -37,6 +46,8 @@ from pdf_reader.term_model import (
     format_timestamp,
     normalize_source_key,
     parse_timestamp,
+    rank_target_suggestions,
+    summarize_candidate_entry,
     validate_strategy_version,
     validate_term_text,
 )
@@ -115,7 +126,68 @@ def _require_str(raw: dict[str, object], key: str) -> str:
     return value
 
 
-def _entry_from_dict(key: str, raw: dict[str, object]) -> CandidateEntry:
+def _target_from_dict(
+    item: object,
+    *,
+    schema_version: int,
+    fallback_last_observed_at: datetime,
+) -> TargetSuggestion:
+    if not isinstance(item, dict):
+        raise TermStoreError("invalid target suggestion")
+    target = item.get("target")
+    if not isinstance(target, str) or not target.strip():
+        raise TermStoreError("target suggestion missing target")
+    try:
+        canonical_target = validate_term_text(target, "target")
+    except TermStoreError as exc:
+        raise TermStoreError(f"invalid target suggestion: {exc}") from exc
+    if canonical_target != target:
+        raise TermStoreError("non-canonical target suggestion")
+    target = canonical_target
+    observations = item.get("observations")
+    if isinstance(observations, bool) or not isinstance(observations, int) or observations < 1:
+        raise TermStoreError("invalid observations")
+    pages_raw = item.get("pages")
+    if not isinstance(pages_raw, list):
+        raise TermStoreError("invalid pages")
+    pages_list: list[int] = []
+    for page in pages_raw:
+        if isinstance(page, bool) or not isinstance(page, int) or page < 0:
+            raise TermStoreError(f"invalid page number: {page!r}")
+        if page in pages_list:
+            raise TermStoreError(f"duplicate page number: {page!r}")
+        pages_list.append(page)
+    evidence_raw = item.get("evidence")
+    if not isinstance(evidence_raw, list) or len(evidence_raw) > MAX_EVIDENCE_SNIPPETS:
+        raise TermStoreError("invalid evidence")
+    evidence: list[str] = []
+    for snippet in evidence_raw:
+        if not isinstance(snippet, str) or not snippet.strip():
+            raise TermStoreError("invalid evidence snippet")
+        if len(snippet) > MAX_EVIDENCE_LENGTH:
+            raise TermStoreError("evidence snippet exceeds bound")
+        evidence.append(snippet)
+    if schema_version >= CANDIDATE_SCHEMA_VERSION:
+        last_raw = item.get("last_observed_at")
+        if not isinstance(last_raw, str) or not last_raw.strip():
+            raise TermStoreError("target suggestion missing last_observed_at")
+        try:
+            last_observed_at = parse_timestamp(last_raw)
+        except TermStoreError as exc:
+            raise TermStoreError(f"invalid target last_observed_at: {exc}") from exc
+    else:
+        # schema v1 无 target 级时间：用条目最近观察时间回填，下一次写入升级为 v2。
+        last_observed_at = fallback_last_observed_at
+    return TargetSuggestion(
+        target=target,
+        observations=observations,
+        pages=tuple(pages_list),
+        evidence=tuple(evidence),
+        last_observed_at=last_observed_at,
+    )
+
+
+def _entry_from_dict(key: str, raw: dict[str, object], schema_version: int) -> CandidateEntry:
     if not isinstance(raw, dict):
         raise TermStoreError("invalid candidate entry")
     source = _require_str(raw, "source")
@@ -146,51 +218,14 @@ def _entry_from_dict(key: str, raw: dict[str, object]) -> CandidateEntry:
     targets_raw = raw.get("targets")
     if not isinstance(targets_raw, list) or not targets_raw:
         raise TermStoreError("invalid candidate targets")
-    targets: list[TargetSuggestion] = []
-    for item in targets_raw:
-        if not isinstance(item, dict):
-            raise TermStoreError("invalid target suggestion")
-        target = item.get("target")
-        if not isinstance(target, str) or not target.strip():
-            raise TermStoreError("target suggestion missing target")
-        try:
-            canonical_target = validate_term_text(target, "target")
-        except TermStoreError as exc:
-            raise TermStoreError(f"invalid target suggestion: {exc}") from exc
-        if canonical_target != target:
-            raise TermStoreError("non-canonical target suggestion")
-        target = canonical_target
-        observations = item.get("observations")
-        if isinstance(observations, bool) or not isinstance(observations, int) or observations < 1:
-            raise TermStoreError("invalid observations")
-        pages_raw = item.get("pages")
-        if not isinstance(pages_raw, list):
-            raise TermStoreError("invalid pages")
-        pages_list: list[int] = []
-        for page in pages_raw:
-            if isinstance(page, bool) or not isinstance(page, int) or page < 0:
-                raise TermStoreError(f"invalid page number: {page!r}")
-            if page in pages_list:
-                raise TermStoreError(f"duplicate page number: {page!r}")
-            pages_list.append(page)
-        evidence_raw = item.get("evidence")
-        if not isinstance(evidence_raw, list) or len(evidence_raw) > MAX_EVIDENCE_SNIPPETS:
-            raise TermStoreError("invalid evidence")
-        evidence: list[str] = []
-        for snippet in evidence_raw:
-            if not isinstance(snippet, str) or not snippet.strip():
-                raise TermStoreError("invalid evidence snippet")
-            if len(snippet) > MAX_EVIDENCE_LENGTH:
-                raise TermStoreError("evidence snippet exceeds bound")
-            evidence.append(snippet)
-        targets.append(
-            TargetSuggestion(
-                target=target,
-                observations=observations,
-                pages=tuple(pages_list),
-                evidence=tuple(evidence),
-            )
+    targets = [
+        _target_from_dict(
+            item,
+            schema_version=schema_version,
+            fallback_last_observed_at=last_seen_at,
         )
+        for item in targets_raw
+    ]
     accepted_target = raw.get("accepted_target")
     if accepted_target is not None and (not isinstance(accepted_target, str) or not accepted_target.strip()):
         raise TermStoreError("invalid accepted_target")
@@ -252,6 +287,7 @@ def _entry_to_dict(entry: CandidateEntry) -> dict[str, object]:
                 "observations": suggestion.observations,
                 "pages": list(suggestion.pages),
                 "evidence": list(suggestion.evidence),
+                "last_observed_at": format_timestamp(suggestion.last_observed_at),
             }
             for suggestion in sorted(entry.targets, key=lambda item: item.target)
         ],
@@ -325,6 +361,8 @@ class CandidateStore:
         同一把路径锁内一次性合并并只写一次 revision；任一观察非法则不写任何
         内容。自动观察只新增/追加 target 观察，永不改变 candidate/accepted/
         rejected 状态，也不改写 ``accepted_target``。
+        P1-03 起先按 (规范化 source, target, 页码, 证据) 确定性排序再合并，
+        同一批任意排列得到相同统计、target 级最近观察时间与持久化字节。
         """
         with self._lock:
             entries, revision, metadata = self._read_unlocked()
@@ -341,6 +379,7 @@ class CandidateStore:
                 prepared.append((clean_source, clean_target, clean_pages, clean_evidence))
             if not prepared:
                 return revision
+            prepared.sort(key=lambda item: (normalize_source_key(item[0]), item[1], item[2], item[3]))
             now = datetime.now(UTC)
             for clean_source, clean_target, clean_pages, clean_evidence in prepared:
                 entry = _find_or_none(entries, clean_source)
@@ -358,6 +397,7 @@ class CandidateStore:
                                     observations=1,
                                     pages=clean_pages,
                                     evidence=clean_evidence,
+                                    last_observed_at=now,
                                 )
                             ],
                         )
@@ -371,6 +411,7 @@ class CandidateStore:
                                 observations=suggestion.observations + 1,
                                 pages=tuple(sorted(set(suggestion.pages) | set(clean_pages))),
                                 evidence=tuple(_bounded_evidence([*suggestion.evidence, *clean_evidence])),
+                                last_observed_at=now,
                             )
                             break
                     else:
@@ -380,6 +421,7 @@ class CandidateStore:
                                 observations=1,
                                 pages=clean_pages,
                                 evidence=clean_evidence,
+                                last_observed_at=now,
                             )
                         )
             return self._write_unlocked(entries, revision, metadata)
@@ -398,17 +440,21 @@ class CandidateStore:
             entry = _find_or_none(entries, source)
             if entry is None:
                 raise TermNotFoundError(f"candidate not found: {source!r}")
+            now = datetime.now(UTC)
             if target is None:
-                if not entry.targets:
+                ranked = rank_target_suggestions(entry)
+                if not ranked:
                     raise TermStoreError("candidate has no target suggestion to accept")
-                final_target = entry.targets[0].target
+                final_target = ranked[0].target
             else:
                 final_target = validate_term_text(target, "target")
                 if not any(suggestion.target == final_target for suggestion in entry.targets):
-                    entry.targets.insert(0, TargetSuggestion(target=final_target, observations=1))
+                    entry.targets.append(TargetSuggestion(target=final_target, observations=1, last_observed_at=now))
             entry.status = "accepted"
             entry.accepted_target = final_target
-            entry.last_seen_at = datetime.now(UTC)
+            if final_target in entry.rejected_targets:
+                entry.rejected_targets.remove(final_target)
+            entry.last_seen_at = now
             return entry, self._write_unlocked(entries, revision, metadata)
 
     def reject(
@@ -465,7 +511,7 @@ class CandidateStore:
                             strategy_version=LEGACY_CUMULATIVE_STRATEGY,
                             first_seen_at=now,
                             last_seen_at=now,
-                            targets=[TargetSuggestion(target=target, observations=1)],
+                            targets=[TargetSuggestion(target=target, observations=1, last_observed_at=now)],
                         )
                     )
                 else:
@@ -477,10 +523,11 @@ class CandidateStore:
                                 observations=suggestion.observations + 1,
                                 pages=suggestion.pages,
                                 evidence=suggestion.evidence,
+                                last_observed_at=now,
                             )
                             break
                     else:
-                        entry.targets.append(TargetSuggestion(target=target, observations=1))
+                        entry.targets.append(TargetSuggestion(target=target, observations=1, last_observed_at=now))
             updated_metadata = dict(metadata)
             updated_metadata["legacy_migration"] = {
                 "from": from_file,
@@ -498,9 +545,10 @@ class CandidateStore:
             raise TermStoreError(f"failed to read candidate store {self.path}: {exc}") from exc
         if not isinstance(data, dict):
             raise TermStoreError(f"invalid candidate store payload in {self.path}")
-        schema_version = data.get("schema_version")
-        if schema_version != CANDIDATE_SCHEMA_VERSION:
-            raise TermStoreError(f"unsupported candidate schema version: {schema_version!r}")
+        schema_version_raw = data.get("schema_version")
+        if schema_version_raw not in (CANDIDATE_SCHEMA_VERSION_V1, CANDIDATE_SCHEMA_VERSION):
+            raise TermStoreError(f"unsupported candidate schema version: {schema_version_raw!r}")
+        schema_version = cast(int, schema_version_raw)
         revision = data.get("revision")
         if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
             raise TermStoreError("invalid candidate revision")
@@ -531,7 +579,7 @@ class CandidateStore:
         raw_candidates = data.get("candidates")
         if not isinstance(raw_candidates, dict):
             raise TermStoreError("invalid candidates object")
-        entries = [_entry_from_dict(key, raw) for key, raw in raw_candidates.items()]
+        entries = [_entry_from_dict(key, raw, schema_version) for key, raw in raw_candidates.items()]
         entries.sort(key=lambda entry: entry.source_key)
         metadata = {
             key: value
@@ -571,3 +619,18 @@ class CandidateStore:
                 pass
             raise
         return new_revision
+
+    def candidate_summaries(self) -> tuple[CandidateSuggestionSummary, ...]:
+        """P1-03 服务层摘要：全部 source 按 ``source_key`` 确定性排序。"""
+        with self._lock:
+            entries, _, _ = self._read_unlocked()
+        return tuple(summarize_candidate_entry(entry) for entry in sorted(entries, key=lambda item: item.source_key))
+
+    def target_summaries(self, source: str) -> tuple[CandidateTargetSummary, ...]:
+        """P1-03 服务层摘要：单个 source 的确定性推荐 target 列表。"""
+        with self._lock:
+            entries, _, _ = self._read_unlocked()
+        entry = _find_or_none(entries, source)
+        if entry is None:
+            raise TermNotFoundError(f"candidate not found: {source!r}")
+        return summarize_candidate_entry(entry).targets
