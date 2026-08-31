@@ -20,6 +20,7 @@ GLOSSARY_UPSTREAM_BOUNDARY = REPO_ROOT / "docs" / "governance" / "glossary-upstr
 DOCUMENTATION = REPO_ROOT / "docs" / "governance" / "documentation.md"
 LICENSE_DOC = REPO_ROOT / "docs" / "governance" / "license.md"
 TOOL_DIRS_DOC = REPO_ROOT / "docs" / "governance" / "tool-directories.md"
+GLOSSARY_IMPROVEMENT_PLAN = REPO_ROOT / "docs" / "improvement items" / "glossary-memory-improvement-plan-831.md"
 
 LINK_CHECKED_DOCS = (
     README,
@@ -188,3 +189,34 @@ def test_documentation_governance_doc_covers_triggers_and_policy():
         "tests/test_upstream_contract.py",
     ):
         assert fragment in text
+
+
+def test_glossary_improvement_overview_statuses_match_detail_sections():
+    """总览状态必须与每个编号的详细条目一致，防止完成后仍显示待处理。"""
+    text = GLOSSARY_IMPROVEMENT_PLAN.read_text(encoding="utf-8")
+    overview_matches = re.findall(
+        r"^\| (P[0-2]-\d{2}) \| [^|]+ \| [^|]+ \| `([^`]+)` \|",
+        text,
+        re.MULTILINE,
+    )
+    overview = dict(overview_matches)
+    assert len(overview) == len(overview_matches), "术语改进总览包含重复编号"
+
+    headings = list(re.finditer(r"^### (P[0-2]-\d{2}) .+$", text, re.MULTILINE))
+    detail: dict[str, str] = {}
+    for index, heading in enumerate(headings):
+        item_id = heading.group(1)
+        section_end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        section = text[heading.end() : section_end]
+        status = re.search(r"^- 状态：`([^`]+)`$", section, re.MULTILINE)
+        assert status is not None, f"{item_id} 详细条目缺少状态"
+        assert item_id not in detail, f"术语改进详细条目包含重复编号：{item_id}"
+        detail[item_id] = status.group(1)
+
+    assert overview.keys() == detail.keys(), "术语改进总览与详细条目的编号集合不一致"
+    mismatches = {
+        item_id: {"overview": overview[item_id], "detail": detail[item_id]}
+        for item_id in overview
+        if overview[item_id] != detail[item_id]
+    }
+    assert not mismatches, f"术语改进总览与详细状态不一致：{mismatches}"
