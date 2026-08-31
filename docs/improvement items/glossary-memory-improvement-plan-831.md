@@ -166,7 +166,7 @@
 | P1-02 | P1 | 增加普通词过滤、源文证据和边界匹配 | `待处理` | P1-01 |
 | P1-03 | P1 | 保存真实观察次数并生成确定性候选建议 | `已完成` | P0-02、P1-02 |
 | P1-04 | P1 | 建立用户术语管理 API 与界面 | `已完成` | P0-02、P0-03 |
-| P1-05 | P1 | 统一单页/批量术语生命周期和失败语义 | `待处理` | P0-05、P1-01 至 P1-04 |
+| P1-05 | P1 | 统一单页/批量术语生命周期和失败语义 | `已完成` | P0-05、P1-01 至 P1-04 |
 | P2-01 | P2 | 建立术语黄金样本与质量门槛 | `待处理` | P0-01，可提前建立基线 |
 | P2-02 | P2 | 增加术语诊断、统计和可解释性 | `待处理` | P0/P1 数据模型稳定后 |
 | P2-03 | P2 | 收口配置、旧累计词表兼容与用户文档 | `待处理` | P0/P1 主流程完成后 |
@@ -655,11 +655,11 @@ cache/<pdf_hash>/effective_glossary.csv   确定性编译产物，不由用户�
 
 ### P1-05 统一单页/批量术语生命周期和失败语义
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：—
+- 状态：`已完成`
+- 完成日期：2026-08-31
+- 完成提交：`bd5ff53`
+- 验证证据：`pytest -q` 1335 passed；`scripts/verify.ps1` 全绿（1335 Python tests，line 92.9% / branch 85.8%，Mypy、Ruff、secret scan、ESLint 与九个前端测试套件全部通过）；定向回归覆盖 `tests/test_strict_glossary.py`、`tests/test_candidate_service.py`、`tests/test_candidate_sse.py`、`tests/test_glossary_compliance_flow.py`、`tests/test_system_concurrency_failure.py`；两阶段候选（prepare 在严格翻译前、commit 在 PDF 提交后）与单页/批量精确调用顺序由上述测试固定；`PreparedCandidates` 冻结 prepare 身份，新增跨目录/身份串写测试（prepared A + identity B/dir B、prepared A + identity A/dir B、prepare 的 dir/identity mismatch、无身份 prepared 不得升级）。
+- 剩余问题：无
 
 #### 当前问题
 
@@ -692,12 +692,12 @@ cache/<pdf_hash>/effective_glossary.csv   确定性编译产物，不由用户�
 
 #### 验收标准
 
-- [ ] 单页和批量遵循同一权威词表与候选状态规则。
-- [ ] 候选提取失败不会让合规正文失败。
-- [ ] 合规失败不会提交错误 PDF。
-- [ ] 迟到任务不会写入其他文档的候选或术语。
-- [ ] SSE 终态、coordinator 释放、worker join 和工作区清理全部确定。
-- [ ] 系统级测试验证最终 PDF、术语状态、任务状态和磁盘文件。
+- [x] 单页和批量遵循同一权威词表与候选状态规则。
+- [x] 候选提取失败不会让合规正文失败。
+- [x] 合规失败不会提交错误 PDF。
+- [x] 迟到任务不会写入其他文档的候选或术语。
+- [x] SSE 终态、coordinator 释放、worker join 和工作区清理全部确定。
+- [x] 系统级测试验证最终 PDF、术语状态、任务状态和磁盘文件。
 
 ---
 
@@ -908,3 +908,4 @@ compliance_retry_count = 1
 | 2026-08-31 | P0-05 | 已完成 | `c20aacc` | 提交前验证活跃权威 target；首次违规在同一任务内有界重试一次，连续违规或输入/输出不可验证均 fail-closed 且旧 `right.pdf` 不变；单页/批量均不修改上游。 |
 | 2026-08-31 | P1-01 | 已完成 | `141c58b` | 新增项目自有 OpenAI-compatible 候选客户端和正文提交后的旁路服务；候选只写 `term_candidates.json`，失败不阻正文，支持范围、配置、降级和 fake-server 网络边界均有测试与文档，且未修改上游。 |
 | 2026-08-31 | P1-02 | 已完成 | `5297eef` | 新增项目本地确定性候选过滤：普通词/结构异常/幻觉拒绝，Unicode 边界匹配，保守术语清洗，逐页精确页码与有界证据，规则版本可审计；不影响用户权威术语或正文有效词表。 |
+| 2026-08-31 | P1-05 | 已完成 | `bd5ff53` | 冻结 job/document/pdf_hash/revision/词条摘要到严格上下文；候选服务拆为两阶段——`prepare` 在严格翻译前读取输入 PDF、模型提取/过滤并返回不可变 `PreparedCandidates`（observations + report + 冻结 identity，绝不写 `CandidateStore`），`commit` 只在 PDF 成功提交后以冻结身份为权威重验 active job 的 job_id/document_id/pdf_hash/document_dir 再原子写 `CandidateStore`（另传 identity 必须完全相等、写目录必须等于冻结 identity.document_dir、无身份 prepared 不得升级，任何 mismatch 均 `identity_rejected` 且不写）；单页/批量共享「输入/活跃词条 → prepare → run_translation → 合规/重试 → 提交 PDF → commit → finish」顺序，prepare 失败只降级正文继续，合规/PDF/断开/取消可已 prepare 但不得 commit，identity 在 prepare 后变化拒绝，commit 失败不反转已提交 finished；系统级回归覆盖候选提取/写入失败、断开、合规与 PDF 写入失败；`scripts/verify.ps1` 全绿（1335 Python tests）。 |
