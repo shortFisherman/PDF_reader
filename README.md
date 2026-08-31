@@ -130,7 +130,8 @@ qps = 4
 | 参数 | 默认 | 怎么选 |
 |---|---|---|
 | `translation.min_text_length` | `5` | 短标题/图注被漏翻可尝试 `2`；噪声碎片太多可尝试 `10`；一次只小幅调整 |
-| `translation.auto_extract_glossary` | `true` | 兼容保留项：正文恒走严格路径；未配置 `[term_extraction]` 段时，候选提取的 `enabled` 跟随它的显式值 |
+| `translation.auto_extract_glossary` | `true` | 1.x 兼容别名：正文恒走严格路径；只在未配置 `[term_extraction]` 段时作为候选提取 `enabled` 的来源；启动 WARNING，计划 2.0.0 移除 |
+| `translation.term_qps` / `translation.term_pool_max_workers` | 省略 | 1.x 兼容别名（旧上游术语提取调优）：严格路径与项目候选提取均不使用；启动 WARNING，计划 2.0.0 移除，请改用 `term_extraction.qps` / `term_extraction.max_workers` |
 | `term_extraction.enabled` | `true` | 候选旁路提取总开关；只写候选存储，未确认前不影响正文；失败也不影响正文 |
 | `term_extraction.timeout` | `30` | 候选请求超时；失败只降级日志，正文仍 finish |
 | `term_extraction.retry_count` | `1` | 只对超时/429/5xx 重试；4xx 与格式错误不重试 |
@@ -144,7 +145,11 @@ qps = 4
 README 里背 48 个键。
 
 当前支持 48 个键：`[pdf_reader]`（2）、`[model]`（11）、`[translation]`（10）、
-`[server]`（3）、`[term_extraction]`（7）、`[pdf2zh]`（15）。启动时会严格校验类型、范围、组合与正则：
+`[server]`（3）、`[term_extraction]`（7）、`[pdf2zh]`（15）。其中
+`translation.auto_extract_glossary`、`translation.term_qps`、
+`translation.term_pool_max_workers` 是 1.x 兼容别名：仍可读取并做类型/范围
+校验，启动时输出不含敏感值的 WARNING 迁移提示，配置中心不再展示/写入，
+计划 2.0.0 移除；规范候选调优字段全部在 `[term_extraction]`。启动时会严格校验类型、范围、组合与正则：
 未知 section/key、未知 provider、非法数值（含 nan/inf）、`openai_compatible` 缺少
 `base_url` 都会在启动阶段直接报错，不再静默忽略或兜底。
 
@@ -157,13 +162,14 @@ $env:MODEL_API_KEY = 'your-api-key'
 行为边界：
 
 - 配置变化只影响之后执行的翻译或主动重译，不会追溯更新已写入文档缓存的旧 `right.pdf` 页面。
-- 前端文档缓存仍只按原 PDF 哈希保存；累计术语表继续跨模型/配置复用。
+- 前端文档缓存仍只按原 PDF 哈希保存；旧累计术语表作为历史输入继续跨模型/配置复用。
 - 每次翻译固定跳过上游请求缓存（`ignore_cache=true`），但不会影响本前端按 PDF 哈希复用的译文页面。
 - 页面 Prompt 优先级：非空页面 Prompt > `translation.default_system_prompt` > 上游默认提示词。
 - 正文翻译固定关闭上游自动术语提取（`no_auto_extract_glossary=true`、
   `save_auto_extracted_glossary=false`），`translation.auto_extract_glossary`
   不再改变正文行为，仅作为未配置 `[term_extraction]` 段时 `enabled` 的兼容
-  默认来源。
+  默认来源；它与 `term_qps`/`term_pool_max_workers` 一起处于 1.x 兼容期
+  （启动 WARNING、配置中心不展示/写入、计划 2.0.0 移除）。
 - 候选提取是独立的旁路服务：正文最终验证并提交成功后才运行，只把模型建议
   原子写入 `term_candidates.json`（含 1-based 页码与策略版本，P1-02 前证据
   为空、页码为粗粒度页范围）；未经用户接受绝不进入 `effective_glossary.csv`
@@ -203,6 +209,43 @@ API Key 不应提交到 Git。
 - `DATA_ROOT`（运行数据根）默认等于 `PROJECT_ROOT`：日志仍在仓库 `logs/`，相对缓存仍在仓库根下。环境变量 `PDF_READER_DATA_ROOT` 可覆盖（测试隔离等场景）。
 - 安装本包后，从任意 CWD 运行 `python -m pdf_reader`（或 `start.bat`，其自身仍会切换到仓库根），配置、手动术语表、模板、静态文件、日志和缓存位置一致。
 
+## 术语管理与备份恢复
+
+阅读页工具栏中的“术语”按钮打开当前文档的术语面板，用于管理权威术语和候选术语：
+
+- 权威术语：新建、编辑、锁定/解锁、删除；锁定术语只有解锁后才能修改或删除。
+- 候选术语：查看出现页码、有界证据与观察次数；接受（接受前可修改 target）或
+  拒绝；拒绝的候选不会反复提示，但不冻结后台统计。
+- 候选不会自动影响正文：只有权威术语（含接受后的候选）经确定性编译进入
+  `effective_glossary.csv`，每次正文翻译前会重新编译并验证；严格正文约束始终
+  开启，配置里没有关闭它的开关。
+- CSV 导入/导出：面板支持把当前文档权威术语导出为
+  `source,target,locked,note` 格式（UTF-8 带 BOM），也支持导入同格式（可只含
+  `source,target`）。这是备份与迁移用户决定的推荐方式：它直接读写权威存储，
+  写后自动重新编译有效词表，且不会触碰其他文档或全局词表。
+
+备份与恢复由用户决定，应用不会自动删除这些文件。推荐在停止服务后整文件复制：
+
+| 文件 | 说明 |
+|---|---|
+| `docs/glossary.csv` | 全局手工权威术语 |
+| `cache/<hash>/user_glossary.csv` | 每个文档的用户权威术语 |
+| `cache/<hash>/term_candidates.json` | 每个文档的候选/拒绝/接受状态与观察统计 |
+
+- `cache/<hash>/` 的 `<hash>` 是源 PDF 的 SHA-256（小写十六进制）；恢复时必须
+  放回与原 PDF 对应的同一目录并保持文件名不变，否则新打开的会话不会把它识别为
+  该文档的术语数据。
+- 这些文件由应用按原子文件边界写入（同目录临时文件 + `os.replace` 整文件替换）。
+  备份/恢复请停止服务后用整文件复制或整文件替换，不要并发写入，也不要复制写了一半
+  的 `.tmp` 文件；恢复前建议把当前文件移到一旁而不是直接覆盖，以便出错时回滚。
+- `effective_glossary.csv` 是可重建产物：由 `docs/glossary.csv`、
+  `cache/<hash>/user_glossary.csv` 与已接受候选确定性编译，每次翻译前自动重建，
+  不需要备份或恢复它。
+- `cumulative_glossary.csv` 是历史输入而非权威：兼容期内保留原文件，并只读、
+  幂等地迁移为未审核候选；迁移会生成 `cumulative_glossary.csv.bak` 恢复副本
+  （已有副本绝不覆盖）。不要手工把它合并进 `user_glossary.csv` 或
+  `effective_glossary.csv`——如需保留旧译法，请在面板中接受对应候选或重新新建。
+
 ## 缓存与临时工作区
 
 `DATA_ROOT/cache/<pdf-hash>/` 是**持久用户缓存**，属于用户数据，任何生命周期或清理逻辑都不会自动删除：
@@ -210,10 +253,10 @@ API Key 不应提交到 Git。
 | 文件 | 说明 |
 |---|---|
 | `right.pdf` | 该文档的译文工作副本（首次打开时复制源文件，翻译后原子替换） |
-| `cumulative_glossary.csv` | 该文档的累计术语表 |
+| `cumulative_glossary.csv` | 旧累计术语表（历史输入，非权威）：兼容期内保留，幂等迁移为未审核候选并生成 `cumulative_glossary.csv.bak`；不进入权威或有效词表 |
 | `term_candidates.json` | 自动候选/拒绝/接受状态存储（候选不会直接进入正文） |
 | `user_glossary.csv` | 该文档的用户权威术语（用户确认后才约束正文） |
-| `effective_glossary.csv` | 每次正文翻译前编译并验证的只读有效词表 |
+| `effective_glossary.csv` | 每次正文翻译前编译并验证的只读有效词表（可重建产物，不要手工编辑或当作备份源） |
 | `reading_progress.json` | 阅读进度 |
 | `debug_trace.log` | 仅详细诊断日志模式产生：按文档保存的有界轮转调试轨迹（2MB × 3 备份，按 job 过滤） |
 

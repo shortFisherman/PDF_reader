@@ -220,3 +220,44 @@ def test_glossary_improvement_overview_statuses_match_detail_sections():
         if overview[item_id] != detail[item_id]
     }
     assert not mismatches, f"术语改进总览与详细状态不一致：{mismatches}"
+
+
+def test_readme_documents_glossary_management_backup_and_restore():
+    """P2-03：README 必须说明术语管理、CSV 导入导出、备份恢复与产物语义。"""
+    text = README.read_text(encoding="utf-8")
+    for fragment in (
+        "术语管理",
+        "接受",
+        "拒绝",
+        "锁定",
+        "导入",
+        "导出",
+        "备份",
+        "恢复",
+        "docs/glossary.csv",
+        "user_glossary.csv",
+        "term_candidates.json",
+        "effective_glossary.csv",
+        "可重建产物",
+        "cumulative_glossary.csv",
+        "历史输入",
+        "cumulative_glossary.csv.bak",
+        "停止服务",
+        "SHA-256",
+        "原子",
+    ):
+        assert fragment in text, f"README 缺少术语管理与备份恢复说明: {fragment}"
+
+
+def test_architecture_records_p203_config_compat_facts():
+    """P2-03：architecture 只记录当前事实：兼容期、配置中心收口与旧表非权威。"""
+    text = ARCHITECTURE.read_text(encoding="utf-8")
+    for fragment in (
+        "1.x 兼容",
+        "2.0.0",
+        "配置中心不再展示",
+        "历史输入而非权威",
+        "cumulative_glossary.csv.bak",
+        "45 字段",
+    ):
+        assert fragment in text, f"architecture.md 缺少 P2-03 当前事实: {fragment}"

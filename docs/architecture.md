@@ -7,8 +7,8 @@
 - 核验日期：2026-08-31。事实来源、锁定版本与测试/覆盖率基线见下。
 - 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml`、`tests/test_upstream_contract.py` 和测试收集结果。
 - 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2、tomlkit 0.13.3。
-- 测试基线：`scripts/verify.ps1` 实测 1447 个 Python 测试通过（2026-08-31 P2-02 最终核验值，含上游契约、文档治理、日志/配置、P0/P1 术语主线、术语管理 API 与生命周期回归、P2-01 黄金样本与质量门槛、P2-02 术语诊断回归）；`package.json` 的 `test:frontend` 定义九个正式前端套件（UI copy、error-safety、client-error、translation-ui、translator、zoom、alignment controller、config panel、glossary panel），verify 全绿。
-- 覆盖率基线：全局 line 92.8%、branch 86.4%（2026-08-31 P2-02 最终核验值，`coverage run --branch -m pytest` 实测；策略与关键模块 floor 见“测试、CI 与验证入口”）。
+- 测试基线：`scripts/verify.ps1` 实测 1459 个 Python 测试通过（2026-08-31 P2-03 最终核验值，含上游契约、文档治理、日志/配置、P0/P1 术语主线、术语管理 API 与生命周期回归、P2-01 黄金样本与质量门槛、P2-02 术语诊断回归、P2-03 配置收口/旧表兼容/用户文档回归）；`package.json` 的 `test:frontend` 定义九个正式前端套件（UI copy、error-safety、client-error、translation-ui、translator、zoom、alignment controller、config panel、glossary panel），verify 全绿。
+- 覆盖率基线：全局 line 92.8%、branch 86.5%（2026-08-31 P2-03 最终核验值，`coverage run --branch -m pytest` 实测；策略与关键模块 floor 见“测试、CI 与验证入口”）。
 - 基线说明：测试数量与覆盖率是易腐数字，任何新的架构核对都应以当前源码、锁定文件、测试收集结果与 coverage 报告为准；本文数值只代表 2026-08-31 的核验结果。
 
 ## 系统总览
@@ -48,7 +48,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 
 - 契约测试入口：`tests/test_upstream_contract.py`（离线、确定性，全部使用 fake 上游流，不联网、不运行真实翻译、不需要 API Key）；升级 pdf2zh-next/BabelDOC 前必须运行（命令见 [依赖升级流程](governance/dependency-upgrade.md)）。
 - 固定版本：pdf2zh-next 2.9.0 与 babeldoc 0.6.2 同时受 `pyproject.toml`/`requirements.lock` 与安装元数据约束；babeldoc 是传递依赖，只由 `requirements.lock` 固定。
-- SettingsModel 消费面：`basic.debug=False`；`translation` 的 `lang_in`/`lang_out`/`min_text_length`/`qps`/`pool_max_workers`/`term_qps`/`term_pool_max_workers`/`ignore_cache=True`/`primary_font_family`/`output`（由 SSE 生成器按 attempt 赋值注入）/`custom_system_prompt`（页面 Prompt > `default_system_prompt` > 上游默认）；正文恒为 `no_auto_extract_glossary=True`、`save_auto_extracted_glossary=False`（P0-04，不再由 `translation.auto_extract_glossary` 反转）；`glossaries` 由严格正文路径传入本次 fresh 的单个 `effective_glossary.csv`（零权威行时省略，不再逗号连接多文件）。`pdf` 的 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，以及 `[pdf2zh]` 已开放的 15 个字段（含项目正确拼写 `formula_*` → 上游历史拼写 `formular_*`）；`translate_engine_settings` 按 `ENGINE_REGISTRY` 的字段映射构造，发送开关按 Provider 映射（OpenAI 使用历史拼写 `openai_send_temprature`，Aliyun/Compatible 使用各自字段）。
+- SettingsModel 消费面：`basic.debug=False`；`translation` 的 `lang_in`/`lang_out`/`min_text_length`/`qps`/`pool_max_workers`/`term_qps`/`term_pool_max_workers`（两个 term 字段为 1.x 兼容别名，仅兼容转发旧上游 SettingsModel，严格正文路径与项目候选提取不使用，启动 WARNING，计划 2.0.0 移除）/`ignore_cache=True`/`primary_font_family`/`output`（由 SSE 生成器按 attempt 赋值注入）/`custom_system_prompt`（页面 Prompt > `default_system_prompt` > 上游默认）；正文恒为 `no_auto_extract_glossary=True`、`save_auto_extracted_glossary=False`（P0-04，不再由 `translation.auto_extract_glossary` 反转）；`glossaries` 由严格正文路径传入本次 fresh 的单个 `effective_glossary.csv`（零权威行时省略，不再逗号连接多文件）。`pdf` 的 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，以及 `[pdf2zh]` 已开放的 15 个字段（含项目正确拼写 `formula_*` → 上游历史拼写 `formular_*`）；`translate_engine_settings` 按 `ENGINE_REGISTRY` 的字段映射构造，发送开关按 Provider 映射（OpenAI 使用历史拼写 `openai_send_temprature`，Aliyun/Compatible 使用各自字段）。
 - 事件适配边界：本项目只承诺 `progress_start`、`progress_update`、`finish`、`error` 四种上游事件的映射；`progress_end` 等未承诺事件与未知事件被忽略（`format_sse_event` 返回 `None`），worker 空闲心跳（空串）原样透传为 SSE 空行。
 - 输出路径边界：`settings.translation.output` 在生成器中注入为任务工作区 `output/` 目录；术语合规重试使用独立 `attempt-2/output/` 目录与 `SettingsModel` 深拷贝，避免污染首次产物。`finish` 结果的 `mono_pdf_path` 优先、缺失时回退 `dual_pdf_path`，`auto_extracted_glossary_path` 直接交给术语合并（仅验证通过后）。
 - 取消/流式边界：`do_translate_async_stream(settings, file)` 按两个位置参数调用；`TranslationStream` 的协作式取消、迟到事件丢弃（`late_result_dropped`）、`join(timeout)` 与 `is_alive` 所有权接口是升级契约的一部分。
@@ -63,8 +63,8 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `LICENSE` | 本项目许可证：标准完整 GNU AGPL v3 官方文本（AGPL-3.0-only），与 `pyproject.toml`/`package.json`/`package-lock.json` 声明一致 |
 | `docs/governance/license.md` | 本项目与固定上游依赖（pdf2zh-next/BabelDOC）的许可证核验基线、四种使用/分发场景与发布前核验清单（非法律意见） |
 | `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python -m pdf_reader` |
-| `src/pdf_reader/config.py` | 读取 `config.toml`、定义冻结运行时配置（`ModelRuntimeConfig`/`TranslationRuntimeConfig`/`Pdf2zhRuntimeConfig`/`CandidateExtractionRuntimeConfig`/`UpstreamRuntimeConfig`）、严格/宽松解析、`EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
-| `src/pdf_reader/config_editor.py` | 配置中心后端：48 字段 schema（分组/控件/说明/默认与常用值/Provider 适用性）、GET 密钥脱敏（只返回 configured/source）、已知字段白名单、复用 `validate_startup_requirements`/`resolve_server_config` 严格校验、revision 乐观冲突、模块级 RLock、同目录临时文件 fsync + `os.replace` 原子写并保留权限/未知字段/注释与顺序（tomlkit）；只写 `config.toml`，不热改冻结 `AppSettings`，保存返回 `restart_required=true` |
+| `src/pdf_reader/config.py` | 读取 `config.toml`、定义冻结运行时配置（`ModelRuntimeConfig`/`TranslationRuntimeConfig`/`Pdf2zhRuntimeConfig`/`CandidateExtractionRuntimeConfig`/`UpstreamRuntimeConfig`）、严格/宽松解析、`EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH`；对 1.x 兼容 translation 三键（`auto_extract_glossary`/`term_qps`/`term_pool_max_workers`）输出不含敏感值的启动 WARNING 迁移提示（计划 2.0.0 移除，兼容只限这三键，未知键仍严格拒绝） |
+| `src/pdf_reader/config_editor.py` | 配置中心后端：45 字段 schema（分组/控件/说明/默认与常用值/Provider 适用性；三个 1.x 兼容 translation 键不展示、PUT 拒绝写入，磁盘旧键保存时原样保留）、GET 密钥脱敏（只返回 configured/source）、已知字段白名单、复用 `validate_startup_requirements`/`resolve_server_config` 严格校验、revision 乐观冲突、模块级 RLock、同目录临时文件 fsync + `os.replace` 原子写并保留权限/未知字段/注释与顺序（tomlkit）；只写 `config.toml`，不热改冻结 `AppSettings`，保存返回 `restart_required=true` |
 | `src/pdf_reader/term_extraction.py` | P1-01/P2-02 项目自有 `TermExtractionClient`：标准库 urllib 走 OpenAI-compatible `/chat/completions`（支持 deepseek/openai/openai_compatible，其余 Provider 稳定 unsupported）、严格受控 JSON 解析（条数/长度/控制字符/正文大小有界）、独立 QPS/timeout/有界重试（只重试超时/429/5xx）、可选 token usage 解析（三字段全部非负 int 才构造 `TokenUsage` 且 `available` 三者全真；缺失/部分/布尔/负值 → unavailable，不伪造），请求/响应/Prompt/Key 不入日志 |
 | `src/pdf_reader/candidate_filter.py` | P1-02 候选后置过滤：确定性前后标点清理/异常空白折叠、英文单词/缩写边界感知匹配、小型普通词/功能词/通用学术词精确拒绝、完整句/超词数/超字符/纯数字/公式/变量/页码/占位符结构拒绝、target 必须含 Han 字符、幻觉 source 拒绝、逐页命中页码与有界证据窗口；每条被过滤候选带稳定原因，规则版本 `candidate-filter/1` 组合进候选 `strategy_version`；导出 `FILTER_REASONS` 稳定 reason 白名单供 P2-02 诊断复用；只作用于模型自动候选，绝不删除/降级/重写用户权威决定 |
 | `src/pdf_reader/candidate_service.py` | P1-01/P1-02/P1-03/P1-05/P2-02 两阶段候选服务：`prepare` 在严格翻译前读取输入 PDF、模型提取/过滤，返回不可变 `PreparedCandidates`（observations + report + 冻结 identity；带身份时 document_dir 必须等于 identity.document_dir），绝不写 `CandidateStore`；`commit` 只在正文 PDF 成功提交后执行，以 prepared 冻结身份为权威重验 job_id/document_id/pdf_hash/document_dir（目录名必须等于 pdf_hash；另传 identity 必须完全相等、写目录必须等于冻结 identity.document_dir、无身份 prepared 不得升级）再原子写 `CandidateStore`；report 含 proposed/kept(candidates)/filtered(+by_reason)/elapsed_ms/usage 稳定口径（failed 由受控 status 集合计算，不存报告字段），prepare 发 `candidate_prepare` 摘要、commit 的所有返回路径（无 observations/成功/store_failed/identity_rejected）都发 `candidate_commit` 摘要并追加 best-effort 持久状态计数 pending/accepted/rejected（统计失败三者均 unavailable）；单页/批量同规则，任何失败降级安全日志且不阻正文 finish；候选只写 `term_candidates.json`，与 P1-03 `CandidateTermService` 确定性摘要边界同模块，P1-04 管理服务沿用同一推荐排序 |
@@ -378,22 +378,22 @@ job/document identity 下复用同一
 - 环境变量覆盖：`MODEL_API_KEY`（优先级高于 `model.api_key`）；`PDF_READER_DEBUG` 是 debug 优先级中间层，只接受 `true/false/1/0/on/off/yes/no`（不区分大小写、忽略首尾空白），非法值启动时报错（即使 CLI 显式覆盖也会 fail-fast）。
 - `[server]` 严格校验：必须是 table；`host` 非空字符串；`port` 是 1–65535 的 int（布尔值不算）；`debug` 必须为真布尔值。旧的 `[debug].enabled` 键已停止使用。
 - 冻结运行时配置：`build_upstream_runtime_config()` 把解析结果冻结为 `ModelRuntimeConfig`（`api_key` 为 `repr=False`）/`TranslationRuntimeConfig`/`Pdf2zhRuntimeConfig`/`UpstreamRuntimeConfig`；`AppSettings.upstream` 持有该对象，`model_provider`/`model`/`lang_in`/`lang_out` 从它派生，不再从 raw section 单独取值。
-- 默认值：provider=`openai_compatible`、model=`""`、dpi=200、cache_dir=`cache`、lang_in=`en`、lang_out=`zh`、`min_text_length=5`、`qps=4`、worker 相关为 `None`（上游跟随）、`auto_extract_glossary=True`、`primary_font_family=None`（auto）、PDF 高级字段采用上游 2.9.0 默认（`translate_table_text=True`、其余 false/0.8/0.9）；`[term_extraction]` 默认 `enabled=True`（未配置该段时跟随旧 `auto_extract_glossary` 显式值）、`timeout=30.0`、`qps=2`、`max_workers=1`、`retry_count=1`、`max_input_chars=80000`、`prompt=None`。相对 `cache_dir` 以 `DATA_ROOT`（默认等于 `PROJECT_ROOT`）为基准解析并 `resolve()`；绝对 `cache_dir` 保持绝对，不被重写。`DATA_ROOT` 可用环境变量 `PDF_READER_DATA_ROOT` 覆盖。
+- 默认值：provider=`openai_compatible`、model=`""`、dpi=200、cache_dir=`cache`、lang_in=`en`、lang_out=`zh`、`min_text_length=5`、`qps=4`、worker 相关为 `None`（上游跟随）、`auto_extract_glossary=True`（1.x 兼容别名：只在未配置 `[term_extraction]` 段时作为 `enabled` 的兼容来源；已配置本段时以规范段为准）、`term_qps=None`、`term_pool_max_workers=None`（1.x 兼容别名，仅兼容读取并转发旧上游 SettingsModel，严格正文路径与项目候选提取不使用）、`primary_font_family=None`（auto）、PDF 高级字段采用上游 2.9.0 默认（`translate_table_text=True`、其余 false/0.8/0.9）；`[term_extraction]` 默认 `enabled=True`（未配置该段时跟随旧 `auto_extract_glossary` 显式值）、`timeout=30.0`、`qps=2`、`max_workers=1`、`retry_count=1`、`max_input_chars=80000`、`prompt=None`。三个 1.x 兼容键在启动验证时输出不含敏感值的 WARNING 迁移提示，计划 2.0.0 移除，兼容只限这三键（未知键仍严格拒绝）。相对 `cache_dir` 以 `DATA_ROOT`（默认等于 `PROJECT_ROOT`）为基准解析并 `resolve()`；绝对 `cache_dir` 保持绝对，不被重写。`DATA_ROOT` 可用环境变量 `PDF_READER_DATA_ROOT` 覆盖。
 - 统一严格校验 `validate_startup_requirements()`（`app.main` 启动前调用，返回严格 `UpstreamRuntimeConfig`）：`[model]`/`[pdf_reader]`/`[translation]`/`[pdf2zh]`/`[term_extraction]` 存在则必须为 table；未知 section/key 与未知 provider 直接报错；`openai_compatible` 缺 `base_url` 启动失败；bool 不得冒充 int/float；数值必须有限（nan/inf/-inf 拒绝）；`temperature` 只要求可解析且有限，`timeout` 要求有限正数；`reasoning_effort` 按 Provider 枚举校验；正则字段启动期预编译；`[term_extraction]` 的 timeout/qps/max_workers/retry_count/max_input_chars/prompt 按类型与范围校验；API Key 只出现在 `ModelRuntimeConfig.api_key`（`repr=False`），错误与日志不泄漏 Key/Prompt 原文。
 - `MODEL_API_KEY` 环境值合法（非空且非示例占位值）时覆盖文件中无效的 `api_key`，但 `[model]` 段本身仍必须是 table。`build_app_settings()` 未传入 `upstream` 时用宽松解析装配（无 config.toml 的测试/兼容 fallback）；`main` 必须传回严格实例，禁止宽松重解析。
 - `GLOSSARY_PATH = PROJECT_ROOT/docs/glossary.csv`（由 `src/pdf_reader/paths.py` 派生），必须保持该路径；模块位于 `src/pdf_reader/` 时不因 `__file__` 变化而改变。
 - `ENGINE_REGISTRY` 用声明式 `EngineSpec` 注册 10 个 Provider，顺序为：`deepseek`、`zhipu`、`siliconflow`、`aliyun`、`gemini`、`groq`、`grok`、`modelscope`、`openai`、`openai_compatible`。
 - `resolve_engine()` 对未知 Provider 抛 `ConfigError`（不再回退 `openai_compatible`）；`build_engine_kwargs(spec, model_cfg)` 显式接收 `ModelRuntimeConfig`，按 `ENGINE_REGISTRY.field_map` 映射（含发送开关：OpenAI → 历史拼写 `openai_send_temprature`，Compatible/Aliyun → 各自 `send_temperature`；发送开关为 `False` 时省略以保持旧请求行为，`enable_json_mode=False` 等普通字段仍显式透传）。
-- `translation_settings.build_settings(upstream, input_pdf, ...)`：设置 `lang_in`/`lang_out`/`min_text_length`/`qps`/worker 与 term 字段；正文固定 `no_auto_extract_glossary=True`、`save_auto_extracted_glossary=False`（P0-04，不再由 `auto_extract_glossary` 反转）；Prompt 优先级为页面非空 Prompt > `default_system_prompt` > 上游默认；`ignore_cache=True`；`glossaries` 只由调用方传入（严格正文路径只传 `effective_glossary.csv`，不再自动附加全局/累计 CSV）；`output` 由生成器设置；PDF 参数为 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，并把 `[pdf2zh]` 的 15 个字段显式传入（`formula_*` → 上游 `formular_*`）。
+- `translation_settings.build_settings(upstream, input_pdf, ...)`：设置 `lang_in`/`lang_out`/`min_text_length`/`qps`/worker 与 term 字段（`term_qps`/`term_pool_max_workers` 作为 1.x 兼容别名按旧规则转发到上游 SettingsModel；正文固定 `no_auto_extract_glossary=True`，上游自动提取已关闭，因此它们不改变正文与项目候选）；正文固定 `save_auto_extracted_glossary=False`（P0-04，不再由 `auto_extract_glossary` 反转）；Prompt 优先级为页面非空 Prompt > `default_system_prompt` > 上游默认；`ignore_cache=True`；`glossaries` 只由调用方传入（严格正文路径只传 `effective_glossary.csv`，不再自动附加全局/累计 CSV）；`output` 由生成器设置；PDF 参数为 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，并把 `[pdf2zh]` 的 15 个字段显式传入（`formula_*` → 上游 `formular_*`）。
 
 ## 配置中心（config_editor 与 config-panel）
 
-- 后端 `src/pdf_reader/config_editor.py` 定义 48 字段 schema（覆盖 `[model]`/`[pdf_reader]`/`[translation]`/`[server]`/`[term_extraction]`/`[pdf2zh]`），每字段含中文名、TOML 路径、必填/可选/进阶分组、控件类型、用途说明、默认/常用值、Provider 适用性与条件必填；`GET /api/config` 返回 schema、当前值与文件 sha256 revision，API Key 只返回 `{source: file|environment|missing, configured}`，不返回明文。
+- 后端 `src/pdf_reader/config_editor.py` 定义 45 字段 schema（覆盖 `[model]`/`[pdf_reader]`/`[translation]`/`[server]`/`[term_extraction]`/`[pdf2zh]`），每字段含中文名、TOML 路径、必填/可选/进阶分组、控件类型、用途说明、默认/常用值、Provider 适用性与条件必填；`translation.term_qps`/`translation.term_pool_max_workers`/`translation.auto_extract_glossary` 三个 1.x 兼容键不在 schema 中（配置中心不再展示/写入）：GET 不返回、PUT 拒绝写入，磁盘上已有的旧键由 tomlkit 原样保留（不删除、不改写）并在下次启动时继续 WARNING；`[term_extraction]` 字段说明明确“候选不会自动影响正文”与“严格正文约束始终开启”。`GET /api/config` 返回 schema、当前值与文件 sha256 revision，API Key 只返回 `{source: file|environment|missing, configured}`，不返回明文。
 - 保存只接受 schema 白名单字段；合并后的文档先过滤到已知 section/字段，再复用 `config.validate_startup_requirements()` 与 `config.resolve_server_config()` 做同一套类型/范围/枚举/条件依赖校验，不维护第二套规则。
 - 写入用 tomlkit 解析既有 `config.toml`：保留注释、字段顺序与未知字段；模块级 `RLock` 串行化同进程写入；临时文件创建在目标同目录，flush/fsync 后 `os.replace` 原子替换并保留原权限；失败清理临时文件且原文件不变。API Key 为空/缺失时保留文件旧值；保存成功返回 `restart_required=true`，只写文件，不修改 `config.CONFIG` 或运行中的冻结 `AppSettings`。
 - 前端 `static/modules/config-panel.js` 由始终可见的“配置”按钮打开可关闭 modal：字段按必填/可选/进阶分组，显示中文名、TOML 路径、说明与默认/常用值提示；provider 为固定友好下拉（DeepSeek、智谱、硅基流动、阿里云百炼、Gemini、Groq、Grok、ModelScope、OpenAI、自定义 OpenAI 兼容接口→`openai_compatible`），按 provider 显示/隐藏适用字段，`openai_compatible` 时 Base URL 标记必填；枚举/布尔用 select，数字与字符串带 datalist 但允许自定义，API Key 用密码框且不回显；环境变量 `MODEL_API_KEY` 覆盖时显示优先提示；Esc、关闭按钮与遮罩点击均可关闭。
 - 访问边界：`GET/PUT /api/config` 共享 loopback-only 守卫，只依据 `request.remote_addr`（不信任 Host/X-Forwarded-For）用 `ipaddress` 判定 127/8、`::1` 与 IPv4-mapped loopback；remote_addr 缺失/非法 fail closed，其余来源一律 HTTP 403 `config_local_only`。
-- 配置写入不改变缓存语义：`right.pdf`、累计术语表与阅读进度仍按原 PDF 哈希复用，不产生配置指纹、缓存分支或自动失效（见“状态、缓存与持久化”）。
+- 配置写入不改变缓存语义：`right.pdf`、旧累计术语表（历史输入）与阅读进度仍按原 PDF 哈希复用，不产生配置指纹、缓存分支或自动失效（见“状态、缓存与持久化”）。
 
 ## 打开 PDF 与页面渲染
 
@@ -427,7 +427,7 @@ job/document identity 下复用同一
 | 路径/数据 | 说明 |
 |---|---|
 | `DATA_ROOT/cache/<hash>/right.pdf` | 每文档持久化的译文工作副本，首次打开复制源文件，翻译后原子替换 |
-| `DATA_ROOT/cache/<hash>/cumulative_glossary.csv` | 每文档累积术语表，读—合并—写受模块级互斥锁保护；同目录 `.tmp` 写入并 flush/fsync/close 后 `os.replace` 原子提交；读取失败或表头缺少 source/target 时中止合并保留旧文件，写入/replace 失败保留旧文件并清理临时文件 |
+| `DATA_ROOT/cache/<hash>/cumulative_glossary.csv` | 旧累计术语表（历史输入，非权威）：兼容期内保留，只读、幂等迁移为未审核候选并生成 `cumulative_glossary.csv.bak`（已有副本绝不覆盖），不进入 `user_glossary.csv`/`effective_glossary.csv`；读—合并—写仍受模块级互斥锁保护，同目录 `.tmp` 写入并 flush/fsync/close 后 `os.replace` 原子提交；读取失败或表头缺少 source/target 时中止合并保留旧文件，写入/replace 失败保留旧文件并清理临时文件 |
 | `DATA_ROOT/cache/<hash>/reading_progress.json` | 零基阅读页码，`.tmp` + `os.replace` 原子写；损坏/越界时安全降级 |
 | `DATA_ROOT/logs/pdf_reader.log` | 永久常驻的统一主日志：`logging_config` 把同一对控制台 + 轮转文件 handler 挂到 `pdf_reader`/`werkzeug`/`pdf2zh_next`/`babeldoc`，行格式为 ISO 时间/level/run_id/pid/thread/logger，128 KiB × 5、UTF-8（常规上限约 768 KiB），超过 14 天的编号轮转备份在启动与轮转后自动清理，所有通道经同一 `SafeFormatter` 脱敏 |
 | `DATA_ROOT/cache/<hash>/debug_trace.log` | 仅详细诊断日志模式产生：按文档缓存目录有界轮转（2MB × 3），会话内按 `job_id` 过滤捕获项目 + 第三方日志，记录 start/end/elapsed 与失败 traceback；debug 关闭时零 IO，不生成 timestamp 历史文件 |
@@ -436,7 +436,7 @@ job/document identity 下复用同一
 
 `DATA_ROOT` 默认等于 `PROJECT_ROOT`（仓库根），因此正常本地运行的数据位置与既有约定一致：`cache/`、`logs/` 仍在仓库根下；`PDF_READER_DATA_ROOT` 只用于测试隔离或未来显式分离运行数据。
 
-配置扩展不改变缓存身份与复用语义：文档缓存仍只按原 PDF 哈希保存（`right.pdf`、`cumulative_glossary.csv`、`reading_progress.json`；debug 会话的 `debug_trace.log` 也按同一哈希目录保存），不产生配置指纹、缓存分支或自动失效；修改模型、Prompt、字体或 PDF 高级参数只影响之后执行的翻译或主动重译，已有 `right.pdf` 页面继续复用，累计术语表跨配置复用；上游请求缓存仍固定 `TranslationSettings.ignore_cache=True`。
+配置扩展不改变缓存身份与复用语义：文档缓存仍只按原 PDF 哈希保存（`right.pdf`、`cumulative_glossary.csv`、`reading_progress.json`；debug 会话的 `debug_trace.log` 也按同一哈希目录保存），不产生配置指纹、缓存分支或自动失效；修改模型、Prompt、字体或 PDF 高级参数只影响之后执行的翻译或主动重译，已有 `right.pdf` 页面继续复用，旧累计术语表作为历史输入继续保留并跨配置复用；上游请求缓存仍固定 `TranslationSettings.ignore_cache=True`。
 
 `AppState` 另维护当前 `_document_id`、`_translated_pages`（`translated_pages` 冻结集合）与左右 PyMuPDF 文档对象；`open_pdf` 会使旧身份失效并清空旧文档与翻译页集合。SSE 断开后任务先被协作式取消；迟到任务若仍自然结束，其结果被丢弃（不进入写回），抽取、PDF 提交与术语提交的写回边界仍受身份校验约束。
 
@@ -688,6 +688,17 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
    `accept` 与未来 UI/API 摘要都走该顺序，拒绝状态只抑制提示、不冻结后台
    统计。候选排序与统计变化仍不影响有效词表与正文（仅 accepted 投影参与
    编译/stale 判断）。
+10. **1.x 兼容期配置别名。** `translation.auto_extract_glossary`、`term_qps`、
+    `term_pool_max_workers` 仍被严格校验读取（未知键仍拒绝，兼容只限这三键），
+    启动验证时输出不含敏感值的 WARNING 迁移提示，计划 2.0.0 移除；
+    `auto_extract_glossary` 只在 `[term_extraction]` 段整体缺失时作为 `enabled`
+    的兼容来源，规范段存在时以规范段为准；`term_qps`/`term_pool_max_workers`
+    只按旧规则转发上游 SettingsModel，严格正文路径与项目候选提取不使用它们。
+    配置中心不展示/写入这三键，磁盘旧键在配置中心保存时原样保留（不删除、
+    不改写）并在下次启动继续 WARNING。旧 `cumulative_glossary.csv` 是历史输入而非权威：
+    兼容期内保留，只读幂等迁移为未审核候选并保留
+    `cumulative_glossary.csv.bak`，绝不进入 `user_glossary.csv` 或
+    `effective_glossary.csv`；`effective_glossary.csv` 是可重建编译产物。
 
 ## 上游与历史参考
 

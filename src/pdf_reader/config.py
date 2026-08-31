@@ -92,6 +92,11 @@ class TranslationRuntimeConfig:
     min_text_length: int = 5
     qps: int = 4
     pool_max_workers: int | None = None
+    # 以下三个字段是 1.x 兼容别名（P2-03 收口）：仅兼容读取；启动时输出
+    # WARNING 迁移提示，计划 2.0.0 移除。auto_extract_glossary 只在
+    # [term_extraction] 段整体缺失时作为 enabled 的兼容来源；
+    # term_qps/term_pool_max_workers 只转发旧上游 SettingsModel 字段，
+    # 严格正文路径与项目候选提取不使用。
     term_qps: int | None = None
     term_pool_max_workers: int | None = None
     auto_extract_glossary: bool = True
@@ -758,6 +763,42 @@ def _parse_translation_runtime_config(translation_cfg: dict) -> TranslationRunti
     )
 
 
+LEGACY_TRANSLATION_KEYS: tuple[str, ...] = (
+    "auto_extract_glossary",
+    "term_qps",
+    "term_pool_max_workers",
+)
+
+
+def _warn_legacy_translation_compat(translation_cfg: dict) -> None:
+    """对 1.x 兼容 translation 键输出不含敏感值的启动 WARNING 与迁移提示。"""
+    for key in LEGACY_TRANSLATION_KEYS:
+        if key not in translation_cfg:
+            continue
+        if key == "auto_extract_glossary":
+            logger.warning(
+                "[translation].%s 是 1.x 兼容键，计划在 2.0.0 移除；"
+                "它不再控制正文翻译，只在未配置 [term_extraction] 段时作为 "
+                "term_extraction.enabled 的兼容来源（已配置本段时忽略），"
+                "请改用 [term_extraction] 段。",
+                key,
+            )
+        elif key == "term_qps":
+            logger.warning(
+                "[translation].%s 是 1.x 兼容键（旧上游术语提取调优），"
+                "计划在 2.0.0 移除；严格正文路径与项目候选提取不使用它，"
+                "请改用 [term_extraction].qps。",
+                key,
+            )
+        else:
+            logger.warning(
+                "[translation].%s 是 1.x 兼容键（旧上游术语提取调优），"
+                "计划在 2.0.0 移除；严格正文路径与项目候选提取不使用它，"
+                "请改用 [term_extraction].max_workers。",
+                key,
+            )
+
+
 def _parse_term_extraction_runtime_config(
     term_cfg: dict,
     *,
@@ -1134,6 +1175,7 @@ def build_upstream_runtime_config(
     term_section = _require_table(data, "term_extraction") if "term_extraction" in data else {}
     section_present = "term_extraction" in data
     if strict:
+        _warn_legacy_translation_compat(translation_section)
         model_cfg = _parse_model_runtime_config(model_section)
         translation_cfg = _parse_translation_runtime_config(translation_section)
         pdf_cfg = _parse_pdf2zh_runtime_config(pdf_section)

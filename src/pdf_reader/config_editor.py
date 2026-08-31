@@ -295,37 +295,6 @@ FIELD_SPECS: list[FieldSpec] = [
         minimum=1,
     ),
     FieldSpec(
-        path="translation.term_qps",
-        name="术语提取每秒启动请求数",
-        group="optional",
-        control="int",
-        description="术语提取请求每秒最多启动的数量（仅影响术语提取，不影响主翻译）；"
-        "留空（推荐）时自动跟随主翻译 qps。",
-        default=None,
-        suggestions=("1", "2", "4"),
-        minimum=1,
-    ),
-    FieldSpec(
-        path="translation.term_pool_max_workers",
-        name="术语提取最大线程数",
-        group="optional",
-        control="int",
-        description="术语提取最多同时工作的线程/worker 数（仅影响术语提取）；留空（推荐）时自动跟随主翻译线程池；"
-        "填写正整数可单独限制。0 仅用于兼容旧配置，效果与留空相同，不必主动填写。",
-        default=None,
-        suggestions=("1", "2", "4", "8"),
-        minimum=0,
-    ),
-    FieldSpec(
-        path="translation.auto_extract_glossary",
-        name="自动提取术语表",
-        group="optional",
-        control="bool",
-        description="翻译时自动提取并保存术语表。",
-        default=True,
-        options=_BOOL_OPTIONS,
-    ),
-    FieldSpec(
         path="translation.primary_font_family",
         name="主要字体",
         group="optional",
@@ -353,10 +322,11 @@ FIELD_SPECS: list[FieldSpec] = [
         name="候选术语旁路提取",
         group="optional",
         control="bool",
-        description="开启后，正文翻译成功提交后会额外调用模型提取候选术语；候选只进入"
-        "term_candidates.json，未确认前绝不进入正文有效词表。兼容说明：未配置"
-        "[term_extraction] 段时跟随旧 translation.auto_extract_glossary 的显式值"
-        "（默认开启）。",
+        description="开启后，正文翻译成功提交后会额外调用模型提取候选术语；"
+        "候选不会自动影响正文，只进入 term_candidates.json，接受后才会进入有效词表。"
+        "严格正文约束始终开启，本开关不能关闭它。兼容说明：未配置 [term_extraction] "
+        "段时，本键跟随旧 translation.auto_extract_glossary 的显式值（1.x 兼容键，"
+        "计划 2.0.0 移除，默认开启）；已配置本段时以本段为准。",
         default=True,
         options=_BOOL_OPTIONS,
     ),
@@ -376,7 +346,9 @@ FIELD_SPECS: list[FieldSpec] = [
         name="候选提取每秒请求数",
         group="optional",
         control="int",
-        description="候选提取每秒最多启动的请求数（1-100），与正文 qps 完全独立。",
+        description="候选提取每秒最多启动的请求数（1-100），与正文 qps 完全独立；"
+        "这是旧 translation.term_qps（1.x 兼容键，2.0.0 移除）的规范替代，"
+        "旧键不再在配置中心展示或写入。",
         default=2,
         suggestions=("1", "2", "4"),
         minimum=1,
@@ -387,7 +359,9 @@ FIELD_SPECS: list[FieldSpec] = [
         name="候选提取并发上限",
         group="optional",
         control="int",
-        description="候选提取同时进入提取的最大调用数（1-8）。首版同步执行，该值作为信号量上限。",
+        description="候选提取同时进入提取的最大调用数（1-8）。首版同步执行，该值作为信号量上限；"
+        "这是旧 translation.term_pool_max_workers（1.x 兼容键，2.0.0 移除）的规范替代，"
+        "旧键不再在配置中心展示或写入。",
         default=1,
         suggestions=("1", "2", "4"),
         minimum=1,

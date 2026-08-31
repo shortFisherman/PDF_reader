@@ -75,6 +75,25 @@ def test_example_contains_no_real_api_key():
         assert not _SECRET_LIKE.search(line), f"疑似真实 API Key: {line.strip()}"
 
 
+def test_example_marks_legacy_translation_keys_as_1x_compat_aliases():
+    text = EXAMPLE.read_text(encoding="utf-8")
+    translation_section = text.split("[translation]", 1)[1].split("[term_extraction]", 1)[0]
+    for key in ("term_qps", "term_pool_max_workers", "auto_extract_glossary"):
+        assert key in translation_section
+    assert "1.x 兼容" in text
+    assert "2.0.0" in text
+    assert "配置中心不再展示" in text
+    assert "[term_extraction].qps" in text and "[term_extraction].max_workers" in text
+
+
+def test_example_describes_cumulative_as_history_not_authoritative():
+    text = EXAMPLE.read_text(encoding="utf-8")
+    assert "cumulative_glossary.csv" in text
+    assert "cumulative_glossary.csv.bak" in text
+    assert "历史输入而非权威" in text
+    assert "effective_glossary.csv" in text and "可重建产物" in text
+
+
 def test_readme_links_to_example_and_design_doc():
     text = README.read_text(encoding="utf-8")
     assert "config.example.toml" in text

@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 from unittest.mock import patch
@@ -171,6 +172,73 @@ def test_term_extraction_enabled_follows_legacy_when_section_absent(monkeypatch)
         )
     )
     assert upstream.term_extraction.enabled is True
+
+
+def test_term_extraction_section_present_takes_priority_over_legacy(monkeypatch):
+    """规范 [term_extraction] 段存在时优先：省略 enabled 不回落旧键，显式值不被旧键覆盖。"""
+    from pdf_reader import config
+
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    upstream = config.build_upstream_runtime_config(
+        _cfg(
+            translation={"auto_extract_glossary": False},
+            term_extraction={"qps": 3},
+        )
+    )
+    assert upstream.term_extraction.enabled is True
+    assert upstream.term_extraction.qps == 3
+
+    upstream = config.build_upstream_runtime_config(
+        _cfg(
+            translation={"auto_extract_glossary": True},
+            term_extraction={"enabled": False},
+        )
+    )
+    assert upstream.term_extraction.enabled is False
+
+
+def test_legacy_translation_keys_emit_safe_migration_warnings(monkeypatch, caplog):
+    """启动验证时三个 1.x 兼容键必须给出不含敏感值的 WARNING 与迁移提示。"""
+    from pdf_reader import config
+
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    with caplog.at_level(logging.WARNING, logger="pdf_reader.config"):
+        config.validate_startup_requirements(
+            _cfg(
+                translation={
+                    "auto_extract_glossary": False,
+                    "term_qps": 2,
+                    "term_pool_max_workers": 0,
+                }
+            )
+        )
+    messages = [record.message for record in caplog.records if record.name == "pdf_reader.config"]
+    joined = "\n".join(messages)
+    assert "auto_extract_glossary" in joined
+    assert "term_qps" in joined
+    assert "term_pool_max_workers" in joined
+    assert "1.x 兼容" in joined
+    assert "2.0.0" in joined
+    assert "[term_extraction].qps" in joined
+    assert "[term_extraction].max_workers" in joined
+    assert "sk-" not in joined
+
+
+def test_no_legacy_warnings_without_legacy_keys(monkeypatch, caplog):
+    from pdf_reader import config
+
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    with caplog.at_level(logging.WARNING, logger="pdf_reader.config"):
+        config.validate_startup_requirements(_cfg())
+    assert not any(record.name == "pdf_reader.config" and "兼容" in record.message for record in caplog.records)
+
+
+def test_legacy_auto_extract_glossary_type_rejected(monkeypatch):
+    from pdf_reader import config
+
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    with pytest.raises(config.ConfigError, match="auto_extract_glossary"):
+        config.build_upstream_runtime_config(_cfg(translation={"auto_extract_glossary": "yes"}))
 
 
 @pytest.mark.parametrize(

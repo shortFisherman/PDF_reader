@@ -169,7 +169,7 @@
 | P1-05 | P1 | 统一单页/批量术语生命周期和失败语义 | `已完成` | P0-05、P1-01 至 P1-04 |
 | P2-01 | P2 | 建立术语黄金样本与质量门槛 | `已完成` | P0-01，可提前建立基线 |
 | P2-02 | P2 | 增加术语诊断、统计和可解释性 | `已完成` | P0/P1 数据模型稳定后 |
-| P2-03 | P2 | 收口配置、旧累计词表兼容与用户文档 | `待处理` | P0/P1 主流程完成后 |
+| P2-03 | P2 | 收口配置、旧累计词表兼容与用户文档 | `已完成` | P0/P1 主流程完成后 |
 | P2-04 | P2 | 建立上游升级和无补丁治理回归 | `待处理` | P0-01，持续事项 |
 
 建议严格按以下阶段执行：
@@ -780,11 +780,11 @@ cache/<pdf_hash>/effective_glossary.csv   确定性编译产物，不由用户�
 
 ### P2-03 收口配置、旧累计词表兼容与用户文档
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：—
+- 状态：`已完成`
+- 完成日期：2026-08-31
+- 完成提交：`待验收提交`
+- 验证证据：P2-03 定向回归（`tests/test_config_deferred.py`/`tests/test_config_editor.py`/`tests/test_legacy_migration.py`/`tests/test_config_example.py`/`tests/test_documentation_governance.py`）通过；`scripts/verify.ps1` 全绿：1459 Python tests，coverage line 92.8% / branch 86.5%，Mypy 37 源文件、Ruff lint/format、secret scan（694 tracked files）、ESLint 与九个前端测试套件（UI copy、error-safety、client-error、translation-ui 116、translator 48、zoom 31、alignment 20、config panel 80、glossary panel 31）全部通过，术语质量门 PASSED。
+- 剩余问题：无
 
 #### 当前问题
 
@@ -815,11 +815,11 @@ compliance_retry_count = 1
 
 #### 验收标准
 
-- [ ] 配置不再用一个布尔值混合正文词表选择和候选提取。
-- [ ] 旧配置迁移有测试、提示和明确兼容期。
-- [ ] 旧 `cumulative_glossary.csv` 不会被静默当成用户权威词表。
-- [ ] README、config example、配置中心和 architecture 与代码一致。
-- [ ] 用户文档明确说明如何备份、恢复和导出自己的决定。
+- [x] 配置不再用一个布尔值混合正文词表选择和候选提取。
+- [x] 旧配置迁移有测试、提示和明确兼容期。
+- [x] 旧 `cumulative_glossary.csv` 不会被静默当成用户权威词表。
+- [x] README、config example、配置中心和 architecture 与代码一致。
+- [x] 用户文档明确说明如何备份、恢复和导出自己的决定。
 
 ### P2-04 建立上游升级和无补丁治理回归
 
@@ -920,3 +920,4 @@ compliance_retry_count = 1
 | 2026-08-31 | P1-05 | 已完成 | `bd5ff53` | 冻结 job/document/pdf_hash/revision/词条摘要到严格上下文；候选服务拆为两阶段——`prepare` 在严格翻译前读取输入 PDF、模型提取/过滤并返回不可变 `PreparedCandidates`（observations + report + 冻结 identity，绝不写 `CandidateStore`），`commit` 只在 PDF 成功提交后以冻结身份为权威重验 active job 的 job_id/document_id/pdf_hash/document_dir 再原子写 `CandidateStore`（另传 identity 必须完全相等、写目录必须等于冻结 identity.document_dir、无身份 prepared 不得升级，任何 mismatch 均 `identity_rejected` 且不写）；单页/批量共享「输入/活跃词条 → prepare → run_translation → 合规/重试 → 提交 PDF → commit → finish」顺序，prepare 失败只降级正文继续，合规/PDF/断开/取消可已 prepare 但不得 commit，identity 在 prepare 后变化拒绝，commit 失败不反转已提交 finished；系统级回归覆盖候选提取/写入失败、断开、合规与 PDF 写入失败；`scripts/verify.ps1` 全绿（1335 Python tests）。 |
 | 2026-08-31 | P2-01 | 已完成 | `4686598` | 建立三类黄金文本 fixture（医学指南/技术论文/教材）与受控模型响应（解析与后置过滤分别评测），带 AGPL-3.0-only 原创/合成 provenance 元数据；新增 `src/pdf_reader/term_quality.py` 与 `scripts/term_quality_gate.py`：固定普通词污染、`AD` 子串边界、TCS 全称/缩写多表述、错误首译不锁死、rejected 不重复提示；candidate precision（术语识别）与 candidate_target_accuracy（黄金中文）分离考核；有方向指标 batch_minus_single_core_recall_delta 只防批量相对单页退化；所有指标分子/分母/方向/空集合语义进入版本化 metric_definitions；fixture 必需维度（compliance pass/fail/unknown、boundary kept/rejected、store wrong-first/rejected、每响应解析与过滤期望、每类文档 core_terms/common_words）fail-closed；基线校验键集合/值类型/有限性/fixture_sha256；版本化基线 `docs/reports/term-quality-baseline.json` 支持漂移检测与前后对比，质量门已接入 `scripts/verify.ps1`，全部离线、无 API Key、只写临时目录；`scripts/verify.ps1` 全绿（1393 Python tests）。 |
 | 2026-08-31 | P2-02 | 已完成 | `a357860` | 新增 `src/pdf_reader/term_diagnostics.py` 与 `term_extraction.TokenUsage/TermExtractionResult/extract_terms_with_usage`：候选报告扩展 `proposed/elapsed_ms/usage`（failed 由受控 status 集合计算，不存冗余字段），prepare 摘要只含批内 proposed/kept/filtered/failed，commit 的所有返回路径都发 `candidate_commit` 摘要并追加 best-effort 真实持久状态计数 pending/accepted/rejected（统计失败三者均 unavailable）；任务日志前缀增加截断 12 字符的 `rev=`（路由冻结 `effective_glossary_revision`），正文活跃词条数量摘要 `glossary_active_terms`，合规稳定事件 `compliance_pass/fail/unknown/unavailable/retry_scheduled/failed_final`（SSE 错误码不变）；event/status/reason 全部走显式常量白名单（未知 → unknown，先类型/白名单判断再派生 event，任意对象绝不进入格式化），`TokenUsage.available` 三字段全真、缺失/部分/非法一律 unavailable 不伪造；全部诊断经 `safe_task_log`/`_safe_diagnostics`/`_log_diagnostics` 多层故障隔离，格式化/发射/统计/合规诊断抛错均不阻止正文、不改变终态、不损坏术语数据；普通 INFO 日志仍不泄露 source/target/证据/正文/Prompt/凭据；`scripts/verify.ps1` 全绿（1447 Python tests，coverage line 92.8%、branch 86.4%，静态与九个前端套件全部通过）。 |
+| 2026-08-31 | P2-03 | 已完成 | `待验收提交` | 收口配置与旧累计词表兼容：`[term_extraction]` 为候选提取规范段且优先于旧 `translation.auto_extract_glossary`（段缺失时才作为 enabled 兼容来源）；三个 1.x 兼容键（auto_extract_glossary/term_qps/term_pool_max_workers）仍严格校验读取，启动输出不含敏感值的 WARNING 迁移提示，计划 2.0.0 移除，未知键仍严格拒绝；配置中心 schema 收口为 45 字段（不再展示/写入旧键，磁盘旧键保存时原样保留并有测试）；README 补充术语新建/编辑/锁定、候选接受/拒绝、CSV 导入导出与备份恢复指南（`effective_glossary.csv` 可重建产物、`cumulative_glossary.csv` 历史输入非权威、迁移备份 `.bak` 不覆盖、停服务/文档哈希/原子文件边界）；config.example.toml 与 docs/architecture.md 同步当前事实；旧 cumulative_glossary.csv 只读幂等迁移为未审核候选并保留备份、不进入 user/effective 权威词表（新增直接覆盖该不变量的测试）；`scripts/verify.ps1` 全绿（1459 Python tests，coverage line 92.8%/branch 86.5%，Mypy/Ruff/secret scan/ESLint/九个前端套件与术语质量门全部通过）。 |

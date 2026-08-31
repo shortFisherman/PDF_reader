@@ -11,6 +11,7 @@ import pytest
 
 from pdf_reader import candidate_store, legacy_migration
 from pdf_reader.candidate_store import CandidateStore
+from pdf_reader.glossary_compiler import compile_effective_glossary
 from pdf_reader.glossary_merger import merge_glossary_csvs
 from pdf_reader.legacy_migration import LEGACY_CUMULATIVE_BACKUP_NAME, migrate_legacy_cumulative
 from pdf_reader.term_model import (
@@ -449,3 +450,33 @@ def test_migrated_candidates_remain_observable_by_auto_flow(tmp_path):
     assert by_target["新建议"].observations == 1
     payload = json.loads(store.path.read_text(encoding="utf-8"))
     assert payload["legacy_migration"]["rows"] == 1
+
+
+def test_p203_legacy_cumulative_never_becomes_authoritative(tmp_path):
+    """P2-03 不变量：旧累计词表只迁移为未审核候选，绝不进入权威或有效词表。"""
+    document_dir = doc_dir(tmp_path)
+    cumulative = document_dir / LEGACY_CUMULATIVE_FILENAME
+    write_cumulative(cumulative, [("AD", "特应性皮炎"), ("TCS", "外用糖皮质激素")])
+    original_bytes = cumulative.read_bytes()
+
+    result = migrate_legacy_cumulative(document_dir)
+
+    assert result.status == "migrated"
+    assert cumulative.exists(), "兼容期内旧累计词表不得删除"
+    assert cumulative.read_bytes() == original_bytes
+    backup = document_dir / LEGACY_CUMULATIVE_BACKUP_NAME
+    assert backup.exists() and backup.read_bytes() == original_bytes
+    assert not (document_dir / "user_glossary.csv").exists(), "迁移不得创建或写入文档权威词表"
+
+    entries, _, metadata = CandidateStore(document_dir).load()
+    assert metadata["legacy_migration"]["rows"] == 2
+    assert {entry.source for entry in entries} == {"AD", "TCS"}
+    assert all(entry.status == "candidate" for entry in entries)
+    assert all(entry.accepted_target is None for entry in entries)
+
+    global_path = tmp_path / "global.csv"
+    write_cumulative(global_path, [])
+    compile_effective_glossary(document_dir, global_path)
+    effective_path = document_dir / "effective_glossary.csv"
+    assert effective_path.exists()
+    assert _read_csv_rows(effective_path) == [], "未审核候选不得进入 effective_glossary.csv"

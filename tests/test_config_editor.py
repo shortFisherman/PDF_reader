@@ -71,7 +71,7 @@ def test_get_returns_schema_values_and_revision_without_api_key(editor_client):
     data = _get(client, cfg_path)
 
     assert isinstance(data["revision"], str) and len(data["revision"]) == 64
-    assert len(data["schema"]) == 48
+    assert len(data["schema"]) == 45
     assert {spec["group"] for spec in data["schema"]} == {"required", "optional", "advanced"}
     assert {spec["path"].split(".")[0] for spec in data["schema"]} == {
         "model",
@@ -81,6 +81,12 @@ def test_get_returns_schema_values_and_revision_without_api_key(editor_client):
         "term_extraction",
         "pdf2zh",
     }
+    schema_paths = {spec["path"] for spec in data["schema"]}
+    for legacy in ("translation.term_qps", "translation.term_pool_max_workers", "translation.auto_extract_glossary"):
+        assert legacy not in schema_paths
+    assert "term_qps" not in data["values"]["translation"]
+    assert "term_pool_max_workers" not in data["values"]["translation"]
+    assert "auto_extract_glossary" not in data["values"]["translation"]
     assert data["values"]["model"]["provider"] == "deepseek"
     assert data["values"]["model"]["api_key"] == {"source": "file", "configured": True}
     assert data["values"]["pdf_reader"].get("legacy_extra") is None
@@ -367,6 +373,20 @@ def test_term_extraction_schema_fields_are_well_formed():
     assert timeout.minimum == 1.0 and timeout.maximum == 120.0
     assert retry.minimum == 0 and retry.maximum == 3
     assert "候选" in config_editor.FIELDS_BY_PATH["term_extraction.enabled"].description
+    enabled = config_editor.FIELDS_BY_PATH["term_extraction.enabled"]
+    assert "候选不会自动影响正文" in enabled.description
+    assert "严格正文约束始终开启" in enabled.description
+    qps = config_editor.FIELDS_BY_PATH["term_extraction.qps"]
+    max_workers = config_editor.FIELDS_BY_PATH["term_extraction.max_workers"]
+    assert "translation.term_qps" in qps.description
+    assert "translation.term_pool_max_workers" in max_workers.description
+
+
+def test_legacy_translation_term_keys_hidden_from_config_center():
+    paths = {spec.path for spec in config_editor.FIELD_SPECS}
+    for legacy in ("translation.term_qps", "translation.term_pool_max_workers", "translation.auto_extract_glossary"):
+        assert legacy not in paths
+        assert legacy not in config_editor.FIELDS_BY_PATH
 
 
 def test_schema_qps_and_pool_max_workers_allow_large_values():
@@ -380,17 +400,62 @@ def test_schema_qps_and_pool_max_workers_allow_large_values():
     assert ">100 可保存" in qps.description
     assert "同时工作" in pool.description and "跟随 qps" in pool.description
     assert ">100 可保存" in pool.description
-    term_qps = config_editor.FIELDS_BY_PATH["translation.term_qps"]
-    term_pool = config_editor.FIELDS_BY_PATH["translation.term_pool_max_workers"]
-    assert "术语" in term_qps.description and "仅影响术语提取" in term_qps.description
-    assert "术语" in term_pool.description and "仅影响术语提取" in term_pool.description
     assert "留空（推荐）" in pool.description and "自动跟随 qps" in pool.description
-    assert "留空（推荐）" in term_qps.description and "自动跟随主翻译 qps" in term_qps.description
-    assert "留空（推荐）" in term_pool.description and "自动跟随主翻译线程池" in term_pool.description
-    assert "0 仅用于兼容旧配置" in term_pool.description
-    assert "0" not in term_pool.suggestions
-    assert term_pool.suggestions == ("1", "2", "4", "8")
-    assert term_pool.minimum == 0
+
+
+def test_put_rejects_legacy_translation_keys(editor_client):
+    client, cfg_path = editor_client
+    original = cfg_path.read_bytes()
+    before = _get(client, cfg_path)
+    for values in (
+        {"term_qps": 2},
+        {"term_pool_max_workers": 0},
+        {"auto_extract_glossary": False},
+    ):
+        resp = _put(client, cfg_path, {"translation": values}, before["revision"])
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "unknown_field"
+        assert cfg_path.read_bytes() == original
+
+
+def test_put_preserves_legacy_keys_on_disk(tmp_path, monkeypatch):
+    """配置中心保存必须原样保留磁盘上的 1.x 兼容键，不删除、不改写。"""
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    cfg_path = tmp_path / "config.toml"
+    legacy_translation = (
+        "[translation]\n"
+        'lang_in = "en"\n'
+        'lang_out = "zh"\n'
+        "term_qps = 2\n"
+        "term_pool_max_workers = 0\n"
+        "auto_extract_glossary = false\n"
+    )
+    cfg_path.write_text(
+        VALID_TOML.replace(
+            '[translation]\nlang_in = "en"\nlang_out = "zh"\n',
+            "# 1.x 兼容别名（配置中心不展示/写入；保存时原样保留）\n" + legacy_translation,
+        ),
+        encoding="utf-8",
+    )
+    app = Flask(__name__)
+    app.config["config_path"] = cfg_path
+    app.config["TESTING"] = True
+    register_routes(app)
+    with app.test_client() as client:
+        data = client.get("/api/config").get_json()
+        assert "term_qps" not in data["values"]["translation"]
+        assert "term_pool_max_workers" not in data["values"]["translation"]
+        assert "auto_extract_glossary" not in data["values"]["translation"]
+        resp = client.put(
+            "/api/config",
+            json={"values": {"translation": {"qps": 6}}, "revision": data["revision"]},
+        )
+        assert resp.status_code == 200
+    text = cfg_path.read_text(encoding="utf-8")
+    assert "term_qps = 2" in text
+    assert "term_pool_max_workers = 0" in text
+    assert "auto_extract_glossary = false" in text
+    assert "qps = 6" in text
 
 
 def test_qps_and_pool_max_workers_148_can_be_saved(editor_client):

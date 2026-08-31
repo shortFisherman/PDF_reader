@@ -11,6 +11,9 @@
 #
 # 重要边界：
 #   - 本文件完整列出了当前代码会读取的 48 个支持键（TOML 字段）。
+#     其中 3 个是 1.x 兼容别名（[translation] 的 term_qps、
+#     term_pool_max_workers、auto_extract_glossary）：仍可读取，启动时输出
+#     不含敏感值的 WARNING 迁移提示，配置中心不再展示/写入，计划 2.0.0 移除。
 #   - pdf2zh-next/BabelDOC 还有很多参数，但本前端没有全部接通；见文件末尾。
 #   - 本项目直接构造 PDF2ZH SettingsModel，不读取 PDF2ZH/BabelDOC 自己的 CLI
 #     配置文件或 PDF2ZH_* 环境变量；设置那些参数不会影响本前端。
@@ -20,15 +23,16 @@
 #     （nan/inf/-inf 一律拒绝）。
 #   - 配置在进程启动时加载。修改 config.toml 后请重启，不要依赖热重载。
 #   - 配置变化只影响之后执行的翻译或主动重译，不会追溯更新已写入文档缓存的
-#     旧 right.pdf 页面；缓存仍只按原 PDF 哈希保存，累计术语表跨配置复用。
+#     旧 right.pdf 页面；缓存仍只按原 PDF 哈希保存，旧累计术语表作为历史输入
+#     跨配置复用。
 #
-# TOML 字段总表（共 48 个支持键）：
+# TOML 字段总表（共 48 个支持键；* = 1.x 兼容别名）：
 #   [pdf_reader]  dpi, cache_dir
 #   [model]       provider, api_key, model, base_url, thinking_mode,
 #                 reasoning_effort, send_reasoning_effort, enable_json_mode,
 #                 temperature, send_temperature, timeout
 #   [translation] lang_in, lang_out, min_text_length, qps, pool_max_workers,
-#                 term_qps, term_pool_max_workers, auto_extract_glossary,
+#                 term_qps*, term_pool_max_workers*, auto_extract_glossary*,
 #                 primary_font_family, default_system_prompt
 #   [server]      host, port, debug
 #   [term_extraction] enabled, timeout, qps, max_workers, retry_count,
@@ -40,6 +44,10 @@
 #                 skip_formula_offset_calculation, non_formula_line_iou_threshold,
 #                 figure_table_protection_threshold, formula_font_pattern,
 #                 formula_char_pattern
+# * 1.x 兼容别名：仅兼容读取（类型校验仍严格），启动时 WARNING，配置中心不
+#   展示/写入；auto_extract_glossary 只在未配置 [term_extraction] 段时作为
+#   enabled 的兼容来源，term_qps/term_pool_max_workers 请改用
+#   [term_extraction].qps / [term_extraction].max_workers。
 #
 # 配置来源不只 TOML：
 #   - 环境变量：MODEL_API_KEY、PDF_READER_DEBUG、PDF_READER_ROOT、
@@ -375,13 +383,14 @@ lang_out = "zh"
 #   - 普通用户通常省略本字段（跟随 qps）；不了解就保持注释，不要猜并发值。
 # pool_max_workers = 4
 
-# 术语提取翻译 QPS。
+# 术语提取 QPS（1.x 兼容别名，启动时输出 WARNING，计划 2.0.0 移除）。
 # 类型：可选非布尔正整数；省略（默认）时跟随 qps。
-# 只控制“自动提取术语”阶段的模型请求速率，不影响正文翻译；通常不需要设置，
-# 不了解就保持注释。
+# 这是旧上游术语提取路径的调优键：严格正文路径固定关闭上游自动提取，
+# 项目候选提取也不使用它，因此它不再影响正文或候选。请改用规范键
+# [term_extraction].qps（配置中心只展示该规范键）。
 # term_qps = 4
 
-# 术语提取线程池大小。
+# 术语提取线程池大小（1.x 兼容别名，启动时输出 WARNING，计划 2.0.0 移除）。
 # 类型：可选非布尔整数；省略（默认）时跟随 pool_max_workers；显式 0 在本项目
 # 同样表示跟随 pool_max_workers。
 #
@@ -392,7 +401,9 @@ lang_out = "zh"
 #   并报 max_workers must be greater than 0。
 #   因此本项目保留 0 的公开语义，并在 build_settings 边界把 0 规范化为省略，
 #   让最终 BabelDOC 配置真正得到“跟随主 pool”的正数；正整数仍原样传递。
-# 与 term_qps 一样只控制自动术语提取，通常不需要设置；不了解就保持注释。
+# 这是旧上游术语提取路径的调优键：严格正文路径固定关闭上游自动提取，
+# 项目候选提取也不使用它。请改用规范键 [term_extraction].max_workers
+# （配置中心只展示该规范键）。普通用户不需要设置，不了解就保持注释。
 # term_pool_max_workers = 4
 
 # -----------------------------------------------------------------------------
@@ -416,13 +427,14 @@ lang_out = "zh"
 # 不了解就保持注释，不要猜阈值/并发值。
 # -----------------------------------------------------------------------------
 
-# 自动提取术语并保存/合并到当前文档累计术语表（兼容保留项）。
+# 自动提取术语表（1.x 兼容别名，启动时输出 WARNING，计划 2.0.0 移除）。
 # 类型：布尔值 true/false；默认 true。
 # P0-04 起正文翻译恒为严格路径：no_auto_extract_glossary=True +
 # save_auto_extracted_glossary=False，本键不再反转正文开关。P1-01 起自动候选
-# 收集由 [term_extraction] 独立接管；未配置 [term_extraction] 段时，
-# term_extraction.enabled 跟随本键的显式值（旧默认 true），以保持兼容语义。
-# 保留此键仅为兼容旧配置，避免启动期删除报错。
+# 收集由 [term_extraction] 独立接管；只有整个 [term_extraction] 段缺失时，
+# term_extraction.enabled 才跟随本键的显式值（旧默认 true）；已配置
+# [term_extraction] 段时以该段为准，本键被忽略。普通用户请直接配置
+# [term_extraction] 段。
 # auto_extract_glossary = true
 
 # 译文主字体。
@@ -602,8 +614,11 @@ debug = false
 #   优先级：非空页面 Prompt > translation.default_system_prompt > 上游默认提示词；
 #   空白输入会回落到 default_system_prompt（未配置时保留上游默认）。
 # - 权威术语：docs/glossary.csv（全局）与 cache/<hash>/user_glossary.csv（文档）
-#   以及用户接受后的候选，经编译生成 effective_glossary.csv 参与后续翻译。
-# - 旧累计术语表：cumulative_glossary.csv 只做幂等迁移为候选，不再直接传给正文。
+#   以及用户接受后的候选，经编译生成 effective_glossary.csv 参与后续翻译；
+#   effective_glossary.csv 是可重建产物，不要手工编辑或当作备份源。
+# - 旧累计术语表：cumulative_glossary.csv 是历史输入而非权威，只做幂等迁移为
+#   未审核候选（保留 cumulative_glossary.csv.bak，不进入 user_glossary.csv /
+#   effective_glossary.csv），不再直接传给正文。
 # - 严格正文路径：每次翻译前迁移→编译→验证有效词表；当前页实际命中的权威词条
 #   会追加为不可被页面 Prompt 覆盖的强制约束块。
 # =============================================================================
@@ -643,8 +658,9 @@ debug = false
 #
 # 已接通、通过本文件可配置的翻译参数：
 #   [translation]：min_text_length、qps、pool_max_workers、term_qps、
-#     term_pool_max_workers、auto_extract_glossary、primary_font_family、
-#     default_system_prompt。
+#     term_pool_max_workers、auto_extract_glossary（三个均为 1.x 兼容别名，
+#     配置中心不再展示/写入，启动 WARNING，计划 2.0.0 移除）、
+#     primary_font_family、default_system_prompt。
 #   [pdf2zh]：上方的全部 15 个 PDF 高级字段（短行、清理、富文本、兼容性、表格、
 #     扫描/OCR、行号、公式偏移、阈值与正则）。
 #   [term_extraction]：enabled、timeout、qps、max_workers、retry_count、
@@ -667,7 +683,8 @@ debug = false
 #
 # 缓存语义不变：前端文档缓存仍只按原 PDF 哈希保存（cache/<pdf_hash>/right.pdf、
 # cumulative_glossary.csv、reading_progress.json）；修改配置不会追溯更新旧译文页面，
-# 新配置只作用于之后执行的翻译或主动重译；累计术语表继续跨模型/配置复用。
+# 新配置只作用于之后执行的翻译或主动重译；旧累计术语表作为历史输入继续保留并
+# 跨模型/配置复用（迁移备份 cumulative_glossary.csv.bak 绝不覆盖已有副本）。
 #
 # 日志与脱敏边界：
 #   - 主日志永久常驻 DATA_ROOT/logs/pdf_reader.log（128 KiB × 5 备份，UTF-8；常规上限约
