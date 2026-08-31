@@ -705,11 +705,11 @@ cache/<pdf_hash>/effective_glossary.csv   确定性编译产物，不由用户�
 
 ### P2-01 建立术语黄金样本与质量门槛
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：—
+- 状态：`已完成`
+- 完成日期：2026-08-31
+- 完成提交：`4686598`
+- 验证证据：`pytest -q tests/test_term_quality.py tests/test_term_quality_fixture.py tests/test_term_quality_gate.py tests/test_term_quality_validation.py` 57 passed；P2-01 定向回归（含 `tests/test_term_extraction.py`、`tests/test_candidate_filter.py`、`tests/test_verify_script.py`、`tests/test_documentation_governance.py`）207 passed；`python scripts/term_quality_gate.py --json` 输出确定性报告并 PASSED；`scripts/verify.ps1` 全绿（1393 Python tests，全局 line 93.0% / branch 86.4%，Mypy、Ruff、secret scan、ESLint 与九个前端测试套件全部通过）。
+- 剩余问题：无
 
 #### 目标状态
 
@@ -733,11 +733,11 @@ cache/<pdf_hash>/effective_glossary.csv   确定性编译产物，不由用户�
 
 #### 验收标准
 
-- [ ] 至少三类文档拥有可公开留在仓库的最小文本 fixture。
-- [ ] 当前真实问题有固定样本：普通词、`AD` 子串、TCS 多种表述、错误首译锁死。
-- [ ] 质量检查可离线运行并进入统一验证或独立稳定命令。
-- [ ] 质量门槛以防退化为主，不追求虚假的 100%。
-- [ ] 更新 Prompt/过滤规则时能展示基线前后变化。
+- [x] 至少三类文档拥有可公开留在仓库的最小文本 fixture。
+- [x] 当前真实问题有固定样本：普通词、`AD` 子串、TCS 多种表述、错误首译锁死。
+- [x] 质量检查可离线运行并进入统一验证或独立稳定命令。
+- [x] 质量门槛以防退化为主，不追求虚假的 100%。
+- [x] 更新 Prompt/过滤规则时能展示基线前后变化。
 
 ### P2-02 增加术语诊断、统计和可解释性
 
@@ -909,3 +909,4 @@ compliance_retry_count = 1
 | 2026-08-31 | P1-01 | 已完成 | `141c58b` | 新增项目自有 OpenAI-compatible 候选客户端和正文提交后的旁路服务；候选只写 `term_candidates.json`，失败不阻正文，支持范围、配置、降级和 fake-server 网络边界均有测试与文档，且未修改上游。 |
 | 2026-08-31 | P1-02 | 已完成 | `5297eef` | 新增项目本地确定性候选过滤：普通词/结构异常/幻觉拒绝，Unicode 边界匹配，保守术语清洗，逐页精确页码与有界证据，规则版本可审计；不影响用户权威术语或正文有效词表。 |
 | 2026-08-31 | P1-05 | 已完成 | `bd5ff53` | 冻结 job/document/pdf_hash/revision/词条摘要到严格上下文；候选服务拆为两阶段——`prepare` 在严格翻译前读取输入 PDF、模型提取/过滤并返回不可变 `PreparedCandidates`（observations + report + 冻结 identity，绝不写 `CandidateStore`），`commit` 只在 PDF 成功提交后以冻结身份为权威重验 active job 的 job_id/document_id/pdf_hash/document_dir 再原子写 `CandidateStore`（另传 identity 必须完全相等、写目录必须等于冻结 identity.document_dir、无身份 prepared 不得升级，任何 mismatch 均 `identity_rejected` 且不写）；单页/批量共享「输入/活跃词条 → prepare → run_translation → 合规/重试 → 提交 PDF → commit → finish」顺序，prepare 失败只降级正文继续，合规/PDF/断开/取消可已 prepare 但不得 commit，identity 在 prepare 后变化拒绝，commit 失败不反转已提交 finished；系统级回归覆盖候选提取/写入失败、断开、合规与 PDF 写入失败；`scripts/verify.ps1` 全绿（1335 Python tests）。 |
+| 2026-08-31 | P2-01 | 已完成 | `4686598` | 建立三类黄金文本 fixture（医学指南/技术论文/教材）与受控模型响应（解析与后置过滤分别评测），带 AGPL-3.0-only 原创/合成 provenance 元数据；新增 `src/pdf_reader/term_quality.py` 与 `scripts/term_quality_gate.py`：固定普通词污染、`AD` 子串边界、TCS 全称/缩写多表述、错误首译不锁死、rejected 不重复提示；candidate precision（术语识别）与 candidate_target_accuracy（黄金中文）分离考核；有方向指标 batch_minus_single_core_recall_delta 只防批量相对单页退化；所有指标分子/分母/方向/空集合语义进入版本化 metric_definitions；fixture 必需维度（compliance pass/fail/unknown、boundary kept/rejected、store wrong-first/rejected、每响应解析与过滤期望、每类文档 core_terms/common_words）fail-closed；基线校验键集合/值类型/有限性/fixture_sha256；版本化基线 `docs/reports/term-quality-baseline.json` 支持漂移检测与前后对比，质量门已接入 `scripts/verify.ps1`，全部离线、无 API Key、只写临时目录；`scripts/verify.ps1` 全绿（1393 Python tests）。 |
