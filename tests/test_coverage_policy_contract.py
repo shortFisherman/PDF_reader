@@ -179,7 +179,7 @@ def test_system_tests_collected_by_default():
         timeout=120,
     )
     assert result.returncode == 0, result.stderr
-    assert "16 tests collected" in result.stdout
+    assert "22 tests collected" in result.stdout
 
 
 def test_integration_tests_collected():

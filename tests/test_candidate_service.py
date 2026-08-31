@@ -9,12 +9,18 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Never
+from unittest.mock import MagicMock
 
 import pymupdf
 import pytest
 
 from pdf_reader.candidate_filter import CANDIDATE_STRATEGY_VERSION
-from pdf_reader.candidate_service import CandidateExtractionService, CandidateTermService
+from pdf_reader.candidate_service import (
+    CandidateExtractionReport,
+    CandidateExtractionService,
+    CandidateIdentity,
+    CandidateTermService,
+)
 from pdf_reader.candidate_store import CandidateStore
 from pdf_reader.config import CandidateExtractionRuntimeConfig, ModelRuntimeConfig
 from pdf_reader.term_model import TermStoreError
@@ -70,6 +76,14 @@ def _doc_dir(tmp_path: Path) -> Path:
     return directory
 
 
+def _hex_doc_dir(tmp_path: Path, hex_name: str) -> Path:
+    assert len(hex_name) == 64
+    assert all(ch in "0123456789abcdef" for ch in hex_name)
+    directory = tmp_path / hex_name
+    directory.mkdir()
+    return directory
+
+
 def _pdf(tmp_path: Path, texts: list[str], name: str = "source.pdf") -> Path:
     pdf_path = tmp_path / name
     doc = pymupdf.open()
@@ -114,6 +128,31 @@ def _service(fake_server: str, **overrides: object) -> CandidateExtractionServic
     return CandidateExtractionService(_cfg(**overrides), _model(base_url=fake_server))
 
 
+def _run(
+    service: CandidateExtractionService,
+    pdf: Path,
+    page_indices: list[int] | tuple[int, ...],
+    document_dir: Path,
+    *,
+    identity: CandidateIdentity | None = None,
+    active_job_provider=None,
+) -> CandidateExtractionReport:
+    """测试便捷入口：显式执行 prepare 阶段后执行 commit 阶段。"""
+    prepared = service.prepare(
+        pdf,
+        page_indices,
+        document_dir,
+        identity=identity,
+        active_job_provider=active_job_provider,
+    )
+    return service.commit(
+        prepared,
+        document_dir,
+        identity=identity,
+        active_job_provider=active_job_provider,
+    )
+
+
 def test_success_writes_candidates_with_pages_and_strategy(tmp_path, fake_server):
     pdf = _pdf(tmp_path, ["AD is a common term.", "TCS is another term."])
     _FakeHandler.responses.append(
@@ -122,7 +161,7 @@ def test_success_writes_candidates_with_pages_and_strategy(tmp_path, fake_server
     document_dir = _doc_dir(tmp_path)
     service = _service(fake_server)
 
-    report = service.run_for_pdf(pdf, [0, 1], document_dir)
+    report = _run(service, pdf, [0, 1], document_dir)
 
     assert report.status == "ok"
     assert report.candidates == 2
@@ -147,7 +186,7 @@ def test_nonzero_single_page_maps_local_pdf_to_original_page(tmp_path, fake_serv
     document_dir = _doc_dir(tmp_path)
     service = _service(fake_server)
 
-    report = service.run_for_pdf(pdf, [9], document_dir)
+    report = _run(service, pdf, [9], document_dir)
 
     assert report.status == "ok"
     assert report.pages == (10,)
@@ -165,7 +204,7 @@ def test_nonzero_batch_maps_local_indices_to_original_pages(tmp_path, fake_serve
     document_dir = _doc_dir(tmp_path)
     service = _service(fake_server)
 
-    report = service.run_for_pdf(pdf, [2, 5], document_dir)
+    report = _run(service, pdf, [2, 5], document_dir)
 
     assert report.status == "ok"
     assert report.pages == (3, 6)
@@ -190,7 +229,7 @@ def test_hallucinated_candidate_filtered_and_not_written(tmp_path, fake_server):
     document_dir = _doc_dir(tmp_path)
     service = _service(fake_server)
 
-    report = service.run_for_pdf(pdf, [0], document_dir)
+    report = _run(service, pdf, [0], document_dir)
 
     assert report.status == "ok"
     assert report.candidates == 1
@@ -211,7 +250,7 @@ def test_common_word_all_filtered_writes_no_empty_revision(tmp_path, fake_server
     _FakeHandler.responses.append(_ok([{"source": "benefits", "target": "获益"}]))
     service = _service(fake_server)
 
-    report = service.run_for_pdf(pdf, [0], document_dir)
+    report = _run(service, pdf, [0], document_dir)
 
     assert report.status == "all_filtered"
     assert report.candidates == 0
@@ -232,7 +271,7 @@ def test_rejected_source_target_auto_observation_keeps_user_state(tmp_path, fake
     _FakeHandler.responses.append(_ok([{"source": "AD", "target": "自动建议"}]))
     service = _service(fake_server)
 
-    report = service.run_for_pdf(pdf, [0], document_dir)
+    report = _run(service, pdf, [0], document_dir)
 
     assert report.status == "ok"
     assert report.candidates == 1
@@ -254,7 +293,7 @@ def test_local_pdf_page_count_mismatch_degrades_without_store(tmp_path, fake_ser
     document_dir = _doc_dir(tmp_path)
     service = _service(fake_server)
 
-    report = service.run_for_pdf(pdf, [0, 1], document_dir)
+    report = _run(service, pdf, [0, 1], document_dir)
 
     assert report.status == "source_failed"
     assert _FakeHandler.requests == []
@@ -272,7 +311,7 @@ def test_accepted_and_rejected_statuses_never_overwritten(tmp_path, fake_server)
 
     _FakeHandler.responses.append(_ok([{"source": "AD", "target": "新建议"}, {"source": "TCS", "target": "新建议"}]))
     service = _service(fake_server)
-    report = service.run_for_pdf(pdf, [0, 1], document_dir)
+    report = _run(service, pdf, [0, 1], document_dir)
 
     assert report.status == "ok"
     entries, _, _ = store.load()
@@ -289,7 +328,7 @@ def test_unsupported_provider_degrades_without_store(tmp_path, fake_server):
     pdf = _pdf(tmp_path, ["text"])
     document_dir = _doc_dir(tmp_path)
     service = CandidateExtractionService(_cfg(), _model(provider="zhipu", base_url=None))
-    report = service.run_for_pdf(pdf, [0], document_dir)
+    report = _run(service, pdf, [0], document_dir)
     assert report.status == "unsupported"
     assert not (document_dir / "term_candidates.json").exists()
     assert _FakeHandler.requests == []
@@ -299,7 +338,7 @@ def test_disabled_no_network_and_no_store(tmp_path, fake_server):
     pdf = _pdf(tmp_path, ["text"])
     document_dir = _doc_dir(tmp_path)
     service = _service(fake_server, enabled=False)
-    report = service.run_for_pdf(pdf, [0], document_dir)
+    report = _run(service, pdf, [0], document_dir)
     assert report.status == "disabled"
     assert _FakeHandler.requests == []
     assert not (document_dir / "term_candidates.json").exists()
@@ -313,7 +352,7 @@ def test_empty_source_skips_network(tmp_path, fake_server):
     doc.close()
     document_dir = _doc_dir(tmp_path)
     service = _service(fake_server)
-    report = service.run_for_pdf(pdf, [0], document_dir)
+    report = _run(service, pdf, [0], document_dir)
     assert report.status == "empty"
     assert _FakeHandler.requests == []
 
@@ -324,7 +363,7 @@ def test_oversize_input_truncated_deterministically(tmp_path, fake_server):
     _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
     document_dir = _doc_dir(tmp_path)
     service = _service(fake_server, max_input_chars=1000)
-    report = service.run_for_pdf(pdf, [0], document_dir)
+    report = _run(service, pdf, [0], document_dir)
     assert report.status == "ok"
     _, body, _ = _FakeHandler.requests[0]
     user_content = json.loads(body)["messages"][1]["content"]
@@ -338,13 +377,13 @@ def test_429_retry_then_ok_and_5xx_failure_degrades(tmp_path, fake_server):
     _FakeHandler.responses.append((429, b"", {}))
     _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
     service = _service(fake_server)
-    report = service.run_for_pdf(pdf, [0], document_dir)
+    report = _run(service, pdf, [0], document_dir)
     assert report.status == "ok"
     assert len(_FakeHandler.requests) == 2
 
     _FakeHandler.responses.append((503, b"", {}))
     _FakeHandler.responses.append((503, b"", {}))
-    report = service.run_for_pdf(pdf, [0], document_dir)
+    report = _run(service, pdf, [0], document_dir)
     assert report.status == "failed"
 
 
@@ -354,14 +393,14 @@ def test_4xx_timeout_and_malformed_all_degrades(tmp_path, fake_server):
     service = _service(fake_server)
 
     _FakeHandler.responses.append((400, b"", {}))
-    assert service.run_for_pdf(pdf, [0], document_dir).status == "failed"
+    assert _run(service, pdf, [0], document_dir).status == "failed"
     _FakeHandler.responses.append((200, b"not json", {}))
-    assert service.run_for_pdf(pdf, [0], document_dir).status == "failed"
+    assert _run(service, pdf, [0], document_dir).status == "failed"
 
     _FakeHandler.sleep_seconds = 0.25
     _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
     timeout_service = _service(fake_server, timeout=0.05)
-    assert timeout_service.run_for_pdf(pdf, [0], document_dir).status == "failed"
+    assert _run(timeout_service, pdf, [0], document_dir).status == "failed"
     assert not (document_dir / "term_candidates.json").exists()
 
 
@@ -375,9 +414,306 @@ def test_store_failure_degrades_and_body_semantics_unaffected(tmp_path, fake_ser
         raise TermStoreError("disk failure")
 
     monkeypatch.setattr(CandidateStore, "record_observations", boom)
-    report = service.run_for_pdf(pdf, [0], document_dir)
+    report = _run(service, pdf, [0], document_dir)
     assert report.status == "store_failed"
     assert not (document_dir / "term_candidates.json").exists()
+
+
+def test_identity_gate_same_active_job_writes_and_report_carries_identity(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    document_dir = _doc_dir(tmp_path)
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    service = _service(fake_server)
+    identity = CandidateIdentity(
+        job_id="job-same",
+        document_id="doc-same",
+        pdf_hash=document_dir.name,
+        document_dir=document_dir,
+    )
+    active = MagicMock(job_id="job-same", document_id="doc-same", pdf_hash=document_dir.name)
+
+    report = _run(
+        service,
+        pdf,
+        [0],
+        document_dir,
+        identity=identity,
+        active_job_provider=lambda: active,
+    )
+
+    assert report.status == "ok"
+    assert report.job_id == "job-same"
+    assert report.document_id == "doc-same"
+    assert report.pdf_hash == document_dir.name
+    entries, _, _ = CandidateStore(document_dir).load()
+    assert len(entries) == 1
+
+
+@pytest.mark.parametrize(
+    ("active", "expected_status"),
+    [
+        (None, "identity_rejected"),
+        (MagicMock(job_id="other-job", document_id="doc-same", pdf_hash="h" * 64), "identity_rejected"),
+        (MagicMock(job_id="job-same", document_id="other-doc", pdf_hash="h" * 64), "identity_rejected"),
+        (MagicMock(job_id="job-same", document_id="doc-same", pdf_hash="h" * 64), "identity_rejected"),
+    ],
+)
+def test_identity_gate_rejects_stale_or_other_job_without_store(tmp_path, fake_server, active, expected_status):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    document_dir = _doc_dir(tmp_path)
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    service = _service(fake_server)
+    identity = CandidateIdentity(
+        job_id="job-same",
+        document_id="doc-same",
+        pdf_hash=document_dir.name,
+        document_dir=document_dir,
+    )
+
+    report = _run(
+        service,
+        pdf,
+        [0],
+        document_dir,
+        identity=identity,
+        active_job_provider=lambda: active,
+    )
+
+    assert report.status == expected_status
+    assert report.job_id == "job-same"
+    assert not (document_dir / "term_candidates.json").exists()
+
+
+def test_identity_gate_rechecks_before_store_after_network(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    document_dir = _doc_dir(tmp_path)
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    service = _service(fake_server)
+    identity = CandidateIdentity(
+        job_id="job-same",
+        document_id="doc-same",
+        pdf_hash=document_dir.name,
+        document_dir=document_dir,
+    )
+    active = MagicMock(job_id="job-same", document_id="doc-same", pdf_hash=document_dir.name)
+    calls = {"n": 0}
+
+    def provider() -> object | None:
+        calls["n"] += 1
+        return active if calls["n"] == 1 else None
+
+    report = _run(
+        service,
+        pdf,
+        [0],
+        document_dir,
+        identity=identity,
+        active_job_provider=provider,
+    )
+
+    assert calls["n"] == 2
+    assert len(_FakeHandler.requests) == 1
+    assert report.status == "identity_rejected"
+    assert not (document_dir / "term_candidates.json").exists()
+
+
+def test_prepare_never_writes_store_and_commit_writes(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    document_dir = _doc_dir(tmp_path)
+    service = _service(fake_server)
+
+    prepared = service.prepare(pdf, [0], document_dir)
+
+    assert prepared.report.status == "ok"
+    assert len(prepared.observations) == 1
+    assert not (document_dir / "term_candidates.json").exists()
+
+    report = service.commit(prepared, document_dir)
+    assert report.status == "ok"
+    entries, revision, _ = CandidateStore(document_dir).load()
+    assert revision == 1
+    assert len(entries) == 1
+
+
+def test_identity_change_between_prepare_and_commit_rejected(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    document_dir = _doc_dir(tmp_path)
+    service = _service(fake_server)
+    identity = CandidateIdentity(
+        job_id="job-a",
+        document_id="doc-a",
+        pdf_hash=document_dir.name,
+        document_dir=document_dir,
+    )
+    active = MagicMock(job_id="job-a", document_id="doc-a", pdf_hash=document_dir.name)
+    other = MagicMock(job_id="job-b", document_id="doc-a", pdf_hash=document_dir.name)
+
+    prepared = service.prepare(pdf, [0], document_dir, identity=identity, active_job_provider=lambda: active)
+    assert prepared.report.status == "ok"
+    assert len(prepared.observations) == 1
+
+    report = service.commit(prepared, document_dir, identity=identity, active_job_provider=lambda: other)
+
+    assert report.status == "identity_rejected"
+    assert not (document_dir / "term_candidates.json").exists()
+
+
+def test_prepare_rejects_document_dir_identity_mismatch(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    dir_a = _hex_doc_dir(tmp_path, "a" * 64)
+    dir_b = _hex_doc_dir(tmp_path, "b" * 64)
+    service = _service(fake_server)
+    identity_a = CandidateIdentity(
+        job_id="job-a",
+        document_id="doc-a",
+        pdf_hash="a" * 64,
+        document_dir=dir_a,
+    )
+    active_a = MagicMock(job_id="job-a", document_id="doc-a", pdf_hash="a" * 64)
+
+    prepared = service.prepare(
+        pdf,
+        [0],
+        dir_b,
+        identity=identity_a,
+        active_job_provider=lambda: active_a,
+    )
+
+    assert prepared.report.status == "identity_rejected"
+    assert prepared.observations == ()
+    assert prepared.identity == identity_a
+    assert _FakeHandler.requests == []
+    assert not (dir_a / "term_candidates.json").exists()
+    assert not (dir_b / "term_candidates.json").exists()
+
+
+def test_commit_identity_mismatch_cannot_cross_write(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    dir_a = _hex_doc_dir(tmp_path, "a" * 64)
+    dir_b = _hex_doc_dir(tmp_path, "b" * 64)
+    service = _service(fake_server)
+    identity_a = CandidateIdentity(
+        job_id="job-a",
+        document_id="doc-a",
+        pdf_hash="a" * 64,
+        document_dir=dir_a,
+    )
+    identity_b = CandidateIdentity(
+        job_id="job-b",
+        document_id="doc-b",
+        pdf_hash="b" * 64,
+        document_dir=dir_b,
+    )
+    active_a = MagicMock(job_id="job-a", document_id="doc-a", pdf_hash="a" * 64)
+    active_b = MagicMock(job_id="job-b", document_id="doc-b", pdf_hash="b" * 64)
+
+    prepared = service.prepare(
+        pdf,
+        [0],
+        dir_a,
+        identity=identity_a,
+        active_job_provider=lambda: active_a,
+    )
+    assert prepared.report.status == "ok"
+    assert len(prepared.observations) == 1
+    assert prepared.identity == identity_a
+
+    report = service.commit(
+        prepared,
+        dir_b,
+        identity=identity_b,
+        active_job_provider=lambda: active_b,
+    )
+
+    assert report.status == "identity_rejected"
+    assert not (dir_a / "term_candidates.json").exists()
+    assert not (dir_b / "term_candidates.json").exists()
+
+
+def test_commit_document_dir_mismatch_cannot_cross_write(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    dir_a = _hex_doc_dir(tmp_path, "a" * 64)
+    dir_b = _hex_doc_dir(tmp_path, "b" * 64)
+    service = _service(fake_server)
+    identity_a = CandidateIdentity(
+        job_id="job-a",
+        document_id="doc-a",
+        pdf_hash="a" * 64,
+        document_dir=dir_a,
+    )
+    active_a = MagicMock(job_id="job-a", document_id="doc-a", pdf_hash="a" * 64)
+
+    prepared = service.prepare(
+        pdf,
+        [0],
+        dir_a,
+        identity=identity_a,
+        active_job_provider=lambda: active_a,
+    )
+    assert prepared.report.status == "ok"
+    assert prepared.identity == identity_a
+
+    report = service.commit(
+        prepared,
+        dir_b,
+        identity=identity_a,
+        active_job_provider=lambda: active_a,
+    )
+
+    assert report.status == "identity_rejected"
+    assert not (dir_a / "term_candidates.json").exists()
+    assert not (dir_b / "term_candidates.json").exists()
+
+
+def test_commit_cannot_upgrade_identityless_prepared(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD is a common term."])
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "阿尔茨海默病"}]))
+    dir_a = _hex_doc_dir(tmp_path, "a" * 64)
+    service = _service(fake_server)
+    identity_a = CandidateIdentity(
+        job_id="job-a",
+        document_id="doc-a",
+        pdf_hash="a" * 64,
+        document_dir=dir_a,
+    )
+    active_a = MagicMock(job_id="job-a", document_id="doc-a", pdf_hash="a" * 64)
+
+    prepared = service.prepare(pdf, [0], dir_a)
+    assert prepared.report.status == "ok"
+    assert prepared.identity is None
+
+    report = service.commit(
+        prepared,
+        dir_a,
+        identity=identity_a,
+        active_job_provider=lambda: active_a,
+    )
+
+    assert report.status == "identity_rejected"
+    assert not (dir_a / "term_candidates.json").exists()
+
+
+def test_commit_without_observations_is_noop(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["Benefits are important for patients."])
+    document_dir = _doc_dir(tmp_path)
+    store = CandidateStore(document_dir)
+    store.record_observation("TCS", "外用糖皮质激素")
+    old_bytes = store.path.read_bytes()
+    _FakeHandler.responses.append(_ok([{"source": "benefits", "target": "获益"}]))
+    service = _service(fake_server)
+
+    prepared = service.prepare(pdf, [0], document_dir)
+
+    assert prepared.report.status == "all_filtered"
+    assert prepared.observations == ()
+    report = service.commit(prepared, document_dir)
+    assert report.status == "all_filtered"
+    assert store.path.read_bytes() == old_bytes
 
 
 def test_logs_never_contain_text_prompt_targets_or_keys(tmp_path, fake_server, managed_caplog):
@@ -393,7 +729,7 @@ def test_logs_never_contain_text_prompt_targets_or_keys(tmp_path, fake_server, m
     )
     service = _service(fake_server)
     with managed_caplog.at_level(logging.INFO, logger="pdf_reader.candidate"):
-        report = service.run_for_pdf(pdf, [0], document_dir)
+        report = _run(service, pdf, [0], document_dir)
     assert report.status == "ok"
     assert report.candidates == 1
     assert report.filtered == 1

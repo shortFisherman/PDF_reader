@@ -16,6 +16,7 @@ Prompt 或凭据。正文 SettingsModel 的自动提取开关由 ``translation_s
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -70,6 +71,9 @@ class StrictTranslationContext:
 
     ``effective_glossary_path`` 为空词表时为 ``None``（正文设置安全省略
     ``glossaries``）；``effective_rows`` 是本次验证通过后的权威词条快照。
+    P1-05 起上下文同时冻结 ``job_id``、``effective_glossary_revision``
+    （``verify_effective_glossary`` 返回的 sidecar SHA-256，不依赖路径或
+    mtime）与 ``effective_glossary_summary``（有效词条列表的确定性摘要）。
     """
 
     document_dir: Path
@@ -77,6 +81,9 @@ class StrictTranslationContext:
     pdf_hash: str
     effective_glossary_path: Path | None
     effective_rows: tuple[tuple[str, str], ...]
+    job_id: str = ""
+    effective_glossary_revision: str = ""
+    effective_glossary_summary: str = ""
 
 
 @dataclass(frozen=True)
@@ -98,8 +105,14 @@ class ActiveTermsResult:
 def prepare_strict_translation_context(
     snapshot: DocumentSnapshot,
     global_glossary: Path | None = None,
+    *,
+    job_id: str = "",
 ) -> StrictTranslationContext:
-    """迁移旧累计 CSV → 编译有效词表 → 严格验证；任一失败抛 ``StrictGlossaryError``。"""
+    """迁移旧累计 CSV → 编译有效词表 → 严格验证；任一失败抛 ``StrictGlossaryError``。
+
+    ``job_id`` 冻结进上下文；有效词表 revision 取自已验证的 sidecar
+    ``meta_sha256``，词条摘要取 ``effective_rows`` 的确定性 SHA-256。
+    """
     document_dir = snapshot.glossary_cache_path
     global_path = Path(global_glossary) if global_glossary is not None else get_glossary_path()
     try:
@@ -127,7 +140,7 @@ def prepare_strict_translation_context(
                 cause_type=type(exc).__name__,
             ) from exc
         try:
-            verify_effective_glossary(document_dir, global_path)
+            verified = verify_effective_glossary(document_dir, global_path)
         except TermStoreError as exc:
             raise StrictGlossaryError(
                 "strict glossary preparation failed",
@@ -157,6 +170,9 @@ def prepare_strict_translation_context(
         pdf_hash=snapshot.pdf_hash,
         effective_glossary_path=path,
         effective_rows=rows,
+        job_id=job_id,
+        effective_glossary_revision=verified.meta_sha256,
+        effective_glossary_summary=_rows_digest(rows),
     )
 
 
@@ -256,6 +272,12 @@ def validate_strict_context_identity(
     if task_ctx is None:
         raise StrictGlossaryError(
             "strict glossary identity mismatch: missing task context",
+            stage="identity",
+            cause_type="IdentityError",
+        )
+    if context.job_id and task_ctx.job_id and context.job_id != task_ctx.job_id:
+        raise StrictGlossaryError(
+            "strict glossary identity mismatch: job id",
             stage="identity",
             cause_type="IdentityError",
         )
@@ -372,3 +394,9 @@ def _block_utf8_len(
         parts.append(report)
     parts.append(closing)
     return len("\n".join(parts).encode("utf-8"))
+
+
+def _rows_digest(rows: Sequence[tuple[str, str]]) -> str:
+    """有效词条摘要：规范化 JSON 列表的 SHA-256，确定性且不依赖文件路径。"""
+    payload = json.dumps(list(rows), ensure_ascii=False, sort_keys=True) + "\n"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

@@ -364,7 +364,7 @@ def translate_page(page: int):
         logger.info("rejected translate request during coordinator shutdown")
         return translation_busy_response(None)
     try:
-        strict_ctx = strict_glossary.prepare_strict_translation_context(snapshot)
+        strict_ctx = strict_glossary.prepare_strict_translation_context(snapshot, job_id=job.job_id)
         settings_model = strict_glossary.build_strict_settings(
             app_settings.upstream,
             user_prompt,
@@ -409,6 +409,7 @@ def translate_page(page: int):
         unregister_stream=coordinator.unregister_stream,
         strict_context=strict_ctx,
         candidate_service=_get_candidate_service(),
+        active_job_provider=lambda: coordinator.active_job,
         task_ctx=task_context_from_indices(
             job.job_id,
             snapshot.document_id,
@@ -488,7 +489,7 @@ def translate_batch():
         logger.info("rejected batch request during coordinator shutdown")
         return translation_busy_response(None)
     try:
-        strict_ctx = strict_glossary.prepare_strict_translation_context(snapshot)
+        strict_ctx = strict_glossary.prepare_strict_translation_context(snapshot, job_id=job.job_id)
         settings_model = strict_glossary.build_strict_settings(
             app_settings.upstream,
             user_prompt,
@@ -535,6 +536,7 @@ def translate_batch():
         unregister_stream=coordinator.unregister_stream,
         strict_context=strict_ctx,
         candidate_service=_get_candidate_service(),
+        active_job_provider=lambda: coordinator.active_job,
         task_ctx=task_context_from_indices(
             job.job_id,
             snapshot.document_id,

@@ -47,10 +47,14 @@ import pytest
 from flask import Flask
 
 from pdf_reader import cache_ops, config, sse_stream, translation_orchestrator
+from pdf_reader.candidate_service import CandidateExtractionService
+from pdf_reader.candidate_store import CandidateStore
 from pdf_reader.file_hash import sha256
 from pdf_reader.routes import register_routes
 from pdf_reader.state import AppState
 from pdf_reader.strict_glossary import StrictTranslationContext
+from pdf_reader.term_extraction import TermCandidate, TermExtractionClient, TermExtractionError
+from pdf_reader.term_model import TermStoreError
 from pdf_reader.translation_coordinator import TranslationCoordinator
 
 pytestmark = pytest.mark.system
@@ -139,13 +143,14 @@ def system_app(tmp_path, monkeypatch, mock_config):
     app.config["translation_coordinator"] = TranslationCoordinator()
     register_routes(app)
 
-    def fake_prepare(snapshot):  # noqa: ANN202
+    def fake_prepare(snapshot, *, job_id: str = "") -> StrictTranslationContext:
         return StrictTranslationContext(
             document_dir=snapshot.glossary_cache_path,
             document_id=snapshot.document_id,
             pdf_hash=snapshot.pdf_hash,
             effective_glossary_path=None,
             effective_rows=(),
+            job_id=job_id,
         )
 
     monkeypatch.setattr("pdf_reader.routes.strict_glossary.prepare_strict_translation_context", fake_prepare)
@@ -164,7 +169,15 @@ def _make_pdf(path: Path, pages: int, labels: list[str]) -> Path:
     try:
         for i in range(pages):
             page = doc.new_page(width=612, height=792)
-            page.insert_text((50, 100), labels[i], fontsize=24)
+            has_cjk = any("\u3400" <= char <= "\u9fff" for char in labels[i])
+            if has_cjk:
+                page.insert_font(fontname="china-s")
+            page.insert_text(
+                (50, 100),
+                labels[i],
+                fontsize=24,
+                fontname="china-s" if has_cjk else "helv",
+            )
         doc.save(str(path))
     finally:
         doc.close()
@@ -392,6 +405,7 @@ def test_sse_disconnect_worker_continues_late_result_discarded(system_app, syste
     _install_upstream(monkeypatch, source)
     created = _install_mkdtemp_control(monkeypatch)
     streams = _install_stream_spy(monkeypatch)
+    candidate_calls = _install_candidate_spy(system_app, monkeypatch, raise_store=False)
     marker = _document_marker(state)
 
     resp = system_client.post("/api/translate/0", json={}, buffered=False)
@@ -410,6 +424,8 @@ def test_sse_disconnect_worker_continues_late_result_discarded(system_app, syste
     assert all(not p.exists() for p in created)
     _assert_marker(state, marker)
     assert state.translated_pages == frozenset()
+    assert candidate_calls == {"prepare": 1, "commit": 0}
+    assert not (state.glossary_cache_path / "term_candidates.json").exists()
 
 
 def test_sse_disconnect_worker_fails_late_task_released(system_app, system_client, tmp_path, monkeypatch):
@@ -879,3 +895,243 @@ def test_open_translate_render_round_trip(system_app, system_client, tmp_path, m
     assert ("beta", "贝塔") in rows
     assert not list(state.glossary_cache_path.glob("*.tmp"))
     assert all(not p.exists() for p in created)
+
+
+def _install_candidate_service(system_app, monkeypatch, *, raise_store: bool) -> CandidateExtractionService:
+    service = CandidateExtractionService(
+        config.CandidateExtractionRuntimeConfig(
+            enabled=True,
+            timeout=1.0,
+            qps=1,
+            max_workers=1,
+            retry_count=0,
+            max_input_chars=2_000,
+            prompt=None,
+        ),
+        config.ModelRuntimeConfig(
+            provider="deepseek",
+            api_key="sk-system-test",
+            model="deepseek-chat",
+        ),
+    )
+    system_app.config["candidate_extraction_service"] = service
+    monkeypatch.setattr(
+        TermExtractionClient,
+        "extract_terms",
+        lambda self, text: [TermCandidate(source="AD", target="阿尔茨海默病")],
+    )
+    if raise_store:
+
+        def boom(self, observations: object, **kwargs: object) -> None:
+            raise TermStoreError("injected candidate store failure")
+
+        monkeypatch.setattr(CandidateStore, "record_observations", boom)
+    return service
+
+
+def _install_candidate_spy(system_app, monkeypatch, *, raise_store: bool) -> dict[str, int]:
+    """安装真实候选服务并记录 prepare/commit 调用次数。"""
+    service = _install_candidate_service(system_app, monkeypatch, raise_store=raise_store)
+    calls = {"prepare": 0, "commit": 0}
+    real_prepare = service.prepare
+    real_commit = service.commit
+
+    def prepare(*args: object, **kwargs: object) -> object:
+        calls["prepare"] += 1
+        return real_prepare(*args, **kwargs)
+
+    def commit(*args: object, **kwargs: object) -> object:
+        calls["commit"] += 1
+        return real_commit(*args, **kwargs)
+
+    monkeypatch.setattr(service, "prepare", prepare)
+    monkeypatch.setattr(service, "commit", commit)
+    return calls
+
+
+def test_single_page_candidate_store_write_failure_finishes_and_preserves_state(
+    system_app, system_client, tmp_path, monkeypatch
+):
+    state = system_app.config["app_state"]
+    coordinator = system_app.config["translation_coordinator"]
+    pdf = _make_pdf(tmp_path / "cand_single.pdf", 2, ["AD on page one", "SRC_1"])
+    _open_document(system_client, pdf)
+    translated = _make_translated_pdf(tmp_path / "cand_single_translated.pdf", ["阿尔茨海默病"])
+    source = ControlledUpstream(result=FakeTranslateResult(mono_pdf_path=str(translated)))
+    _install_upstream(monkeypatch, source)
+    created = _install_mkdtemp_control(monkeypatch)
+    streams = _install_stream_spy(monkeypatch)
+    candidate_calls = _install_candidate_spy(system_app, monkeypatch, raise_store=True)
+    source.release.set()
+
+    body = _consume(system_client.post("/api/translate/0", json={}, buffered=False))
+
+    assert '"type": "finish"' in body
+    assert coordinator.active_job is None
+    assert streams[0].is_alive is False
+    assert state.translated_pages == frozenset({0})
+    assert "阿尔茨海默病" in _pdf_texts(state._right_pdf_path)[0]
+    assert not (state.glossary_cache_path / "term_candidates.json").exists()
+    assert all(not p.exists() for p in created)
+    assert candidate_calls == {"prepare": 1, "commit": 1}
+
+
+def test_single_page_candidate_extraction_failure_finishes_and_preserves_state(
+    system_app, system_client, tmp_path, monkeypatch
+):
+    state = system_app.config["app_state"]
+    coordinator = system_app.config["translation_coordinator"]
+    pdf = _make_pdf(tmp_path / "cand_fail.pdf", 2, ["AD on page one", "SRC_1"])
+    _open_document(system_client, pdf)
+    translated = _make_translated_pdf(tmp_path / "cand_fail_translated.pdf", ["阿尔茨海默病"])
+    source = ControlledUpstream(result=FakeTranslateResult(mono_pdf_path=str(translated)))
+    _install_upstream(monkeypatch, source)
+    created = _install_mkdtemp_control(monkeypatch)
+    streams = _install_stream_spy(monkeypatch)
+    candidate_calls = _install_candidate_spy(system_app, monkeypatch, raise_store=False)
+
+    def fail_extract(self, text: str) -> None:
+        raise TermExtractionError("injected extraction failure")
+
+    monkeypatch.setattr(TermExtractionClient, "extract_terms", fail_extract)
+    source.release.set()
+
+    body = _consume(system_client.post("/api/translate/0", json={}, buffered=False))
+
+    assert '"type": "finish"' in body
+    assert coordinator.active_job is None
+    assert streams[0].is_alive is False
+    assert state.translated_pages == frozenset({0})
+    assert "阿尔茨海默病" in _pdf_texts(state._right_pdf_path)[0]
+    assert not (state.glossary_cache_path / "term_candidates.json").exists()
+    assert all(not p.exists() for p in created)
+    assert candidate_calls == {"prepare": 1, "commit": 0}
+
+
+def test_batch_candidate_store_write_failure_finishes_and_preserves_state(
+    system_app, system_client, tmp_path, monkeypatch
+):
+    state = system_app.config["app_state"]
+    coordinator = system_app.config["translation_coordinator"]
+    pdf = _make_pdf(tmp_path / "cand_batch.pdf", 3, ["AD page one", "SRC_1", "SRC_2"])
+    _open_document(system_client, pdf)
+    translated = _make_translated_pdf(
+        tmp_path / "cand_batch_translated.pdf",
+        ["阿尔茨海默病 第一页", "SRC_1", "SRC_2"],
+    )
+    source = ControlledUpstream(result=FakeTranslateResult(mono_pdf_path=str(translated)))
+    _install_upstream(monkeypatch, source)
+    created = _install_mkdtemp_control(monkeypatch)
+    streams = _install_stream_spy(monkeypatch)
+    candidate_calls = _install_candidate_spy(system_app, monkeypatch, raise_store=True)
+    source.release.set()
+
+    body = _consume(system_client.post("/api/translate-batch", json={"from": 1, "to": 2}, buffered=False))
+
+    assert '"type": "finish"' in body
+    assert coordinator.active_job is None
+    assert streams[0].is_alive is False
+    assert state.translated_pages == frozenset({0, 1})
+    assert "阿尔茨海默病 第一页" in _pdf_texts(state._right_pdf_path)[0]
+    assert not (state.glossary_cache_path / "term_candidates.json").exists()
+    assert all(not p.exists() for p in created)
+    assert candidate_calls == {"prepare": 1, "commit": 1}
+
+
+def test_batch_candidate_extraction_failure_finishes_and_preserves_state(
+    system_app, system_client, tmp_path, monkeypatch
+):
+    state = system_app.config["app_state"]
+    coordinator = system_app.config["translation_coordinator"]
+    pdf = _make_pdf(tmp_path / "cand_batch_fail.pdf", 3, ["AD page one", "SRC_1", "SRC_2"])
+    _open_document(system_client, pdf)
+    translated = _make_translated_pdf(
+        tmp_path / "cand_batch_fail_translated.pdf",
+        ["阿尔茨海默病 第一页", "SRC_1", "SRC_2"],
+    )
+    source = ControlledUpstream(result=FakeTranslateResult(mono_pdf_path=str(translated)))
+    _install_upstream(monkeypatch, source)
+    created = _install_mkdtemp_control(monkeypatch)
+    streams = _install_stream_spy(monkeypatch)
+    candidate_calls = _install_candidate_spy(system_app, monkeypatch, raise_store=False)
+
+    def fail_extract(self, text: str) -> None:
+        raise TermExtractionError("injected extraction failure")
+
+    monkeypatch.setattr(TermExtractionClient, "extract_terms", fail_extract)
+    source.release.set()
+
+    body = _consume(system_client.post("/api/translate-batch", json={"from": 1, "to": 2}, buffered=False))
+
+    assert '"type": "finish"' in body
+    assert coordinator.active_job is None
+    assert streams[0].is_alive is False
+    assert state.translated_pages == frozenset({0, 1})
+    assert "阿尔茨海默病 第一页" in _pdf_texts(state._right_pdf_path)[0]
+    assert not (state.glossary_cache_path / "term_candidates.json").exists()
+    assert all(not p.exists() for p in created)
+    assert candidate_calls == {"prepare": 1, "commit": 0}
+
+
+def test_pdf_replace_failure_never_commits_prepared_candidates(system_app, system_client, tmp_path, monkeypatch):
+    state = system_app.config["app_state"]
+    coordinator = system_app.config["translation_coordinator"]
+    pdf = _make_pdf(tmp_path / "cand_repl.pdf", 2, ["AD on page one", "SRC_1"])
+    _open_document(system_client, pdf)
+    translated = _make_translated_pdf(tmp_path / "cand_repl_translated.pdf", ["阿尔茨海默病"])
+    source = ControlledUpstream(result=FakeTranslateResult(mono_pdf_path=str(translated)))
+    _install_upstream(monkeypatch, source)
+    created = _install_mkdtemp_control(monkeypatch)
+    streams = _install_stream_spy(monkeypatch)
+    candidate_calls = _install_candidate_spy(system_app, monkeypatch, raise_store=False)
+    _fail_os_replace_at(monkeypatch, 1)
+    source.release.set()
+
+    body = _consume(system_client.post("/api/translate/0", json={}, buffered=False))
+
+    assert '"type": "error"' in body
+    assert coordinator.active_job is None
+    assert streams[0].is_alive is False
+    assert state.translated_pages == frozenset()
+    assert not (state.glossary_cache_path / "term_candidates.json").exists()
+    assert all(not p.exists() for p in created)
+    assert candidate_calls == {"prepare": 1, "commit": 0}
+
+
+def test_compliance_failure_never_commits_prepared_candidates(system_app, system_client, tmp_path, monkeypatch):
+    state = system_app.config["app_state"]
+    coordinator = system_app.config["translation_coordinator"]
+    pdf = _make_pdf(tmp_path / "cand_comp.pdf", 2, ["AD on page one", "SRC_1"])
+    _open_document(system_client, pdf)
+    wrong = _make_translated_pdf(tmp_path / "cand_comp_wrong.pdf", ["AD 出现了"])
+    source = ControlledUpstream(result=FakeTranslateResult(mono_pdf_path=str(wrong)))
+    _install_upstream(monkeypatch, source)
+    created = _install_mkdtemp_control(monkeypatch)
+    streams = _install_stream_spy(monkeypatch)
+    candidate_calls = _install_candidate_spy(system_app, monkeypatch, raise_store=False)
+
+    def fake_prepare_with_rows(snapshot, *, job_id: str = "") -> StrictTranslationContext:
+        return StrictTranslationContext(
+            document_dir=snapshot.glossary_cache_path,
+            document_id=snapshot.document_id,
+            pdf_hash=snapshot.pdf_hash,
+            effective_glossary_path=None,
+            effective_rows=(("AD", "阿尔茨海默病"),),
+            job_id=job_id,
+        )
+
+    monkeypatch.setattr(
+        "pdf_reader.routes.strict_glossary.prepare_strict_translation_context",
+        fake_prepare_with_rows,
+    )
+    source.release.set()
+
+    body = _consume(system_client.post("/api/translate/0", json={}, buffered=False))
+
+    assert '"code": "glossary_compliance_failed"' in body
+    assert coordinator.active_job is None
+    assert streams[0].is_alive is False
+    assert state.translated_pages == frozenset()
+    assert not (state.glossary_cache_path / "term_candidates.json").exists()
+    assert all(not p.exists() for p in created)
+    assert candidate_calls == {"prepare": 1, "commit": 0}

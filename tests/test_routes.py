@@ -89,7 +89,7 @@ def test_translate_page_integrates_cumulative_glossary(app_state, sample_pdf, mo
     settings_call_kwargs = []
     merge_calls = []
 
-    def fake_prepare(snapshot):  # noqa: ANN202
+    def fake_prepare(snapshot, *, job_id: str = "") -> StrictTranslationContext:
         return StrictTranslationContext(
             document_dir=snapshot.glossary_cache_path,
             document_id=snapshot.document_id,
@@ -351,7 +351,7 @@ def test_translate_batch_emits_batch_info_and_finish(app_state, sample_pdf, monk
     app_state.open_pdf(str(sample_pdf), sha256_func)
     page_count = app_state.page_count
 
-    def fake_prepare(snapshot):  # noqa: ANN202
+    def fake_prepare(snapshot, *, job_id: str = "") -> StrictTranslationContext:
         return StrictTranslationContext(
             document_dir=snapshot.glossary_cache_path,
             document_id=snapshot.document_id,

@@ -7,15 +7,15 @@
 - 核验日期：2026-08-31。事实来源、锁定版本与测试/覆盖率基线见下。
 - 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml`、`tests/test_upstream_contract.py` 和测试收集结果。
 - 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2、tomlkit 0.13.3。
-- 测试基线：`scripts/verify.ps1` 实测 1305 个 Python 测试通过（2026-08-31 P1-04 核验值，含上游契约、文档治理、日志/配置、P0/P1 术语主线与术语管理 API）；`package.json` 的 `test:frontend` 定义九个正式前端套件（UI copy、error-safety、client-error、translation-ui、translator、zoom、alignment controller、config panel、glossary panel），verify 全绿。
-- 覆盖率基线：全局 line 92.9%、branch 85.7%（2026-08-31 P1-04 核验值，`coverage run --branch -m pytest` 实测；策略与关键模块 floor 见“测试、CI 与验证入口”）。
+- 测试基线：`scripts/verify.ps1` 实测 1335 个 Python 测试通过（2026-08-31 P1-05 核验值，含上游契约、文档治理、日志/配置、P0/P1 术语主线、术语管理 API 与生命周期回归）；`package.json` 的 `test:frontend` 定义九个正式前端套件（UI copy、error-safety、client-error、translation-ui、translator、zoom、alignment controller、config panel、glossary panel），verify 全绿。
+- 覆盖率基线：全局 line 92.9%、branch 85.8%（2026-08-31 P1-05 核验值，`coverage run --branch -m pytest` 实测；策略与关键模块 floor 见“测试、CI 与验证入口”）。
 - 基线说明：测试数量与覆盖率是易腐数字，任何新的架构核对都应以当前源码、锁定文件、测试收集结果与 coverage 报告为准；本文数值只代表 2026-08-31 的核验结果。
 
 ## 系统总览
 
 本项目是一个运行在本机的单 Flask 应用：浏览器打开 `templates/index.html`，通过 HTTP 请求打开本地 PDF，以双栏（左原文、右译文）连续滚动阅读。PDF 页面由服务端用 PyMuPDF 渲染为 PNG 图片返回，浏览器不解析 PDF 本身，也没有文本层。
 
-翻译由 `pdf2zh-next`（底层 BabelDOC）执行：路由层把单页或页码范围抽取为临时 PDF，`sse_stream` 通过 `translation_orchestrator` 的 daemon 线程 + asyncio 事件循环运行上游异步翻译，把进度事件经 `queue.Queue` 转成 SSE 流推给浏览器；P0-05 验证通过后把译文页写回缓存中的 `right.pdf`（旧自动术语合并入口仅作为兼容路径保留，正文已固定关闭上游自动提取），随后由 P1-01 旁路候选服务产出候选。
+翻译由 `pdf2zh-next`（底层 BabelDOC）执行：路由层把单页或页码范围抽取为临时 PDF，`sse_stream` 通过 `translation_orchestrator` 的 daemon 线程 + asyncio 事件循环运行上游异步翻译，把进度事件经 `queue.Queue` 转成 SSE 流推给浏览器；P0-05 验证通过后把译文页写回缓存中的 `right.pdf`（旧自动术语合并入口仅作为兼容路径保留，正文已固定关闭上游自动提取）；候选由两阶段服务产出：`prepare` 在严格翻译前，`commit` 在 PDF 提交后。
 
 所有文档级状态集中在唯一的全局 `AppState` 中，由一把非重入锁保护。应用没有持久任务队列、任务注册表、暂停/取消 API 或重启续传状态。
 
@@ -67,7 +67,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/config_editor.py` | 配置中心后端：48 字段 schema（分组/控件/说明/默认与常用值/Provider 适用性）、GET 密钥脱敏（只返回 configured/source）、已知字段白名单、复用 `validate_startup_requirements`/`resolve_server_config` 严格校验、revision 乐观冲突、模块级 RLock、同目录临时文件 fsync + `os.replace` 原子写并保留权限/未知字段/注释与顺序（tomlkit）；只写 `config.toml`，不热改冻结 `AppSettings`，保存返回 `restart_required=true` |
 | `src/pdf_reader/term_extraction.py` | P1-01 项目自有 `TermExtractionClient`：标准库 urllib 走 OpenAI-compatible `/chat/completions`（支持 deepseek/openai/openai_compatible，其余 Provider 稳定 unsupported）、严格受控 JSON 解析（条数/长度/控制字符/正文大小有界）、独立 QPS/timeout/有界重试（只重试超时/429/5xx），请求/响应/Prompt/Key 不入日志 |
 | `src/pdf_reader/candidate_filter.py` | P1-02 候选后置过滤：确定性前后标点清理/异常空白折叠、英文单词/缩写边界感知匹配、小型普通词/功能词/通用学术词精确拒绝、完整句/超词数/超字符/纯数字/公式/变量/页码/占位符结构拒绝、target 必须含 Han 字符、幻觉 source 拒绝、逐页命中页码与有界证据窗口；每条被过滤候选带稳定原因，规则版本 `candidate-filter/1` 组合进候选 `strategy_version`；只作用于模型自动候选，绝不删除/降级/重写用户权威决定 |
-| `src/pdf_reader/candidate_service.py` | P1-01/P1-02/P1-03 旁路候选提取服务（正文最终验证并提交成功后运行，单页/批量同规则，PyMuPDF 读取已抽取逐页文本，候选先经 `candidate_filter` 过滤再只经 `CandidateStore.record_observations` 原子写，任何失败降级安全日志且不阻正文 finish）与 P1-03 `CandidateTermService` 确定性摘要边界；P1-04 管理服务沿用同一推荐排序 |
+| `src/pdf_reader/candidate_service.py` | P1-01/P1-02/P1-03/P1-05 两阶段候选服务：`prepare` 在严格翻译前读取输入 PDF、模型提取/过滤，返回不可变 `PreparedCandidates`（observations + report + 冻结 identity；带身份时 document_dir 必须等于 identity.document_dir），绝不写 `CandidateStore`；`commit` 只在正文 PDF 成功提交后执行，以 prepared 冻结身份为权威重验 job_id/document_id/pdf_hash/document_dir（目录名必须等于 pdf_hash；另传 identity 必须完全相等、写目录必须等于冻结 identity.document_dir、无身份 prepared 不得升级）再原子写 `CandidateStore`；单页/批量同规则，任何失败降级安全日志且不阻正文 finish；候选只写 `term_candidates.json`，与 P1-03 `CandidateTermService` 确定性摘要边界同模块，P1-04 管理服务沿用同一推荐排序 |
 | `src/pdf_reader/paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
 | `src/pdf_reader/task_logging.py` | 集中任务日志上下文：不可变 `TaskContext`、`contextvars` 传播、统一前缀/截断/1-based 页码、生命周期状态、`SafeFormatter` 脱敏（API Key、sk-/Bearer、api_key、prompt 类字段） |
 | `src/pdf_reader/routes.py` | Blueprint HTTP/SSE 端点（含配置中心、术语管理与前端错误上报）；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器，术语/配置/错误上报 loopback-only 守卫，以及翻译与术语写入共享的 active-job 互斥边界 |
@@ -80,7 +80,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/translation_settings.py` | `build_settings(upstream, ...)` 显式接收 `UpstreamRuntimeConfig` 组装 pdf2zh-next `SettingsModel` |
 | `src/pdf_reader/translation_orchestrator.py` | `TranslationStream`：daemon worker 线程 + asyncio 循环（含事件循环异常处理）+ 事件队列 + 协作式取消；`run_translation()` 工厂 |
 | `src/pdf_reader/translation_coordinator.py` | 单槽 `TranslationCoordinator`：线程安全的 active job、任务身份、409 互斥与 finish/fail/cancel 幂等释放 |
-| `src/pdf_reader/sse_stream.py` | SSE 格式化、`generate()` / `generate_batch()`、P0-05 提交门（提交前术语合规验证、一次整页/整批有界重试、独立 attempt 目录、`glossary_compliance_failed`/`glossary_verification_unavailable`）、P1-01 提交后旁路候选提取（失败降级）、`STAGE_LABELS`、worker 退出确认后的任务工作区清理 |
+| `src/pdf_reader/sse_stream.py` | SSE 格式化、`generate()` / `generate_batch()`、P0-05 提交门（提交前术语合规验证、一次整页/整批有界重试、独立 attempt 目录、`glossary_compliance_failed`/`glossary_verification_unavailable`）、P1-05 两阶段候选（`prepare` 在严格翻译前、失败降级正文继续；`commit` 在 PDF 提交后、失败不反转 finished；请求带 `CandidateIdentity` 与 active-job provider，prepare 冻结身份、commit 以冻结身份为权威并记录候选降级状态）、`STAGE_LABELS`、worker 退出确认后的任务工作区清理 |
 | `src/pdf_reader/translation_lifecycle.py` | `finish_translation()` / `merge_glossary_only()`：译文持久化与术语合并 |
 | `src/pdf_reader/glossary_service.py` | 累积术语路径解析与合并入口 |
 | `src/pdf_reader/glossary_management.py` | P1-04 单文档术语管理服务：复合 revision、权威/候选搜索排序分页、CRUD/接受/拒绝/锁定、CSV 安全导入导出与变更后有效词表重编译 |
@@ -226,16 +226,20 @@ P1-04 管理边界：`GlossaryManagementService` 把文档用户词表、候选�
 `docs/glossary.csv` 继续是只读展示和现有手工编辑入口。API 错误只返回稳定短码
 和固定安全摘要，不回显 source/target、证据、Prompt 或存储异常原文。
 
-严格正文路径（P0-04）：单页/批量路由先调用 `coordinator.start(...)` 原子占用
-任务槽，成功后才执行 `strict_glossary.prepare_strict_translation_context(snapshot)`
+ 严格正文路径（P0-04/P1-05）：单页/批量路由先调用 `coordinator.start(...)` 原子占用
+ 任务槽，成功后才执行 `strict_glossary.prepare_strict_translation_context(
+  snapshot, job_id=job.job_id)`
 （旧 `cumulative_glossary.csv` 幂等迁移只合入候选 → `compile_effective_glossary`
 → `verify_effective_glossary`）；busy/shutdown 在任何严格术语准备写操作前返回
 HTTP 409。准备或设置构建失败时路由调用 `coordinator.fail(job_id)` 释放任务槽、
-返回 HTTP 500 `glossary_prepare_failed`，不调用上游，也不留下活动任务。该函数
-断言 `snapshot.glossary_cache_path.name == snapshot.pdf_hash`，并把 `document_id`、
-`pdf_hash` 与本次验证通过的有效词表快照封进 `StrictTranslationContext`；SSE
-生成器只消费该预构建上下文，并在抽取/上游前校验其身份与
-`task_ctx.document_id`/`task_ctx.pdf_hash`/`glossary_cache_path` 一致，不一致时
+ 返回 HTTP 500 `glossary_prepare_failed`，不调用上游，也不留下活动任务。该函数
+ 断言 `snapshot.glossary_cache_path.name == snapshot.pdf_hash`，并把 `document_id`、
+ `pdf_hash`、`job_id`、本次验证通过的有效词表快照、`effective_glossary_revision`
+ （已验证 sidecar 的 `meta_sha256`，不依赖路径或 mtime）与
+ `effective_glossary_summary`（有效词条列表的确定性 SHA-256）一起封进
+ `StrictTranslationContext`；SSE 生成器只消费该预构建上下文，并在抽取/上游前校验
+ 其身份（含 job_id）与 `task_ctx.document_id`/`task_ctx.pdf_hash`/
+ `glossary_cache_path` 一致，不一致时
 安全失败；迟到任务不会重新编译或写入其他文档。`build_settings` 对正文固定
 `no_auto_extract_glossary=True`、`save_auto_extracted_glossary=False`（不再由
 `translation.auto_extract_glossary` 反转），`glossaries` 只来自本次 fresh 的
@@ -252,12 +256,20 @@ unavailable，由 P0-05 提交门在调用上游前拒绝（有效词表仍经 `
 编码 source/target，并按 32 KiB UTF-8 确定性上限整行纳入、超限条目只报告省略
 数量；不记录正文、Prompt、异常原文、本地路径或凭据。
 
-旁路候选提取（P1-01）：候选收集已从正文翻译解耦为项目自有旁路服务。
+两阶段候选提取（P1-01/P1-05）：候选收集已从正文翻译解耦为项目自有服务，
 `create_app` 装配 `CandidateExtractionService`（消费冻结
-`CandidateExtractionRuntimeConfig` 与正文 `ModelRuntimeConfig`），
-`generate`/`generate_batch` 只在 P0-05 合规门通过、`right.pdf` 提交成功后
-同步调用；正文失败、合规失败、源侧不可用路径一律不调用。服务用 PyMuPDF 读取
-本次已抽取输入 PDF 的源文本（1-based 页码、空文本跳过、超限按前缀确定性截断），
+`CandidateExtractionRuntimeConfig` 与正文 `ModelRuntimeConfig`）。单页/批量共享
+严格阶段顺序：输入/活跃词条 → 候选 `prepare` → `run_translation` →
+合规/有界重试 → 提交 PDF → 候选 `commit` → SSE finish。`prepare` 在严格翻译前
+用 PyMuPDF 读取本次已抽取输入 PDF 的源文本（1-based 页码、空文本跳过、超限按
+前缀确定性截断），返回不可变 `PreparedCandidates`（observations + report +
+冻结 identity），
+绝不写 `CandidateStore`；正文失败、合规失败、PDF 提交失败、断开/取消路径可已
+prepare 但绝不 commit，已 prepare 候选只存在于内存并随工作区丢弃。`commit` 只在
+P0-05 合规门通过、`right.pdf` 提交成功后同步调用，重验 active job 身份后经
+`CandidateStore.record_observations` 批量原子写入 `term_candidates.json`（一次
+响应整体合法后单 revision 合并，任一观察非法则整体不写），保留
+accepted/rejected 状态与 `accepted_target`。
 通过 `TermExtractionClient` 走 OpenAI-compatible `/chat/completions` 受控
 请求；`deepseek`/`openai` 使用官方默认 base URL（可被 `model.base_url` 覆盖），
 `openai_compatible` 必须使用配置 base_url。base_url 经 `urllib.parse` 严格
@@ -267,18 +279,24 @@ unavailable，由 P0-05 提交门在调用上游前拒绝（有效词表仍经 `
 `{"terms":[{"source","target"}]}`：≤50 条、字段 ≤200 字符、拒绝控制字符/
 无效结构/未知键，正文 ≤256 KiB，重复项确定性去重，成功与错误响应均显式
 close；网络重试只针对超时/429/5xx（连接类错误、4xx 与解析/schema 错误不
-重试）；QPS、并发（信号量上限）、timeout 均独立于正文。候选经
-`CandidateStore.record_observations` 批量原子写
-入 `term_candidates.json`（一次响应整体合法后单 revision 合并，任一观察非法
-则整体不写），保留 accepted/rejected 状态与 `accepted_target`。P1-02 起，保留
+重试）；QPS、并发（信号量上限）、timeout 均独立于正文。P1-02 起，保留
 候选先经 `candidate_filter` 确定性后置过滤：普通词/完整句/超限/纯数字/公式/变量/
 页码/占位符/无 Han target/不存在于实际发送文本（含截断后）的幻觉 source 被
 拒绝；每条保留候选携带边界感知匹配的实际命中页（1-based，可跨多页）与
 折叠空白后的有界证据片段（固定窗口、最多 5 条、每条 ≤160 字符）。候选变化不
 触发有效词表 stale，未确认候选永不进入 `effective_glossary.csv` 或正文
-`SettingsModel`；
-网络/解析/存储失败及不支持 Provider 全部降级为安全日志，正文仍 finish，不启动
-第二个 coordinator job，同步首版无悬挂线程。
+`SettingsModel`；网络/解析/存储失败及不支持 Provider 全部降级为安全日志，
+正文仍 finish，不启动第二个 coordinator job，同步首版无悬挂线程。P1-05 起，
+请求携带 `CandidateIdentity(job_id/document_id/pdf_hash/document_dir)` 与
+`active_job_provider`；`prepare` 在网络请求前校验当前 active job 并把请求身份
+冻结进 `PreparedCandidates`（带身份时 `document_dir` 必须等于
+`identity.document_dir`，否则直接 `identity_rejected`），`commit` 在
+`CandidateStore.record_observations` 写入前以冻结身份为权威再次校验——另传
+identity 必须完全相等、写目录必须等于冻结 `identity.document_dir`、active job
+仍为同一 job/document/pdf_hash（目录名必须等于 pdf_hash），且无身份 prepared
+禁止在 commit 升级为带身份。身份拒绝、存储失败只记录稳定降级状态
+（`identity_rejected`/`store_failed`），已提交正文与任务终态保持不变；迟到或
+串写候选不会写入其他文档。
 
 术语合规提交门（P0-05）：`generate`/`generate_batch` 在 `replace_page`/
 `replace_pages` 之前对最终候选译文 PDF 做项目侧验证。验证输入是“当前页/批次
@@ -312,10 +330,12 @@ job/document identity 下复用同一
 上游普通失败仍保持 `translation_error`。合规日志只记录 job/page/attempt/
 数量/状态/稳定短码，不记录术语正文、target、译文路径或异常原文。
 
-输入冻结边界：`coordinator.start` 先于严格术语准备占位，因此当前翻译生产者从
-占位到 SSE 结束期间不能插入文档切换，也不会重新编译其他文档。P1-04 术语
-编辑 API 沿用同一活动任务边界：活动翻译任务期间拒绝修改权威/候选输入，
-避免正在被 SSE 消费的 `StrictTranslationContext` 与磁盘输入之间出现未定义竞态。
+输入冻结边界（P1-05）：`coordinator.start` 先于严格术语准备占位，job_id 随
+`StrictTranslationContext` 一起冻结，因此当前翻译生产者从占位到 SSE 结束期间
+不能插入文档切换，也不会重新编译其他文档。P1-04 术语编辑 API 沿用同一活动
+任务边界：活动翻译任务期间拒绝修改权威/候选输入，避免正在被 SSE 消费的
+`StrictTranslationContext` 与磁盘输入之间出现未定义竞态；候选提交前还会再次
+校验 active job 身份，身份不一致的迟到候选不落盘。
 
 路径控制：文档级存储只接受 64 位小写十六进制 PDF 哈希目录名
 （`user_glossary.validate_document_dir`），文件名固定。自动合并入口
@@ -381,10 +401,10 @@ job/document identity 下复用同一
 ## 单页翻译链
 
 1. `POST /api/translate/<page>`（零基页码）校验文档已打开、页码在范围内；路由先调用协调器 `start(document_id, [page])` 原子占用任务槽；busy/shutdown 在任何严格术语准备写操作前返回 HTTP 409。
-2. 占位成功后才执行 `strict_glossary.prepare_strict_translation_context(snapshot)`（旧累计迁移→有效词表编译→严格验证）并 `build_strict_settings()` 组装参数；失败时 `coordinator.fail(job_id)` 释放槽、返回 HTTP 500 `glossary_prepare_failed`、不调用上游。接受后构造带 `job_id` 和 finish/fail 回调的 `GenerateContext`；抽取、`replace_page` 与术语合并闭包都捕获快照中的 `document_id`，`strict_context` 携带本次预构建的有效词表身份与快照。
-3. `generate()` 先校验 `strict_context` 与 `task_ctx`/`glossary_cache_path` 身份一致，再在 cache 根创建带前缀与标记的任务工作区（`input/` 抽取输入、`output/` 首次上游输出、`attempt-2/output/` 重试输出），在 `debug_trace.debug_session` 内先 `extract_single_page()` 抽取单页 PDF，再用 `strict_glossary.resolve_active_terms_from_pdf` 解析活跃权威词条并 `apply_resolved_active_terms` 合成最终 `custom_system_prompt`；rows 为空或源文本无命中为 available+empty（零成本跳过合规门），源 PDF 打不开/抽取异常/文本为空且存在 effective rows 为 unavailable，在调用上游前发 `glossary_verification_unavailable`、不 `run_translation`、不提交、job failed。
+2. 占位成功后才执行 `strict_glossary.prepare_strict_translation_context(snapshot, job_id=job.job_id)`（旧累计迁移→有效词表编译→严格验证）并 `build_strict_settings()` 组装参数；失败时 `coordinator.fail(job_id)` 释放槽、返回 HTTP 500 `glossary_prepare_failed`、不调用上游。接受后构造带 `job_id` 和 finish/fail 回调的 `GenerateContext`；抽取、`replace_page` 与术语合并闭包都捕获快照中的 `document_id`，`strict_context` 携带本次预构建的有效词表身份与快照。
+3. `generate()` 先校验 `strict_context` 与 `task_ctx`/`glossary_cache_path` 身份一致，再在 cache 根创建带前缀与标记的任务工作区（`input/` 抽取输入、`output/` 首次上游输出、`attempt-2/output/` 重试输出），在 `debug_trace.debug_session` 内先 `extract_single_page()` 抽取单页 PDF，再用 `strict_glossary.resolve_active_terms_from_pdf` 解析活跃权威词条并 `apply_resolved_active_terms` 合成最终 `custom_system_prompt`；随后执行候选 `prepare`（读取输入 PDF + 模型提取/过滤，失败只降级日志，正文继续）；rows 为空或源文本无命中为 available+empty（零成本跳过合规门），源 PDF 打不开/抽取异常/文本为空且存在 effective rows 为 unavailable，在调用上游前发 `glossary_verification_unavailable`、不 `run_translation`、不提交、job failed。
 4. 每次尝试用 `run_translation()` 启动 daemon worker 线程运行上游异步翻译；`format_sse_event()` 把 `progress_start`/`progress_update`/`finish`/`error` 映射为 SSE；非 dict 心跳直接 yield 空串。有活跃词条时最多尝试 2 次：首次收到 `finish` 后先做 P0-05 合规验证，FAIL 时以同一 job/输入 PDF/严格上下文/task identity 复用独立 Settings 深拷贝与 `attempt-2/output/` 重试 1 次（Prompt 追加 `[术语合规纠错]` 块），PASS 才继续；UNKNOWN 直接 `glossary_verification_unavailable` 且不提交。
-5. 验证通过（或无活跃词条）后调用 `finish_translation()`：优先 `mono_pdf_path`，缺失时回退 `dual_pdf_path`，再调 `AppState.replace_page(..., expected_document_id)` 写入译文，并通过 `AppState.merge_glossary(..., expected_document_id)` 把自动术语并入累计文件；提交成功后在同一生成器内同步运行 P1-01 旁路候选提取（失败只降级日志，不改变 finish），随后才进入 finally 释放 job；FAIL/UNKNOWN 路径不 replace、不 merge、不调用候选服务，旧 `right.pdf` 不变。
+5. 验证通过（或无活跃词条）后调用 `finish_translation()`：优先 `mono_pdf_path`，缺失时回退 `dual_pdf_path`，再调 `AppState.replace_page(..., expected_document_id)` 写入译文，并通过 `AppState.merge_glossary(..., expected_document_id)` 把自动术语并入累计文件；提交成功后在同一生成器内同步执行候选 `commit`（重验 active job 身份后原子写 `CandidateStore`，失败只降级日志，不改变 finish），随后才进入 finally 释放 job；FAIL/UNKNOWN 路径不 replace、不 merge、不调用候选 commit（可能已 prepare，随工作区丢弃），旧 `right.pdf` 不变。
 6. `replace_page()` 在锁内先比较预期身份，再经 `_commit_replacement()` 事务提交：所有页修改在从磁盘已提交的 `right.pdf` 重开的工作副本上完成 → 保存 `.tmp` → 关闭译文/工作文档 → 关闭旧右文档句柄 → `os.replace` 原子替换 → 重开右文档 → 更新翻译页集合。磁盘提交成功前不替换内存句柄和 `_translated_pages`；任意失败（open/delete/insert/save/close/`os.replace`）都会清理 `.tmp`、关闭泄漏句柄、恢复或保留可渲染的文档句柄，旧 `right.pdf` 保持不变。`merge_glossary()` 同样在锁内完成身份比较与合并回调；失配时两条边界都抛出 `StaleDocumentError`、记录 `[stale-result]` 警告且不修改当前文档。
 7. 当前部分提交语义（由 `tests/test_system_concurrency_failure.py` 固定）：`finish_translation()` 严格按「PDF 提交 → 术语合并」顺序执行两个独立文件提交。PDF 提交（`replace_page`）失败时异常向上传播，术语合并不执行，任务以 failed 释放并输出 SSE `error`；术语合并失败被 `merge_after_translate` 捕获并记录 WARNING，不向上传播——此时 PDF 提交保留、旧术语表不变，任务仍以 finished 释放并输出 SSE `finish`。两者是同一任务内两个独立文件的部分提交，不存在跨 `right.pdf` 与累计术语表的全局事务。
 8. 生成器最后发 `progress:100/finish` SSE；成功路径调用 `finish(job_id)`，上游错误、普通异常调用 `fail(job_id)`，消费者断开（GeneratorExit）调用 `cancel(job_id)`。所有退出路径都经 `finally`：先向 worker 请求协作式取消并 `join(timeout=30.0)`，只在 worker 确认退出后整体清理任务工作区（join timeout 时整体保留并记 WARNING），再幂等释放任务；Response close 另有未开始迭代时的兜底释放。
@@ -393,8 +413,8 @@ job/document identity 下复用同一
 
 1. `POST /api/translate-batch` 接收一基闭区间 `from`/`to`，校验均为整数、≥1、不越界且 `from ≤ to`。
 2. 路由先使用同一协调器原子占槽（busy/shutdown 同样在任何严格术语准备写操作前返回），占位成功后再执行与单页相同的 `strict_glossary.prepare_strict_translation_context` + `build_strict_settings`（同一严格设置构建函数；失败时 `coordinator.fail` 释放槽、500 `glossary_prepare_failed`），并换算零基 `page_indices`、从冻结快照构造带 `job_id` 的 `GenerateBatchContext`（抽取、`replace_pages` 与术语合并闭包都捕获 `document_id`），`pages` 参数按页数设为 `"1"` 或 `"1-N"`。
-3. `generate_batch()` 先校验 `strict_context` 身份一致，再发 `batch_info`，抽取多页 PDF 并用 `strict_glossary.resolve_active_terms_from_pdf` 解析活跃权威词条；rows 为空或源文本无命中为 available+empty，源 PDF 打不开/抽取异常/文本为空且存在 effective rows 为 unavailable（在调用上游前发 `glossary_verification_unavailable`、不 `run_translation`、不提交、job failed）。batch 首版采用整批原子验证与整批有界重试（最多 1 次）：把整批译文 PDF 视为一个原子单元，页数与批次大小不符、空白文本或不可提取一律 `glossary_verification_unavailable`；任一活跃 target 未命中即 FAIL 并整批重试，重试输出独立于 `attempt-2/output/`，不产生页级部分提交。
-4. 整批验证通过（或无活跃词条）后选 `mono_pdf_path`（回退 `dual_pdf_path`）调 `AppState.replace_pages(..., expected_document_id)` 经同一 `_commit_replacement()` 事务按序替换范围页，并只做一次受同一身份保护的 `merge_glossary_only()`；提交成功后在同一生成器内同步运行 P1-01 旁路候选提取（失败只降级日志，不改变 finish）；FAIL/UNKNOWN 路径不 replace、不 merge、不调用候选服务。批量与单页遵循同一部分提交语义：PDF 提交失败时术语合并不执行；术语合并失败被包含后 PDF 提交保留、任务仍以 finished 结束。
+3. `generate_batch()` 先校验 `strict_context` 身份一致，再发 `batch_info`，抽取多页 PDF 并用 `strict_glossary.resolve_active_terms_from_pdf` 解析活跃权威词条；随后执行与单页同一候选 `prepare`（失败只降级日志，正文继续）；rows 为空或源文本无命中为 available+empty，源 PDF 打不开/抽取异常/文本为空且存在 effective rows 为 unavailable（在调用上游前发 `glossary_verification_unavailable`、不 `run_translation`、不提交、job failed）。batch 首版采用整批原子验证与整批有界重试（最多 1 次）：把整批译文 PDF 视为一个原子单元，页数与批次大小不符、空白文本或不可提取一律 `glossary_verification_unavailable`；任一活跃 target 未命中即 FAIL 并整批重试，重试输出独立于 `attempt-2/output/`，不产生页级部分提交。
+4. 整批验证通过（或无活跃词条）后选 `mono_pdf_path`（回退 `dual_pdf_path`）调 `AppState.replace_pages(..., expected_document_id)` 经同一 `_commit_replacement()` 事务按序替换范围页，并只做一次受同一身份保护的 `merge_glossary_only()`；提交成功后在同一生成器内同步执行候选 `commit`（重验身份后原子写 `CandidateStore`，失败只降级日志，不改变 finish）；FAIL/UNKNOWN 路径不 replace、不 merge、不调用候选 commit（可能已 prepare，随工作区丢弃）。批量与单页遵循同一部分提交语义：PDF 提交失败时术语合并不执行；术语合并失败被包含后 PDF 提交保留、任务仍以 finished 结束。
 5. 全文翻译是浏览器行为：`onFullTranslateClick()` 调同一批处理端点提交 `1..pageCount`，不存在独立的全文章节端点。
 
 ## 状态、缓存与持久化
@@ -519,7 +539,7 @@ debug 开启时，单页/批量翻译在 `debug_trace.debug_session(...)` 内把
 
 统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:client-error`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`、`run-config-panel-tests.mjs`、`run-glossary-panel-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
 
-覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-08-31 P1-04 核验值）：全局 line 92.9%、branch 85.7%，关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
+覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-08-31 P1-05 核验值）：全局 line 92.9%、branch 85.8%，关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
 
 测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
 
@@ -575,6 +595,16 @@ CSV 与双标签 revision 409；`tests/run-glossary-panel-tests.mjs` 用 jsdom �
 Esc/焦点恢复，以及 source/target/note/evidence 全部按文本渲染、不生成不受信任
 HTML 节点。
 
+P1-05 生命周期回归：`tests/test_strict_glossary.py` 固定 job_id/revision/词条
+摘要冻结与 job 身份校验；`tests/test_candidate_service.py` 固定 prepare 不写盘、
+commit 才写盘、prepare 与 commit 之间身份变化拒绝、stale/其他 job/document
+拒绝；`tests/test_candidate_sse.py` 固定单页/批量精确调用顺序（input/active
+terms → prepare → run_translation → 合规 → replace PDF → commit → finish）、
+prepare/commit 失败仍 finish、合规/PDF 替换/断开不 commit、身份变化拒绝；系统级
+`tests/test_system_concurrency_failure.py` 增加单页/批量候选存储写失败、
+单页/批量候选提取失败、断开、PDF 替换失败与合规失败，最终
+PDF/候选文件/coordinator/worker/工作区状态一致（该文件现收集 22 个系统用例）。
+
 术语状态模型与迁移回归（P0-02）：`tests/test_term_model.py`、`tests/test_path_locks.py`、`tests/test_user_glossary.py`、`tests/test_candidate_store.py` 与 `tests/test_legacy_migration.py` 覆盖规范化/校验（含 strategy_version 与控制字符对称校验）、按规范路径共享锁（含两个不同 Store 实例并发写同一文档）、文档级权威词表 CRUD 与锁定、revision 冲突、原子写失败保留旧版本、损坏/schema/字段类型 fail-closed 且原字节不变、旧累计 CSV 的幂等合入迁移（保留 accepted/rejected 用户状态、并发迁移只合入一次、自动合并与迁移共用 cumulative 锁同一快照、备份不覆盖/目录 fail-closed、无半备份、失败重试）以及自动合并拒绝受保护文件名；全部使用 pytest 临时数据根。
 
 有效词表编译回归（P0-03）：`tests/test_glossary_compiler.py` 覆盖空词表、
@@ -615,7 +645,7 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
 6. **部分提交语义。** 单页/批量翻译结束时先提交 `right.pdf` 再合并术语表；术语表合并失败被包含（记录 WARNING），不会回滚已提交的 PDF，也不改变任务终态；PDF 提交失败则术语合并不执行。不存在跨两个文件的全局事务。
 7. **启动脚本不自动释放端口。** `start.bat` 只检测并报告端口 5000 的 `LISTENING` 占用，不包含任何进程终止命令；端口冲突需要用户自行确认归属并处理（命令见 README「启动」），或改用 `config.toml` 中 `[server].port` 指定的其他端口。
 8. **临时工作区清理有明确安全边界。** 每个翻译任务拥有 cache 根下带前缀+标记的根工作区（`input/`/`output/`）；只有名称带固定前缀、含有效标记（`kind` 匹配且 `pid` 为正整数）、非符号链接/junction 且 PID 已不存活的 `cache/` 直接子目录才会被启动恢复或 `cache_manage.py clean --yes` 删除；未知、无标记、标记损坏、链接路径或可能仍在使用的目录一律保守保留；持久用户数据（`right.pdf`、术语表、阅读进度）永不作为清理目标。Windows PID 探测只读，且只把明确不存在（`ERROR_INVALID_PARAMETER` 等）判为不存活；PID 复用或查询失败时按“可能存活”保留，可能留下少量无法自动清理的目录，需要用户确认后手动处理。
-9. **候选提取是正文提交后的同步旁路，页码/证据为逐页精确命中。** 候选提取在提交成功后于同一 SSE 生成器内同步执行，严格 timeout（1-120s）与有界重试保证不会无限阻塞；客户端断开时若正阻塞在候选请求上，最多等待一次请求 timeout 后在 finally 以 finished 释放 job（PDF 已提交）。P1-02 起，模型候选先经本地确定性过滤：普通词/结构异常/幻觉 source 被拒绝，保留候选携带实际命中页与有界证据；过滤后为空返回稳定 `all_filtered` 摘要且不写空 revision；候选失败只降级日志，不改正文终态。
+9. **候选提取是两阶段同步旁路：prepare 在严格翻译前，commit 在 PDF 提交后，页码/证据为逐页精确命中。** `generate`/`generate_batch` 在输入/活跃词条之后、`run_translation` 之前同步执行候选 `prepare`（读取输入 PDF + 模型提取/过滤，返回不可变 prepared，绝不写盘），在 `right.pdf` 成功提交后同步执行候选 `commit`（重验 active job 身份后原子写 `CandidateStore`）；严格 timeout（1-120s）与有界重试保证不会无限阻塞。prepare 失败只降级日志，正文继续；客户端断开/取消发生在 prepare 之后、PDF 提交之前时，已 prepare 候选只存在于内存并随工作区丢弃，绝不落盘。P1-02 起，模型候选先经本地确定性过滤：普通词/结构异常/幻觉 source 被拒绝，保留候选携带实际命中页与有界证据；过滤后为空返回稳定 `all_filtered` 摘要且不写空 revision；候选失败只降级日志，不改正文终态。P1-05 起，候选请求携带 job/document/pdf_hash 身份：prepare 提取前校验当前 active job 并把身份冻结进 `PreparedCandidates`（带身份时 document_dir 必须等于 identity.document_dir），commit 写入前以冻结身份为权威校验（另传 identity 必须完全相等、写目录必须等于冻结 identity.document_dir、无身份 prepared 不得升级），身份拒绝（`identity_rejected`）或存储失败不写任何候选且不改变已提交正文的 finish 终态。
    P1-03 起，候选统计为可审计真实值：每个 target 保存观察次数、去重页覆盖与
    最近观察时间，批合并先确定性排序；推荐排序固定为 accepted target > 普通
    未拒绝建议 > rejected target（组内不同页覆盖数 → 观察次数 → 字典序），

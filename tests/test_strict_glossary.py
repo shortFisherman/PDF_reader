@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
 import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -12,7 +14,11 @@ import pytest
 
 from pdf_reader import config
 from pdf_reader.candidate_store import CandidateStore
-from pdf_reader.glossary_compiler import EFFECTIVE_GLOSSARY_FILENAME, GlossaryCompileError
+from pdf_reader.glossary_compiler import (
+    EFFECTIVE_GLOSSARY_FILENAME,
+    GlossaryCompileError,
+    verify_effective_glossary,
+)
 from pdf_reader.legacy_migration import MigrationError
 from pdf_reader.sse_stream import GenerateBatchContext, GenerateContext, generate, generate_batch
 from pdf_reader.state import DocumentSnapshot
@@ -117,12 +123,69 @@ def test_prepare_strict_context_migrates_compiles_verifies_and_uses_only_authori
     assert settings.translation.glossaries == str(context.effective_glossary_path)
 
 
+def test_prepare_strict_context_freezes_job_revision_and_summary(tmp_path):
+    document_dir = _doc_dir(tmp_path)
+    global_path = tmp_path / "global.csv"
+    _write_global(global_path, [("AD", "阿尔茨海默病")])
+    UserGlossaryStore(document_dir).add("AD", "用户 AD")
+
+    snapshot = _snapshot(document_dir)
+    context = prepare_strict_translation_context(snapshot, global_path, job_id="job-freeze")
+
+    verified = verify_effective_glossary(document_dir, global_path)
+    assert context.job_id == "job-freeze"
+    assert context.effective_glossary_revision == verified.meta_sha256
+    assert len(context.effective_glossary_revision) == 64
+    expected_summary = hashlib.sha256(
+        (json.dumps(list(context.effective_rows), ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+    ).hexdigest()
+    assert context.effective_glossary_summary == expected_summary
+    assert len(context.effective_glossary_summary) == 64
+
+
+def test_prepare_strict_context_revision_and_summary_follow_effective_rows(tmp_path):
+    document_dir = _doc_dir(tmp_path)
+    global_path = tmp_path / "global.csv"
+    _write_global(global_path, [("benefits", "全局获益")])
+    snapshot = _snapshot(document_dir)
+    first = prepare_strict_translation_context(snapshot, global_path, job_id="job-rev")
+
+    store = CandidateStore(document_dir)
+    store.record_observation("TCS", "自动建议", pages=[1])
+    store.accept("TCS", target="外用糖皮质激素")
+    second = prepare_strict_translation_context(snapshot, global_path, job_id="job-rev")
+
+    assert second.effective_rows == (("benefits", "全局获益"), ("TCS", "外用糖皮质激素"))
+    assert second.effective_glossary_revision != first.effective_glossary_revision
+    assert second.effective_glossary_summary != first.effective_glossary_summary
+
+
+def test_validate_identity_rejects_job_mismatch(tmp_path):
+    document_dir = _doc_dir(tmp_path)
+    context = StrictTranslationContext(
+        document_dir=document_dir,
+        document_id="doc-a",
+        pdf_hash=document_dir.name,
+        effective_glossary_path=None,
+        effective_rows=(),
+        job_id="job-a",
+    )
+    valid = TaskContext(job_id="job-a", document_id=context.document_id, pdf_hash=context.pdf_hash, page=1)
+    validate_strict_context_identity(context, valid, document_dir)
+
+    mismatch = TaskContext(job_id="job-b", document_id=context.document_id, pdf_hash=context.pdf_hash, page=1)
+    with pytest.raises(StrictGlossaryError):
+        validate_strict_context_identity(context, mismatch, document_dir)
+
+
 def test_empty_effective_glossary_omits_glossaries_and_keeps_strict_flags(tmp_path):
     document_dir = _doc_dir(tmp_path)
     context = prepare_strict_translation_context(_snapshot(document_dir), tmp_path / "missing.csv")
 
     assert context.effective_rows == ()
     assert context.effective_glossary_path is None
+    assert len(context.effective_glossary_revision) == 64
+    assert len(context.effective_glossary_summary) == 64
 
     settings = build_strict_settings(_upstream(auto_extract_glossary=True), None, "1", context)
     assert settings.translation.no_auto_extract_glossary is True

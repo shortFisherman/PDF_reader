@@ -9,7 +9,11 @@ from pathlib import Path
 from pdf2zh_next import SettingsModel
 
 from pdf_reader import cache_ops, debug_trace, pdf_extraction, strict_glossary, terminology_compliance
-from pdf_reader.candidate_service import CandidateExtractionService
+from pdf_reader.candidate_service import (
+    CandidateExtractionService,
+    CandidateIdentity,
+    PreparedCandidates,
+)
 from pdf_reader.strict_glossary import StrictTranslationContext
 from pdf_reader.task_logging import (
     STATUS_CANCELLING,
@@ -95,6 +99,7 @@ class GenerateContext:
     unregister_stream: Callable[[str], None] | None = None
     strict_context: StrictTranslationContext | None = None
     candidate_service: CandidateExtractionService | None = None
+    active_job_provider: Callable[[], object | None] | None = None
 
 
 @dataclass
@@ -123,6 +128,7 @@ class GenerateBatchContext:
     unregister_stream: Callable[[str], None] | None = None
     strict_context: StrictTranslationContext | None = None
     candidate_service: CandidateExtractionService | None = None
+    active_job_provider: Callable[[], object | None] | None = None
 
 
 def format_batch_info(from_page: int, to_page: int, total: int) -> str:
@@ -251,22 +257,97 @@ def _release_job(ctx: GenerateContext | GenerateBatchContext, outcome: str) -> N
         )
 
 
-def _run_candidate_extraction(
+_CANDIDATE_DEGRADED_STATUSES = {"identity_rejected", "store_failed", "failed", "source_failed"}
+
+
+def _candidate_identity(
+    ctx: GenerateContext | GenerateBatchContext,
+) -> CandidateIdentity | None:
+    if ctx.strict_context is None or ctx.glossary_cache_path is None:
+        return None
+    return CandidateIdentity(
+        job_id=ctx.job_id,
+        document_id=ctx.strict_context.document_id,
+        pdf_hash=ctx.strict_context.pdf_hash,
+        document_dir=Path(ctx.glossary_cache_path),
+    )
+
+
+def _prepare_candidate_extraction(
     ctx: GenerateContext | GenerateBatchContext,
     pdf_path: Path,
     page_indices: list[int] | tuple[int, ...],
-) -> None:
-    """正文提交成功后的旁路候选提取；任何失败都只降级日志，不影响 finish。"""
+) -> PreparedCandidates | None:
+    """严格翻译前阶段：读取输入 PDF 并提取/过滤候选；失败只降级，正文继续。
+
+    只返回不可变 ``PreparedCandidates``，绝不写 ``CandidateStore``；
+    ``commit`` 只在 PDF 成功提交后调用。
+    """
     service = ctx.candidate_service
     if service is None:
-        return
+        return None
     try:
-        service.run_for_pdf(pdf_path, page_indices, ctx.glossary_cache_path, task_ctx=ctx.task_ctx)
+        prepared = service.prepare(
+            pdf_path,
+            page_indices,
+            ctx.glossary_cache_path,
+            task_ctx=ctx.task_ctx,
+            identity=_candidate_identity(ctx),
+            active_job_provider=ctx.active_job_provider,
+        )
     except Exception:
         task_log(
             logger,
             logging.WARNING,
-            "candidate extraction degraded; translation remains finished",
+            "candidate extraction degraded; translation continues",
+            task=ctx.task_ctx,
+        )
+        return None
+    status = getattr(getattr(prepared, "report", None), "status", "")
+    if status in _CANDIDATE_DEGRADED_STATUSES:
+        task_log(
+            logger,
+            logging.WARNING,
+            "candidate extraction degraded: status=%s",
+            status,
+            task=ctx.task_ctx,
+        )
+    if status != "ok":
+        return None
+    return prepared
+
+
+def _commit_candidate_extraction(
+    ctx: GenerateContext | GenerateBatchContext,
+    prepared: PreparedCandidates | None,
+) -> None:
+    """PDF 成功提交后的候选提交阶段；任何失败只降级，不改 finished 终态。"""
+    service = ctx.candidate_service
+    if service is None or prepared is None:
+        return
+    try:
+        report = service.commit(
+            prepared,
+            ctx.glossary_cache_path,
+            task_ctx=ctx.task_ctx,
+            identity=_candidate_identity(ctx),
+            active_job_provider=ctx.active_job_provider,
+        )
+    except Exception:
+        task_log(
+            logger,
+            logging.WARNING,
+            "candidate commit degraded; translation remains finished",
+            task=ctx.task_ctx,
+        )
+        return
+    status = getattr(report, "status", "")
+    if status in _CANDIDATE_DEGRADED_STATUSES:
+        task_log(
+            logger,
+            logging.WARNING,
+            "candidate commit degraded: status=%s",
+            status,
             task=ctx.task_ctx,
         )
 
@@ -365,6 +446,7 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
         tmpdir: Path | None = None
         output_dir: Path | None = None
         stream = None
+        candidate_prepared: PreparedCandidates | None = None
         outcome = "failed"
         try:
             if ctx.strict_context is not None:
@@ -405,6 +487,10 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                         ctx.settings,
                         resolution.active_terms,
                     )
+
+                # P1-05 两阶段候选：prepare 在严格翻译前读取输入 PDF；任何失败
+                # 只降级，正文继续；commit 只在 PDF 提交成功后执行。
+                candidate_prepared = _prepare_candidate_extraction(ctx, single_page_pdf, [ctx.page])
 
                 # P0-05 提交门：无活跃词条时不验证、不重试；有活跃词条时最多整页
                 # 有界重试 1 次（同一 job/document identity，不启动第二个协调任务）。
@@ -559,9 +645,9 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                     ctx.job_id,
                 )
                 outcome = "finished"
-                # 正文已提交：先冻结 finished 终态，再跑旁路候选。候选提取的
+                # 正文已提交：先冻结 finished 终态，再提交候选。候选提交的
                 # 任何失败（包括意外异常）都不会把已提交任务改判为 failed。
-                _run_candidate_extraction(ctx, single_page_pdf, [ctx.page])
+                _commit_candidate_extraction(ctx, candidate_prepared)
                 yield (
                     "data: "
                     + json.dumps(
@@ -647,6 +733,7 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
         tmpdir: Path | None = None
         output_dir: Path | None = None
         stream = None
+        candidate_prepared: PreparedCandidates | None = None
         outcome = "failed"
         try:
             if ctx.strict_context is not None:
@@ -692,6 +779,9 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
                         ctx.settings,
                         resolution.active_terms,
                     )
+
+                # 同单页：prepare 在严格翻译前，commit 在整批 PDF 提交后。
+                candidate_prepared = _prepare_candidate_extraction(ctx, multi_page_pdf, ctx.page_indices)
 
                 yield format_batch_info(ctx.from_page, ctx.to_page, len(ctx.page_indices))
 
@@ -845,8 +935,8 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
 
                 merge_glossary_only(translate_result, ctx.merge_glossary, ctx.from_page, ctx.job_id)
                 outcome = "finished"
-                # 同单页：提交成功即冻结 finished，候选失败只降级，不改终态。
-                _run_candidate_extraction(ctx, multi_page_pdf, ctx.page_indices)
+                # 整批 PDF 已提交：候选提交失败只降级，不改终态。
+                _commit_candidate_extraction(ctx, candidate_prepared)
                 yield (
                     "data: "
                     + json.dumps(
