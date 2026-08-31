@@ -8,8 +8,9 @@
   观察时间；``accept`` 与推荐摘要使用确定性排序（accepted target > 普通未
   拒绝建议 > rejected target，组内不同页覆盖数降序 → 观察次数降序 → target
   字典序），不再依赖历史插入/批输入顺序。
-- schema v2 新增 target 级 ``last_observed_at``；v1 文件仍可严格读取（用条目
-  ``last_seen_at`` 回填），下一次写入原子升级为 v2，读取绝不静默改写磁盘。
+- schema v2 新增 target 级 ``last_observed_at``，schema v3 新增 accepted 候选
+  ``locked``；v1/v2 文件仍可严格读取并在下一次写入原子升级为 v3，读取绝不
+  静默改写磁盘。
 - 同一规范路径的所有实例共享同一把进程内锁；读—改—写全程互斥，原子提交。
 - 持久文件读取 fail closed：字段缺失、类型异常、状态与 accepted_target 不一致、
   normalized key 与 source 不一致、重复规范化 source、无效 pages/evidence/
@@ -34,11 +35,14 @@ from pdf_reader.path_locks import lock_for_path
 from pdf_reader.term_model import (
     CANDIDATE_SCHEMA_VERSION,
     CANDIDATE_SCHEMA_VERSION_V1,
+    CANDIDATE_SCHEMA_VERSION_V2,
     LEGACY_CUMULATIVE_STRATEGY,
     CandidateEntry,
+    CandidateStateError,
     CandidateStatus,
     CandidateSuggestionSummary,
     CandidateTargetSummary,
+    GlossaryLockedError,
     GlossaryRevisionConflictError,
     TargetSuggestion,
     TermNotFoundError,
@@ -167,7 +171,7 @@ def _target_from_dict(
         if len(snippet) > MAX_EVIDENCE_LENGTH:
             raise TermStoreError("evidence snippet exceeds bound")
         evidence.append(snippet)
-    if schema_version >= CANDIDATE_SCHEMA_VERSION:
+    if schema_version >= CANDIDATE_SCHEMA_VERSION_V2:
         last_raw = item.get("last_observed_at")
         if not isinstance(last_raw, str) or not last_raw.strip():
             raise TermStoreError("target suggestion missing last_observed_at")
@@ -176,7 +180,7 @@ def _target_from_dict(
         except TermStoreError as exc:
             raise TermStoreError(f"invalid target last_observed_at: {exc}") from exc
     else:
-        # schema v1 无 target 级时间：用条目最近观察时间回填，下一次写入升级为 v2。
+        # schema v1 无 target 级时间：用条目最近观察时间回填，下一次写入升级为当前版本。
         last_observed_at = fallback_last_observed_at
     return TargetSuggestion(
         target=target,
@@ -261,6 +265,11 @@ def _entry_from_dict(key: str, raw: dict[str, object], schema_version: int) -> C
         if item in rejected:
             raise TermStoreError("duplicate rejected target")
         rejected.append(item)
+    locked_raw = raw.get("locked", False)
+    if not isinstance(locked_raw, bool):
+        raise TermStoreError("invalid candidate locked value")
+    if locked_raw and status != "accepted":
+        raise TermStoreError("only accepted candidates can be locked")
     return CandidateEntry(
         source=source,
         status=status,
@@ -270,6 +279,7 @@ def _entry_from_dict(key: str, raw: dict[str, object], schema_version: int) -> C
         targets=targets,
         accepted_target=accepted_target,
         rejected_targets=rejected,
+        locked=locked_raw,
     )
 
 
@@ -293,6 +303,7 @@ def _entry_to_dict(entry: CandidateEntry) -> dict[str, object]:
         ],
         "accepted_target": entry.accepted_target,
         "rejected_targets": list(entry.rejected_targets),
+        "locked": entry.locked,
     }
 
 
@@ -440,6 +451,8 @@ class CandidateStore:
             entry = _find_or_none(entries, source)
             if entry is None:
                 raise TermNotFoundError(f"candidate not found: {source!r}")
+            if entry.locked and target is not None and target != entry.accepted_target:
+                raise GlossaryLockedError(f"locked candidate cannot be edited: {entry.source!r}")
             now = datetime.now(UTC)
             if target is None:
                 ranked = rank_target_suggestions(entry)
@@ -471,12 +484,48 @@ class CandidateStore:
             entry = _find_or_none(entries, source)
             if entry is None:
                 raise TermNotFoundError(f"candidate not found: {source!r}")
+            if entry.locked:
+                raise GlossaryLockedError(f"locked candidate cannot be rejected: {entry.source!r}")
             if target is not None:
                 rejected = validate_term_text(target, "target")
                 if rejected not in entry.rejected_targets:
                     entry.rejected_targets.append(rejected)
             entry.status = "rejected"
             entry.accepted_target = None
+            entry.last_seen_at = datetime.now(UTC)
+            return entry, self._write_unlocked(entries, revision, metadata)
+
+    def lock(
+        self,
+        source: str,
+        *,
+        expected_revision: int | None = None,
+    ) -> tuple[CandidateEntry, int]:
+        return self._set_locked(source, True, expected_revision)
+
+    def unlock(
+        self,
+        source: str,
+        *,
+        expected_revision: int | None = None,
+    ) -> tuple[CandidateEntry, int]:
+        return self._set_locked(source, False, expected_revision)
+
+    def _set_locked(
+        self,
+        source: str,
+        locked: bool,
+        expected_revision: int | None,
+    ) -> tuple[CandidateEntry, int]:
+        with self._lock:
+            entries, revision, metadata = self._read_unlocked()
+            _check_revision(revision, expected_revision)
+            entry = _find_or_none(entries, source)
+            if entry is None:
+                raise TermNotFoundError(f"candidate not found: {source!r}")
+            if entry.status != "accepted":
+                raise CandidateStateError("only accepted candidates can be locked")
+            entry.locked = locked
             entry.last_seen_at = datetime.now(UTC)
             return entry, self._write_unlocked(entries, revision, metadata)
 
@@ -546,7 +595,11 @@ class CandidateStore:
         if not isinstance(data, dict):
             raise TermStoreError(f"invalid candidate store payload in {self.path}")
         schema_version_raw = data.get("schema_version")
-        if schema_version_raw not in (CANDIDATE_SCHEMA_VERSION_V1, CANDIDATE_SCHEMA_VERSION):
+        if schema_version_raw not in (
+            CANDIDATE_SCHEMA_VERSION_V1,
+            CANDIDATE_SCHEMA_VERSION_V2,
+            CANDIDATE_SCHEMA_VERSION,
+        ):
             raise TermStoreError(f"unsupported candidate schema version: {schema_version_raw!r}")
         schema_version = cast(int, schema_version_raw)
         revision = data.get("revision")

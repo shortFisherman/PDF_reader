@@ -9,6 +9,7 @@ import { TranslationUIController } from './modules/translation-ui-controller.js'
 import { createReaderSession } from './modules/reader-session.js';
 import { createReaderAppController } from './modules/app-controller.js';
 import { createConfigPanel } from './modules/config-panel.js';
+import { createGlossaryPanel } from './modules/glossary-panel.js';
 
 const controller = createReaderAppController({
     getElements,
@@ -27,6 +28,7 @@ const controller = createReaderAppController({
     TranslationUIController,
     createReaderSession,
     createConfigPanel,
+    createGlossaryPanel,
 });
 
 controller.init();

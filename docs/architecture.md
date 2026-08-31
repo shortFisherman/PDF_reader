@@ -7,8 +7,8 @@
 - 核验日期：2026-08-31。事实来源、锁定版本与测试/覆盖率基线见下。
 - 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml`、`tests/test_upstream_contract.py` 和测试收集结果。
 - 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2、tomlkit 0.13.3。
-- 测试基线：`scripts/verify.ps1` 实测 1178 个 Python 测试通过（2026-08-31 P1-01 主审修订核验值，含上游契约、文档治理、配置示例契约、日志管线/调试轨迹、前端错误上报、配置中心后端、P0 术语主线与 P1-01 候选提取用例）；`package.json` 的 `test:frontend` 定义八个正式前端套件（UI copy、error-safety、client-error、translation-ui、translator、zoom、alignment controller、config panel），verify 全绿。
-- 覆盖率基线：全局 line 93.6%、branch 87.4%（2026-08-31 P1-01 主审修订核验值，`coverage run --branch -m pytest` 实测；策略与关键模块 floor 见“测试、CI 与验证入口”）。
+- 测试基线：`scripts/verify.ps1` 实测 1305 个 Python 测试通过（2026-08-31 P1-04 核验值，含上游契约、文档治理、日志/配置、P0/P1 术语主线与术语管理 API）；`package.json` 的 `test:frontend` 定义九个正式前端套件（UI copy、error-safety、client-error、translation-ui、translator、zoom、alignment controller、config panel、glossary panel），verify 全绿。
+- 覆盖率基线：全局 line 92.9%、branch 85.7%（2026-08-31 P1-04 核验值，`coverage run --branch -m pytest` 实测；策略与关键模块 floor 见“测试、CI 与验证入口”）。
 - 基线说明：测试数量与覆盖率是易腐数字，任何新的架构核对都应以当前源码、锁定文件、测试收集结果与 coverage 报告为准；本文数值只代表 2026-08-31 的核验结果。
 
 ## 系统总览
@@ -34,7 +34,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | BabelDOC | 0.6.2 | 上游版面重建、字体处理与 PDF 生成底层 |
 | tomlkit | 0.13.3 | 直接运行依赖：保留注释/顺序/未知字段的 TOML 编辑（配置中心保存 config.toml） |
 | 前端 | 原生 HTML/CSS/ES Modules | 无构建步骤，浏览器直接加载 |
-| Node.js | >=22（仅测试需要，CI 固定 22） | 运行八个前端测试套件 |
+| Node.js | >=22（仅测试需要，CI 固定 22） | 运行九个前端测试套件 |
 | ruff / pytest | 锁定在 `requirements.lock` | 代码检查与 Python 测试 |
 
 ## 许可证与包元数据
@@ -67,10 +67,10 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/config_editor.py` | 配置中心后端：48 字段 schema（分组/控件/说明/默认与常用值/Provider 适用性）、GET 密钥脱敏（只返回 configured/source）、已知字段白名单、复用 `validate_startup_requirements`/`resolve_server_config` 严格校验、revision 乐观冲突、模块级 RLock、同目录临时文件 fsync + `os.replace` 原子写并保留权限/未知字段/注释与顺序（tomlkit）；只写 `config.toml`，不热改冻结 `AppSettings`，保存返回 `restart_required=true` |
 | `src/pdf_reader/term_extraction.py` | P1-01 项目自有 `TermExtractionClient`：标准库 urllib 走 OpenAI-compatible `/chat/completions`（支持 deepseek/openai/openai_compatible，其余 Provider 稳定 unsupported）、严格受控 JSON 解析（条数/长度/控制字符/正文大小有界）、独立 QPS/timeout/有界重试（只重试超时/429/5xx），请求/响应/Prompt/Key 不入日志 |
 | `src/pdf_reader/candidate_filter.py` | P1-02 候选后置过滤：确定性前后标点清理/异常空白折叠、英文单词/缩写边界感知匹配、小型普通词/功能词/通用学术词精确拒绝、完整句/超词数/超字符/纯数字/公式/变量/页码/占位符结构拒绝、target 必须含 Han 字符、幻觉 source 拒绝、逐页命中页码与有界证据窗口；每条被过滤候选带稳定原因，规则版本 `candidate-filter/1` 组合进候选 `strategy_version`；只作用于模型自动候选，绝不删除/降级/重写用户权威决定 |
-| `src/pdf_reader/candidate_service.py` | P1-01/P1-02/P1-03 旁路候选提取服务（正文最终验证并提交成功后运行，单页/批量同规则，PyMuPDF 读取已抽取逐页文本，候选先经 `candidate_filter` 过滤再只经 `CandidateStore.record_observations` 原子写，任何失败降级安全日志且不阻正文 finish）与 P1-03 `CandidateTermService` 服务层摘要边界（候选 target 列表/统计，供未来 P1-04 UI/API 复用，不新增 HTTP） |
+| `src/pdf_reader/candidate_service.py` | P1-01/P1-02/P1-03 旁路候选提取服务（正文最终验证并提交成功后运行，单页/批量同规则，PyMuPDF 读取已抽取逐页文本，候选先经 `candidate_filter` 过滤再只经 `CandidateStore.record_observations` 原子写，任何失败降级安全日志且不阻正文 finish）与 P1-03 `CandidateTermService` 确定性摘要边界；P1-04 管理服务沿用同一推荐排序 |
 | `src/pdf_reader/paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
 | `src/pdf_reader/task_logging.py` | 集中任务日志上下文：不可变 `TaskContext`、`contextvars` 传播、统一前缀/截断/1-based 页码、生命周期状态、`SafeFormatter` 脱敏（API Key、sk-/Bearer、api_key、prompt 类字段） |
-| `src/pdf_reader/routes.py` | Blueprint：12 个 HTTP/SSE 端点（含配置中心 GET/PUT `/api/config` 与 `POST /api/client-errors` 的 loopback-only 守卫）；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器与 409 `translation_busy`、403 `config_local_only`/`client_errors_local_only` |
+| `src/pdf_reader/routes.py` | Blueprint HTTP/SSE 端点（含配置中心、术语管理与前端错误上报）；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器，术语/配置/错误上报 loopback-only 守卫，以及翻译与术语写入共享的 active-job 互斥边界 |
 | `src/pdf_reader/state.py` | `AppState`：不可变文档会话身份、锁内翻译快照、左右文档、缓存路径、哈希、页数/尺寸、翻译页集合、阅读进度、非重入锁 |
 | `scripts/cache_manage.py` | 缓存只读统计与孤儿临时工作区清理 CLI：`stats`（只读/可 `--json`）、`orphans`、`clean`（默认 dry-run，`--yes` 才删除） |
 | `src/pdf_reader/file_hash.py` | `sha256()` 流式文件哈希 |
@@ -83,11 +83,12 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/sse_stream.py` | SSE 格式化、`generate()` / `generate_batch()`、P0-05 提交门（提交前术语合规验证、一次整页/整批有界重试、独立 attempt 目录、`glossary_compliance_failed`/`glossary_verification_unavailable`）、P1-01 提交后旁路候选提取（失败降级）、`STAGE_LABELS`、worker 退出确认后的任务工作区清理 |
 | `src/pdf_reader/translation_lifecycle.py` | `finish_translation()` / `merge_glossary_only()`：译文持久化与术语合并 |
 | `src/pdf_reader/glossary_service.py` | 累积术语路径解析与合并入口 |
+| `src/pdf_reader/glossary_management.py` | P1-04 单文档术语管理服务：复合 revision、权威/候选搜索排序分页、CRUD/接受/拒绝/锁定、CSV 安全导入导出与变更后有效词表重编译 |
 | `src/pdf_reader/glossary_merger.py` | 术语多数投票合并：模块级互斥锁 + cumulative 路径共享锁（与迁移同快照）+ 同目录临时文件 flush/fsync/close 后 `os.replace` 原子提交（BOM 安全读写） |
 | `src/pdf_reader/term_model.py` | P0-02/P1-03 术语状态模型：权威/候选/拒绝语义、source key 规范化、候选 schema 版本、target 级统计字段、确定性推荐排序与摘要形状、受保护文件名与共享错误 |
 | `src/pdf_reader/path_locks.py` | P0-02 按规范路径共享的进程内可重入互斥锁（RLock，`lock_for_path`），同一文档路径的所有 Store 实例复用同一锁，允许同线程嵌套加锁（编译在输入锁内调用 Store.load 并计算摘要） |
 | `src/pdf_reader/user_glossary.py` | P0-02 文档级权威术语存储 `user_glossary.csv`（schema v1、按规范路径共享锁、revision、锁定、严格校验）与全局 `docs/glossary.csv` 只读加载 |
-| `src/pdf_reader/candidate_store.py` | P0-02/P1-03 候选术语存储 `term_candidates.json`（schema v2 + v1 兼容读取/写时升级、观察合并、P1-01 批量原子 `record_observations`、P1-03 target 级真实观察次数/页覆盖/最近观察时间与确定性推荐排序、accept/reject 状态保护、legacy 合入迁移、严格校验、原子读写、候选摘要方法） |
+| `src/pdf_reader/candidate_store.py` | P0-02/P1-03/P1-04 候选术语存储 `term_candidates.json`（schema v3 + v1/v2 兼容读取/写时升级、观察合并、target 级真实统计与确定性推荐、accept/reject/lock 状态保护、legacy 合入迁移、严格校验、原子读写、候选摘要） |
 | `src/pdf_reader/legacy_migration.py` | P0-02 旧 `cumulative_glossary.csv` → 候选存储的幂等合入迁移（保留用户状态、备份不覆盖、失败原样） |
 | `src/pdf_reader/glossary_compiler.py` | P0-03 确定性有效词表编译：文档权威 > accepted 候选 > 全局优先级、输入锁内一致快照摘要、同级冲突 fail-closed、CSV + sidecar 原子成对提交、严格 sidecar 校验与 stale 检测 |
 | `src/pdf_reader/strict_glossary.py` | P0-04 严格正文术语路径：迁移→编译→验证的单一准备入口、活跃词条边界匹配与约束 Prompt 合成 |
@@ -109,7 +110,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `docs/governance/` | 文档治理、工具目录治理、依赖升级流程与许可证核验基线（非法律意见） |
 | `docs/`、`docs/archive/`、`docs/reports/` | 常青文档、历史归档与上游研究资料 |
 
-## 术语状态模型与缓存组成（P0-02/P0-03/P0-04/P1-03）
+## 术语状态模型与缓存组成（P0-02/P0-03/P0-04/P1-03/P1-04）
 
 P0-02 起，术语持久化按“用户决定”和“模型候选”两类语义分离，自动流程不得跨类写入：
 
@@ -126,11 +127,12 @@ P0-02 起，术语持久化按“用户决定”和“模型候选”两类语�
   持久文件读取 fail closed：表头必须精确匹配、`locked` 只接受
   `true`/`false`、重复规范化 source 与缺字段/坏时间戳都拒绝加载并保留原字节。
 - `cache/<pdf_hash>/term_candidates.json`：自动候选存储，由 `CandidateStore`
-  独占读写，同一文档的多个实例共享同一路径锁。当前写入 schema v2 顶层含
+  独占读写，同一文档的多个实例共享同一路径锁。当前写入 schema v3 顶层含
   `schema_version/revision/updated_at`，条目按规范化 source key 索引，保存
   原始 source、状态（`candidate`/`rejected`/`accepted`）、条目级首次与最近
   观察时间、策略版本、多个 target 建议、用户接受的最终 target 与被拒绝
-  target 列表。P1-03 起每个 target 建议持久保存真实观察次数
+  target 列表；P1-04 为已接受候选增加 `locked` 用户决定，锁定后拒绝修改
+  accepted target 或改为 rejected，自动观察仍只能更新统计。P1-03 起每个 target 建议持久保存真实观察次数
   （`observations`）、去重页码（`pages`，不同页覆盖数可由
   `distinct_page_count` 审计）与 target 级最近观察时间（`last_observed_at`）；
   同一批 `record_observations` 先按（规范化 source、target、页码、证据）
@@ -142,11 +144,13 @@ P0-02 起，术语持久化按“用户决定”和“模型候选”两类语�
   建议统计更高也不改写。source 整体 rejected 的 target 全部默认抑制
   （摘要 `suppressed=True`），后台观察计数/页覆盖/最近观察时间仍继续增长；
   自动流程唯一写入口 `record_observation`/`record_observations` 只合并观察，
-  永不改变状态、`accepted_target` 或拒绝记录。schema v1 文件仍严格读取
-  （target 时间以条目 `last_seen_at` 回填），下一次写入原子升级为 v2；持久
+  永不改变状态、`accepted_target`、`locked` 或拒绝记录。schema v1/v2 文件
+  仍严格读取（v1 target 时间以条目 `last_seen_at` 回填，v1/v2 的 locked
+  默认为 false），下一次写入原子升级为 v3；持久
   文件读取 fail closed：字段缺失/类型异常、normalized key 与 source 不一致、
   重复规范化 source、accepted/rejected 状态与 accepted_target 不一致、无效
-  pages/evidence/rejected_targets、v2 缺/坏 target `last_observed_at`、损坏
+  pages/evidence/rejected_targets、v2/v3 缺/坏 target `last_observed_at`、非布尔
+  locked、非 accepted 条目却 locked、损坏
   migration 标记或未知 schema 版本都拒绝加载并保留原字节，绝不静默过滤/
   更正后写回。`CandidateStore.candidate_summaries()`/`target_summaries(source)`
   与 `CandidateTermService` 提供确定性服务层摘要：target、用户状态/是否默认
@@ -200,6 +204,27 @@ P0-02 起，术语持久化按“用户决定”和“模型候选”两类语�
   global_glossary=None)` 不绕过 sidecar：产物对存在时先在同一锁内验证再返回
   严格校验后的行；CSV/sidecar 任一缺失或损坏都报错，只有两者都不存在时才
   返回空表（尚未编译）。
+
+P1-04 管理边界：`GlossaryManagementService` 把文档用户词表、候选存储与有效
+词表编译器组合成单文档服务。列表支持权威/候选分视图、source/target 搜索、
+白名单排序和有界分页；候选响应包含 target 级观察次数、1-based 命中页码与
+有界证据。每个响应返回复合 revision `{user, candidates}`；每次写操作必须同时
+携带两份期望 revision，并在按规范路径排序取得 user/candidate 两把 RLock 后再次
+核对，两个标签页或自动观察产生的过期写入返回 409，绝不静默覆盖。写操作还必须
+携带当前 `document_id`，并经 `AppState.with_document_cache` 在状态锁内保持文档
+身份与缓存目录稳定；存在 active translation job 时所有术语写端点先返回
+`translation_busy`，避免翻译期间替换其有效词表输入。正常变更释放输入锁后调用
+`compile_effective_glossary` 原子重编译；若用户决定已持久化但编译失败，API 返回
+`glossary_compile_failed`、`decision_saved=true` 与最新 revision，前端刷新真实
+状态并明确提示，不把部分失败伪装成成功。
+
+管理输入限制为 source 200、target/note 500 字符；拒绝 C0/C1 控制字符及
+`= + - @` 开头的 CSV 公式载荷。导入只接受 `source,target` 加可选
+`locked,note`，最多 1 MiB/1000 行，整批校验后由 `UserGlossaryStore.add_many`
+单 revision 原子追加；任一坏行、批内重复或已有 source 冲突会整批拒绝。导出
+只导出当前文档用户术语，并对历史不安全值 fail closed；全局
+`docs/glossary.csv` 继续是只读展示和现有手工编辑入口。API 错误只返回稳定短码
+和固定安全摘要，不回显 source/target、证据、Prompt 或存储异常原文。
 
 严格正文路径（P0-04）：单页/批量路由先调用 `coordinator.start(...)` 原子占用
 任务槽，成功后才执行 `strict_glossary.prepare_strict_translation_context(snapshot)`
@@ -288,8 +313,8 @@ job/document identity 下复用同一
 数量/状态/稳定短码，不记录术语正文、target、译文路径或异常原文。
 
 输入冻结边界：`coordinator.start` 先于严格术语准备占位，因此当前翻译生产者从
-占位到 SSE 结束期间不能插入文档切换，也不会重新编译其他文档。未来 P1-04 术语
-编辑 API 必须沿用同一活动任务边界：活动翻译任务期间拒绝修改权威/候选输入，
+占位到 SSE 结束期间不能插入文档切换，也不会重新编译其他文档。P1-04 术语
+编辑 API 沿用同一活动任务边界：活动翻译任务期间拒绝修改权威/候选输入，
 避免正在被 SSE 消费的 `StrictTranslationContext` 与磁盘输入之间出现未定义竞态。
 
 路径控制：文档级存储只接受 64 位小写十六进制 PDF 哈希目录名
@@ -410,6 +435,7 @@ job/document identity 下复用同一
 | `translator.js` | `translateCurrentPage()` / `translateBatch()`：fetch + SSE 回调编排 |
 | `client-error.js` | 采集 `window` 的 `error`/`unhandledrejection`，白名单清洗后经 sendBeacon（回退 keepalive fetch）上报 `/api/client-errors`；上报失败不递归 |
 | `config-panel.js` | 配置中心面板：分组渲染、provider 联动、API Key 密码框不回显、加载/保存状态与重启提示 |
+| `glossary-panel.js` | P1-04 术语管理面板：权威/候选分栏、搜索排序分页、文档词条 CRUD/锁定、候选接受前改译法/拒绝/锁定、证据统计、CSV 导入导出、revision 冲突刷新与失败恢复；所有服务端文本只经 `textContent` 渲染 |
 
 对齐事实：打开 PDF 时 `createAlignmentController` 安装滚动监听；翻译图片加载完成、Ctrl+滚轮/重置缩放、`scrollToPage` 均显式走 controller 的 `onImageLoaded`/`onZoomChange`/`setLockTarget+realign`。前端重叠操作保护由翻译 UI 状态机承担（运行中拒绝/忽略新操作并禁用控件），只阻止同一浏览器页内的重叠操作，不是服务端锁。
 
@@ -429,10 +455,17 @@ job/document identity 下复用同一
 | `POST /api/client-errors` | 前端全局错误上报：白名单字段（kind/message/source/line/column/stack）、正文 ≤8KB、控制字符折叠后记 WARNING；仅 loopback 来源可访问，否则 403 `client_errors_local_only`；不记录请求 headers/cookies/prompt |
 | `GET /api/config` | 返回配置中心 schema + 当前值 + revision（API Key 脱敏）；仅 loopback 来源可访问，否则 403 `config_local_only` |
 | `PUT /api/config` | 白名单校验并原子保存 config.toml（revision 乐观并发）；成功返回 `restart_required=true`；仅 loopback 来源可访问，否则 403 `config_local_only` |
+| `GET /api/glossary` | 按当前 `document_id` 返回权威或候选视图、复合 revision、搜索/排序/分页结果、候选统计与有界证据；仅 loopback |
+| `POST/PUT/DELETE /api/glossary/terms` | 新建、编辑 source/target/note 或删除文档用户术语；写入要求当前文档身份、复合 revision 且无 active translation job |
+| `POST /api/glossary/terms/lock` | 锁定/解锁文档用户术语或 accepted 候选；锁定项不能编辑、拒绝或删除 |
+| `POST /api/glossary/candidates/accept` | 接受候选，可在接受前提交用户最终 target；成功后原子重编译有效词表 |
+| `POST /api/glossary/candidates/reject` | 拒绝候选或删除未锁定的 accepted 候选，使其不再影响正文 |
+| `POST /api/glossary/import` | 安全、整批原子追加当前文档 CSV；限制 1 MiB/1000 行并拒绝公式注入、控制字符、重复与冲突 |
+| `GET /api/glossary/export` | 下载当前文档用户术语 CSV；不改写或导出全局 `docs/glossary.csv` |
 
 Blueprint 级 `@bp.app_errorhandler(404)` 返回 JSON，不计入上述路由表。SSE 事件类型包括 `batch_info`、`progress`（含 stage/stage_current/stage_total，重试阶段为 `glossary_retry`）、`error`、`finish`，以及空行心跳。P0-05 提交门错误码稳定为：`glossary_compliance_failed`（重试后仍不合规，不提交、job failed）与 `glossary_verification_unavailable`（源 PDF 或译文缺路径/打不开/缺页/空文本/不可提取，不提交、job failed）；上游普通失败仍为 `translation_error`，项目内部异常仍为 `internal_error`。两者之后都不再发 `finish`。有活跃术语时按 attempt 分配明确进度窗口：attempt1 progress 钳制 0..95（上游 `finish`=95）、attempt2 progress 钳制 95..99（上游 `finish`=99，`glossary_retry` 阶段 `stage_current=2/2`）、最终验证通过提交=100，全序列单调不倒退；无活跃词条路径保持既有事件字节不变。
 
-互斥响应：active job 存在时，新的单页/批量翻译请求以及 `/api/open` 返回 HTTP 409，JSON 至少包含 `error`（明确中文提示）、稳定 `code="translation_busy"` 和 `active_job_id`。前端已有的非 2xx JSON 错误路径会直接显示服务端提示。
+互斥响应：active job 存在时，新的单页/批量翻译请求、`/api/open` 以及所有术语写端点返回 HTTP 409，JSON 至少包含 `error`（明确中文提示）、稳定 `code="translation_busy"` 和 `active_job_id`。前端已有的非 2xx JSON 错误路径会直接显示服务端提示。
 
 ## 日志与错误传播
 
@@ -484,9 +517,9 @@ debug 开启时，单页/批量翻译在 `debug_trace.debug_session(...)` 内把
 
 `pyproject.toml` 是唯一直接依赖声明源（`project.dependencies` 运行依赖、`project.optional-dependencies.dev` 开发工具）；已删除 `requirements.txt`/`requirements-dev.txt`。`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从 `pyproject.toml`（含 dev extra）生成，header 记录真实命令（用 `CUSTOM_COMPILE_COMMAND` 规避 pip-tools 7.6.1 在本环境写入多余 `--no-index` 的怪癖）。锁文件不包含 editable、本机路径或 `file:///` 来源。安装契约：`pip install -r requirements.lock` 后 `pip install -e . --no-deps`；便捷安装 `pip install -e .[dev]` 与可复现安装明确区分。
 
-统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:client-error`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`、`run-config-panel-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
+统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:client-error`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`、`run-config-panel-tests.mjs`、`run-glossary-panel-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
 
-覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-08-31 P1-01 主审修订核验值）：全局 line 93.6%、branch 87.4%，关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
+覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-08-31 P1-04 核验值）：全局 line 92.9%、branch 85.7%，关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
 
 测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
 
@@ -518,8 +551,8 @@ P1-03 候选统计与确定性建议回归：`tests/test_term_model.py` 固定�
 （accepted target > 普通未拒绝 > rejected target；组内不同页覆盖数降序 →
 观察次数降序 → 字典序）与摘要形状；`tests/test_candidate_store.py` 固定
 “错误首译 1 次 + 正确译法 10 次后正确译法成为首选且 `accept` 无参取它”、
-同一批 observations 任意排列（含重复项）统计与持久化字节一致、v1
-`term_candidates.json` 可读且下一次写原子升级为 v2、v2 严格校验 target
+同一批 observations 任意排列（含重复项）统计与持久化字节一致、v1/v2
+`term_candidates.json` 可读且下一次写原子升级为 v3、v2/v3 严格校验 target
 `last_observed_at`（缺失/坏时间戳 fail-closed 且原字节不变）、`accept`
 无参使用确定性首选而非插入顺序、显式 accepted_target 在更高统计自动观察
 下不变、rejected target 后续观察计数/页覆盖/最近观察时间增长但
@@ -530,6 +563,17 @@ time/推荐顺序；`tests/test_candidate_service.py` 固定 `CandidateTermServi
 更高统计自动建议不能改写 accepted target/有效词表，且 v1 候选文件经兼容
 读取仍可编译。并发合并、失败恢复、64-hex 文档目录与 stale/document identity
 回归沿用既有用例继续通过。
+
+P1-04 术语管理回归：`tests/test_glossary_management.py` 固定文档权威 CRUD、
+source/target 同时编辑、用户与 accepted 候选锁定、自动观察不能改变锁定决定、
+复合 revision 冲突、候选状态/统计/1-based 页码/证据序列化、有效词表同步更新、
+CSV 整批导入/导出与公式注入/控制字符拒绝、编译部分失败不泄露输入；
+`tests/test_glossary_routes.py` 穿过真实 Flask route/AppState/磁盘缓存，固定
+loopback-only、document_id 过期、active job 互斥、安全错误、分页、接受/拒绝、
+CSV 与双标签 revision 409；`tests/run-glossary-panel-tests.mjs` 用 jsdom 固定
+新增/编辑/删除/锁定、接受前改 target、拒绝、CSV、冲突刷新、编译失败恢复、
+Esc/焦点恢复，以及 source/target/note/evidence 全部按文本渲染、不生成不受信任
+HTML 节点。
 
 术语状态模型与迁移回归（P0-02）：`tests/test_term_model.py`、`tests/test_path_locks.py`、`tests/test_user_glossary.py`、`tests/test_candidate_store.py` 与 `tests/test_legacy_migration.py` 覆盖规范化/校验（含 strategy_version 与控制字符对称校验）、按规范路径共享锁（含两个不同 Store 实例并发写同一文档）、文档级权威词表 CRUD 与锁定、revision 冲突、原子写失败保留旧版本、损坏/schema/字段类型 fail-closed 且原字节不变、旧累计 CSV 的幂等合入迁移（保留 accepted/rejected 用户状态、并发迁移只合入一次、自动合并与迁移共用 cumulative 锁同一快照、备份不覆盖/目录 fail-closed、无半备份、失败重试）以及自动合并拒绝受保护文件名；全部使用 pytest 临时数据根。
 

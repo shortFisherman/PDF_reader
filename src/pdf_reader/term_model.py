@@ -11,8 +11,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Literal
 
-CANDIDATE_SCHEMA_VERSION = 2
+CANDIDATE_SCHEMA_VERSION = 3
 CANDIDATE_SCHEMA_VERSION_V1 = 1
+CANDIDATE_SCHEMA_VERSION_V2 = 2
 USER_GLOSSARY_SCHEMA_VERSION = 1
 
 LEGACY_CUMULATIVE_FILENAME = "cumulative_glossary.csv"
@@ -163,6 +164,7 @@ class CandidateEntry:
     targets: list[TargetSuggestion] = field(default_factory=list)
     accepted_target: str | None = None
     rejected_targets: list[str] = field(default_factory=list)
+    locked: bool = False
 
     @property
     def source_key(self) -> str:
@@ -193,6 +195,7 @@ class CandidateSuggestionSummary:
     source_key: str
     status: CandidateStatus
     accepted_target: str | None
+    locked: bool
     first_seen_at: datetime
     last_seen_at: datetime
     targets: tuple[CandidateTargetSummary, ...]
@@ -252,6 +255,7 @@ def summarize_candidate_entry(entry: CandidateEntry) -> CandidateSuggestionSumma
         source_key=entry.source_key,
         status=entry.status,
         accepted_target=entry.accepted_target,
+        locked=entry.locked,
         first_seen_at=entry.first_seen_at,
         last_seen_at=entry.last_seen_at,
         targets=targets,

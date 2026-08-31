@@ -367,6 +367,17 @@ class AppState:
             cumulative_path = self._cache_dir / self._pdf_hash / "cumulative_glossary.csv"
             return merge_func(cumulative_path, extracted_glossary_path)
 
+    def with_document_cache(
+        self,
+        expected_document_id: str,
+        operation: Callable[[Path], T],
+    ) -> T:
+        """在文档身份与状态锁保持稳定时执行一次文档缓存操作。"""
+        with self._lock:
+            self._require_document_locked(expected_document_id)
+            assert self._pdf_hash is not None
+            return operation(self._cache_dir / self._pdf_hash)
+
     def is_doc_open(self) -> bool:
         return self._left_doc is not None
 

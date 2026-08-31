@@ -110,6 +110,7 @@ class UserGlossaryStore:
         source: str,
         target: str,
         *,
+        new_source: str | None = None,
         note: str | None = None,
         expected_revision: int | None = None,
     ) -> tuple[AuthoritativeTerm, int]:
@@ -119,8 +120,12 @@ class UserGlossaryStore:
             index, existing = _find_term(terms, source)
             if existing.locked:
                 raise GlossaryLockedError(f"locked term cannot be edited: {existing.source!r}")
+            edited_source = existing.source if new_source is None else validate_term_text(new_source, "source")
+            edited_key = normalize_source_key(edited_source)
+            if any(i != index and term.source_key == edited_key for i, term in enumerate(terms)):
+                raise GlossaryConflictError(f"source already exists: {edited_source!r}")
             updated = AuthoritativeTerm(
-                source=existing.source,
+                source=edited_source,
                 target=validate_term_text(target, "target"),
                 scope=existing.scope,
                 locked=existing.locked,
@@ -130,6 +135,38 @@ class UserGlossaryStore:
             )
             terms[index] = updated
             return updated, self._write(terms, revision)
+
+    def add_many(
+        self,
+        records: list[tuple[str, str, bool, str]],
+        *,
+        expected_revision: int | None = None,
+    ) -> tuple[list[AuthoritativeTerm], int]:
+        """原子追加一批文档权威术语；任一冲突或非法行都会整批拒绝。"""
+        with self._lock:
+            terms, revision = self._read()
+            _check_revision(revision, expected_revision)
+            existing_keys = {term.source_key for term in terms}
+            prepared: list[AuthoritativeTerm] = []
+            incoming_keys: set[str] = set()
+            for source, target, locked, note in records:
+                if not isinstance(locked, bool):
+                    raise TermStoreError("locked must be a boolean")
+                term = AuthoritativeTerm(
+                    source=validate_term_text(source, "source"),
+                    target=validate_term_text(target, "target"),
+                    scope="document",
+                    locked=locked,
+                    note=validate_note(note),
+                )
+                if term.source_key in existing_keys or term.source_key in incoming_keys:
+                    raise GlossaryConflictError(f"source already exists: {term.source!r}")
+                incoming_keys.add(term.source_key)
+                prepared.append(term)
+            if not prepared:
+                return [], revision
+            terms.extend(prepared)
+            return prepared, self._write(terms, revision)
 
     def delete(
         self,

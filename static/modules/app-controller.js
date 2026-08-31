@@ -25,6 +25,7 @@ export function createReaderAppController({
     TranslationUIController,
     createReaderSession,
     createConfigPanel = null,
+    createGlossaryPanel = null,
     fetchImpl = fetch,
     windowObj = window,
     documentObj = document,
@@ -45,6 +46,7 @@ export function createReaderAppController({
     let zoomInst = null;
     let progressCleanup = null;
     let configPanel = null;
+    let glossaryPanel = null;
     let clientErrorReporter = null;
 
     function createProgressCleanup() {
@@ -108,6 +110,8 @@ export function createReaderAppController({
         pageCount = data.page_count;
         pageHeight = data.page_height;
         pageWidth = data.page_width;
+        if (glossaryPanel) glossaryPanel.setDocument(data.document_id);
+        if (els.glossaryBtn) els.glossaryBtn.disabled = false;
 
         els.leftCol.innerHTML = '';
         els.rightCol.innerHTML = '';
@@ -374,6 +378,13 @@ export function createReaderAppController({
             });
         }
 
+        if (createGlossaryPanel && els.glossaryBtn) {
+            glossaryPanel = createGlossaryPanel({ fetchImpl, windowObj, documentObj, api: API });
+            els.glossaryBtn.addEventListener('click', () => {
+                glossaryPanel.open(els.glossaryBtn);
+            });
+        }
+
         els.openBtn.addEventListener('click', openPdf);
         els.pdfPathInput.addEventListener('keydown', e => {
             if (e.key === 'Enter') openPdf();
@@ -414,6 +425,9 @@ export function createReaderAppController({
         if (configPanel) {
             configPanel.dispose();
         }
+        if (glossaryPanel) {
+            glossaryPanel.dispose();
+        }
         if (clientErrorReporter) {
             clientErrorReporter.uninstall();
             clientErrorReporter = null;
@@ -427,5 +441,6 @@ export function createReaderAppController({
         getSession: () => session,
         getTranslationController: () => translationController,
         getConfigPanel: () => configPanel,
+        getGlossaryPanel: () => glossaryPanel,
     };
 }

@@ -7,6 +7,7 @@ import pytest
 from pdf_reader.term_model import (
     CANDIDATE_SCHEMA_VERSION,
     CANDIDATE_SCHEMA_VERSION_V1,
+    CANDIDATE_SCHEMA_VERSION_V2,
     LEGACY_CUMULATIVE_STRATEGY,
     PROTECTED_AUTHORITATIVE_FILENAMES,
     USER_GLOSSARY_SCHEMA_VERSION,
@@ -61,7 +62,8 @@ def test_candidate_entry_defaults_are_safe():
 def test_schema_versions_are_pinned():
     assert USER_GLOSSARY_SCHEMA_VERSION == 1
     assert CANDIDATE_SCHEMA_VERSION_V1 == 1
-    assert CANDIDATE_SCHEMA_VERSION == 2
+    assert CANDIDATE_SCHEMA_VERSION_V2 == 2
+    assert CANDIDATE_SCHEMA_VERSION == 3
     assert LEGACY_CUMULATIVE_STRATEGY == "legacy-cumulative-csv/1"
 
 

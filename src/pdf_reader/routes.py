@@ -3,7 +3,7 @@ import ipaddress
 import logging
 import os
 import re
-from typing import cast
+from typing import Literal, cast
 
 from flask import (
     Blueprint,
@@ -17,10 +17,24 @@ from flask import (
 )
 from werkzeug.exceptions import HTTPException
 
-from pdf_reader import config, config_editor, glossary_service, sse_stream, strict_glossary
+from pdf_reader import config, config_editor, glossary_service, paths, sse_stream, strict_glossary
 from pdf_reader.file_hash import sha256
+from pdf_reader.glossary_management import (
+    GlossaryEffectiveUpdateError,
+    GlossaryManagementRevisionConflict,
+    GlossaryManagementService,
+    GlossaryRequestError,
+    parse_revision_token,
+)
 from pdf_reader.pdf_renderer import render_page
+from pdf_reader.state import StaleDocumentError
 from pdf_reader.task_logging import STATUS_STARTED, task_context_from_indices, task_log
+from pdf_reader.term_model import (
+    GlossaryConflictError,
+    GlossaryLockedError,
+    TermNotFoundError,
+    TermStoreError,
+)
 from pdf_reader.translation_coordinator import (
     CoordinatorShutdownError,
     TranslationBusyError,
@@ -96,6 +110,105 @@ def _loopback_config_guard() -> tuple | None:
         "配置中心仅允许本机访问，请通过 127.0.0.1 或 ::1 操作",
         403,
         "config_local_only",
+    )
+
+
+def _loopback_glossary_guard() -> tuple | None:
+    if _is_loopback_remote_addr(request.remote_addr):
+        return None
+    logger.warning("glossary management access rejected from non-loopback remote_addr=%r", request.remote_addr)
+    return error_response("术语管理仅允许本机访问", 403, "glossary_local_only")
+
+
+def _glossary_write_guard() -> tuple | None:
+    denied = _loopback_glossary_guard()
+    if denied is not None:
+        return denied
+    active_job = _get_coordinator().active_job
+    if active_job is not None:
+        return translation_busy_response(active_job)
+    return None
+
+
+def _glossary_document_id(data: dict[str, object] | None = None) -> str | None:
+    value: object = request.args.get("document_id") if data is None else data.get("document_id")
+    return value if isinstance(value, str) and value else None
+
+
+def _glossary_service_call(document_id: str | None, operation):
+    if document_id is None:
+        raise GlossaryRequestError("document_id is required")
+    state = _get_state()
+    snapshot = state.translation_snapshot()
+    if snapshot.document_id != document_id:
+        raise StaleDocumentError("stale glossary document")
+    return state.with_document_cache(
+        document_id,
+        lambda document_dir: operation(GlossaryManagementService(document_dir, paths.get_glossary_path())),
+    )
+
+
+def _glossary_error(exc: Exception) -> tuple:
+    if isinstance(exc, GlossaryManagementRevisionConflict):
+        return (
+            jsonify(
+                {
+                    "code": "glossary_revision_conflict",
+                    "error": "术语数据已被其他页面更新，请刷新后重试",
+                    "revision": exc.actual_token.as_dict(),
+                }
+            ),
+            409,
+        )
+    if isinstance(exc, GlossaryConflictError):
+        return error_response("同一 source 的术语已经存在", 409, "glossary_conflict")
+    if isinstance(exc, GlossaryLockedError):
+        return error_response("锁定术语必须先解锁才能修改或删除", 409, "glossary_locked")
+    if isinstance(exc, TermNotFoundError):
+        return error_response("术语不存在或已被删除", 404, "term_not_found")
+    if isinstance(exc, GlossaryEffectiveUpdateError):
+        return (
+            jsonify(
+                {
+                    "code": "glossary_compile_failed",
+                    "error": "用户决定已保存，但有效词表更新失败；请刷新后重试",
+                    "decision_saved": True,
+                    "revision": exc.revisions.as_dict(),
+                }
+            ),
+            500,
+        )
+    if isinstance(exc, GlossaryRequestError):
+        return error_response("术语请求无效，请检查字段、长度和 CSV 内容", 400, "invalid_term")
+    if isinstance(exc, StaleDocumentError):
+        return error_response("当前文档已变化，请重新打开术语面板", 409, "stale_document")
+    if isinstance(exc, ValueError) and str(exc) == "no document opened":
+        return error_response("no document opened", 400, "no_document_opened")
+    if isinstance(exc, (ValueError, TermStoreError)):
+        logger.warning("glossary management storage failure type=%s", type(exc).__name__)
+        return error_response("术语存储失败，请查看服务端日志", 500, "glossary_storage_failed")
+    raise exc
+
+
+def _glossary_json(allowed: set[str], required: set[str]) -> dict[str, object]:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) - allowed or not required.issubset(data):
+        raise GlossaryRequestError("invalid JSON payload")
+    return cast(dict[str, object], data)
+
+
+def _glossary_success(result) -> Response:
+    item, revision, compiled = result
+    return jsonify(
+        {
+            "ok": True,
+            "item": {
+                "source": item.source,
+                "target": getattr(item, "target", getattr(item, "accepted_target", None)),
+            },
+            "revision": revision.as_dict(),
+            "effective_rows": compiled.rows,
+        }
     )
 
 
@@ -453,6 +566,233 @@ def translate_batch():
 def translated_pages():
     state = _get_state()
     return jsonify({"pages": sorted(list(state.translated_pages))})
+
+
+def _glossary_query_int(name: str, default: int) -> int:
+    raw = request.args.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise GlossaryRequestError(f"invalid query field: {name}") from exc
+
+
+@bp.route("/api/glossary", methods=["GET"])
+def get_glossary():
+    denied = _loopback_glossary_guard()
+    if denied is not None:
+        return denied
+    try:
+        view = request.args.get("view", "authoritative")
+        order = request.args.get("order", "asc")
+        if view not in ("authoritative", "candidates") or order not in ("asc", "desc"):
+            raise GlossaryRequestError("invalid glossary list options")
+        result = _glossary_service_call(
+            _glossary_document_id(),
+            lambda service: service.list_view(
+                view=cast(Literal["authoritative", "candidates"], view),
+                query=request.args.get("q", ""),
+                sort=request.args.get("sort", "source"),
+                order=cast(Literal["asc", "desc"], order),
+                page=_glossary_query_int("page", 1),
+                page_size=_glossary_query_int("page_size", 20),
+            ),
+        )
+        return jsonify(result)
+    except Exception as exc:
+        return _glossary_error(exc)
+
+
+@bp.route("/api/glossary/terms", methods=["POST"])
+def add_glossary_term():
+    denied = _glossary_write_guard()
+    if denied is not None:
+        return denied
+    try:
+        data = _glossary_json(
+            {"document_id", "revision", "source", "target", "locked", "note"},
+            {"document_id", "revision", "source", "target"},
+        )
+        result = _glossary_service_call(
+            _glossary_document_id(data),
+            lambda service: service.add_term(
+                data["source"],
+                data["target"],
+                locked=data.get("locked", False),
+                note=data.get("note", ""),
+                expected=parse_revision_token(data["revision"]),
+            ),
+        )
+        return _glossary_success(result), 201
+    except Exception as exc:
+        return _glossary_error(exc)
+
+
+@bp.route("/api/glossary/terms", methods=["PUT"])
+def edit_glossary_term():
+    denied = _glossary_write_guard()
+    if denied is not None:
+        return denied
+    try:
+        data = _glossary_json(
+            {"document_id", "revision", "source", "new_source", "target", "note"},
+            {"document_id", "revision", "source", "new_source", "target"},
+        )
+        result = _glossary_service_call(
+            _glossary_document_id(data),
+            lambda service: service.edit_term(
+                data["source"],
+                data["new_source"],
+                data["target"],
+                note=data.get("note", ""),
+                expected=parse_revision_token(data["revision"]),
+            ),
+        )
+        return _glossary_success(result)
+    except Exception as exc:
+        return _glossary_error(exc)
+
+
+@bp.route("/api/glossary/terms", methods=["DELETE"])
+def delete_glossary_term():
+    denied = _glossary_write_guard()
+    if denied is not None:
+        return denied
+    try:
+        data = _glossary_json(
+            {"document_id", "revision", "source"},
+            {"document_id", "revision", "source"},
+        )
+        result = _glossary_service_call(
+            _glossary_document_id(data),
+            lambda service: service.delete_term(
+                data["source"],
+                expected=parse_revision_token(data["revision"]),
+            ),
+        )
+        return _glossary_success(result)
+    except Exception as exc:
+        return _glossary_error(exc)
+
+
+@bp.route("/api/glossary/terms/lock", methods=["POST"])
+def lock_glossary_term():
+    denied = _glossary_write_guard()
+    if denied is not None:
+        return denied
+    try:
+        data = _glossary_json(
+            {"document_id", "revision", "source", "locked", "origin"},
+            {"document_id", "revision", "source", "locked"},
+        )
+        result = _glossary_service_call(
+            _glossary_document_id(data),
+            lambda service: service.set_term_locked(
+                data["source"],
+                data["locked"],
+                origin=data.get("origin", "user"),
+                expected=parse_revision_token(data["revision"]),
+            ),
+        )
+        return _glossary_success(result)
+    except Exception as exc:
+        return _glossary_error(exc)
+
+
+@bp.route("/api/glossary/candidates/accept", methods=["POST"])
+def accept_glossary_candidate():
+    denied = _glossary_write_guard()
+    if denied is not None:
+        return denied
+    try:
+        data = _glossary_json(
+            {"document_id", "revision", "source", "target"},
+            {"document_id", "revision", "source", "target"},
+        )
+        result = _glossary_service_call(
+            _glossary_document_id(data),
+            lambda service: service.accept_candidate(
+                data["source"],
+                data["target"],
+                expected=parse_revision_token(data["revision"]),
+            ),
+        )
+        return _glossary_success(result)
+    except Exception as exc:
+        return _glossary_error(exc)
+
+
+@bp.route("/api/glossary/candidates/reject", methods=["POST"])
+def reject_glossary_candidate():
+    denied = _glossary_write_guard()
+    if denied is not None:
+        return denied
+    try:
+        data = _glossary_json(
+            {"document_id", "revision", "source", "target"},
+            {"document_id", "revision", "source"},
+        )
+        result = _glossary_service_call(
+            _glossary_document_id(data),
+            lambda service: service.reject_candidate(
+                data["source"],
+                target=data.get("target"),
+                expected=parse_revision_token(data["revision"]),
+            ),
+        )
+        return _glossary_success(result)
+    except Exception as exc:
+        return _glossary_error(exc)
+
+
+@bp.route("/api/glossary/import", methods=["POST"])
+def import_glossary_csv():
+    denied = _glossary_write_guard()
+    if denied is not None:
+        return denied
+    try:
+        data = _glossary_json(
+            {"document_id", "revision", "csv"},
+            {"document_id", "revision", "csv"},
+        )
+        result = _glossary_service_call(
+            _glossary_document_id(data),
+            lambda service: service.import_csv(
+                data["csv"],
+                expected=parse_revision_token(data["revision"]),
+            ),
+        )
+        imported, revision, compiled = result
+        return jsonify(
+            {
+                "ok": True,
+                "imported": len(imported),
+                "revision": revision.as_dict(),
+                "effective_rows": compiled.rows,
+            }
+        )
+    except Exception as exc:
+        return _glossary_error(exc)
+
+
+@bp.route("/api/glossary/export", methods=["GET"])
+def export_glossary_csv():
+    denied = _loopback_glossary_guard()
+    if denied is not None:
+        return denied
+    try:
+        csv_text = _glossary_service_call(
+            _glossary_document_id(),
+            lambda service: service.export_csv(),
+        )
+        return Response(
+            csv_text,
+            mimetype="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="document-glossary.csv"'},
+        )
+    except Exception as exc:
+        return _glossary_error(exc)
 
 
 @bp.route("/api/config", methods=["GET"])

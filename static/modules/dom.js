@@ -26,6 +26,7 @@ export function getElements() {
     const toolbarToggle = document.getElementById('toolbar-toggle');
     const toolbarExtras = document.getElementById('toolbar-extras');
     const configBtn = document.getElementById('config-btn');
+    const glossaryBtn = document.getElementById('glossary-btn');
 
     _cache = {
         leftCol,
@@ -51,6 +52,7 @@ export function getElements() {
         toolbarToggle,
         toolbarExtras,
         configBtn,
+        glossaryBtn,
     };
 
     return _cache;

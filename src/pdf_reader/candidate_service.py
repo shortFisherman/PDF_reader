@@ -298,7 +298,7 @@ def _reason_counts(filtered: Sequence[FilteredCandidate]) -> tuple[tuple[str, in
 
 
 class CandidateTermService:
-    """P1-03 服务层边界：候选 target 列表与统计摘要（供未来 P1-04 UI/API 复用）。
+    """P1-03 服务层边界：候选 target 列表与统计摘要（P1-04 管理服务复用同一排序）。
 
     只做 Python 服务层：不新增 HTTP/UI。所有摘要由 ``CandidateStore`` 在路径
     锁内读取并应用确定性推荐排序（accepted target > 普通未拒绝建议 > rejected
