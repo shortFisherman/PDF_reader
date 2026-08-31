@@ -168,7 +168,7 @@
 | P1-04 | P1 | 建立用户术语管理 API 与界面 | `已完成` | P0-02、P0-03 |
 | P1-05 | P1 | 统一单页/批量术语生命周期和失败语义 | `已完成` | P0-05、P1-01 至 P1-04 |
 | P2-01 | P2 | 建立术语黄金样本与质量门槛 | `已完成` | P0-01，可提前建立基线 |
-| P2-02 | P2 | 增加术语诊断、统计和可解释性 | `待处理` | P0/P1 数据模型稳定后 |
+| P2-02 | P2 | 增加术语诊断、统计和可解释性 | `已完成` | P0/P1 数据模型稳定后 |
 | P2-03 | P2 | 收口配置、旧累计词表兼容与用户文档 | `待处理` | P0/P1 主流程完成后 |
 | P2-04 | P2 | 建立上游升级和无补丁治理回归 | `待处理` | P0-01，持续事项 |
 
@@ -741,11 +741,11 @@ cache/<pdf_hash>/effective_glossary.csv   确定性编译产物，不由用户�
 
 ### P2-02 增加术语诊断、统计和可解释性
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：—
+- 状态：`已完成`
+- 完成日期：2026-08-31
+- 完成提交：`a357860`
+- 验证证据：P2-02 定向回归 115 passed（`tests/test_term_diagnostics.py`/`tests/test_candidate_service.py`/`tests/test_candidate_sse.py`/`tests/test_glossary_compliance_flow.py`，含恶意对象格式化边界）；`scripts/verify.ps1` 全绿：1447 Python tests，coverage policy 全局 line 92.8%、branch 86.4%，Mypy、Ruff lint/format、secret scan（694 tracked files）、ESLint 与九个前端测试套件（UI copy、error-safety、client-error、translation-ui 116、translator 48、zoom 31、alignment 20、config panel 80、glossary panel 31）全部通过，术语质量门 PASSED。
+- 剩余问题：无（备注：branch 覆盖率在不同 verify 运行间存在 ±0.1 波动，以当次 verify 输出为准）。
 
 #### 目标状态
 
@@ -759,15 +759,24 @@ cache/<pdf_hash>/effective_glossary.csv   确定性编译产物，不由用户�
 - 候选提取消耗多少时间和 token；
 - 有效词表 revision 是什么。
 
-普通 INFO 日志只记录数量、页码、job/document 摘要和状态，不记录完整正文、完整 Prompt 或 API Key。详细证据保存在受控本地候选存储中，并有长度边界。
+普通 INFO 日志只记录数量、页码、job/document 摘要、状态、安全 revision/event/错误码，不记录完整正文、完整 Prompt 或 API Key。详细证据保存在受控本地候选存储中，并有长度边界。
+
+口径说明（P2-02 固定）：
+
+- `proposed` = 模型返回的原始候选条数；`kept`（日志字段 `kept`，报告字段 `candidates`）= 本地过滤后保留并准备提交的条数——批内计数绝不使用 accepted/rejected 命名；`filtered` = 被本地过滤拒绝的条数，且按 reason（`common_word`/`no_source_match`/`no_evidence_page`/boundary/格式类等稳定 reason 名，白名单复用 `candidate_filter.FILTER_REASONS`）保留计数；`failed` = 唯一事实源 `candidate_failed_count()`，按受控终态集合（`failed`/`source_failed`/`store_failed` 计 1，其余计 0，未知 status 计 0）计算，报告不存冗余 failed 字段。
+- `pending`/`accepted`/`rejected` = 只表示 `CandidateStore` 中的真实持久状态计数（分别按 status=candidate/accepted/rejected 统计），只出现在 commit 摘要；存储统计失败时三者均明确 `unavailable`，不伪造。
+- `elapsed_ms` = 模型候选提取调用耗时（失败路径同样记录）；`usage` = chat completions `usage` 三字段全部为非负 int 才构造 `TokenUsage` 且 `available` 三者全真；缺失/部分/布尔/负值一律 `unavailable`，不伪造。
+- event/status/reason 全部走显式常量白名单（候选过滤 reason 复用 `FILTER_REASONS`，合规 reason/status/event 为 `term_diagnostics` 常量集合）；未知值统一输出 `unknown`，任何原始字符串（含 source/target/prompt/API key/换行）不落日志。
+- commit 的所有返回路径（无 observations、成功、store_failed、identity_rejected/身份 mismatch）都发稳定 `candidate_commit` 摘要；store_failed 摘要显示 `failed=1`；诊断自身失败仍不影响原返回/正文终态。
+- `rev` = 有效词表 sidecar SHA-256 截断 12 字符，进入任务日志前缀；source/target/证据/正文/Prompt/凭据永不进入普通日志。
 
 #### 验收标准
 
-- [ ] 日志能关联 job、document、页码范围和有效词表 revision。
-- [ ] 候选 accepted/rejected/filtered/failed 数量可诊断。
-- [ ] 合规重试和最终违规有稳定事件与错误码。
-- [ ] 不在常规日志泄露正文、完整证据、Prompt 或凭据。
-- [ ] 诊断失败不会阻止正文翻译或损坏术语数据。
+- [x] 日志能关联 job、document、页码范围和有效词表 revision。
+- [x] 候选 accepted/rejected/filtered/failed 数量可诊断（accepted/rejected 为真实用户/持久状态，filtered/failed 为本批计数）。
+- [x] 合规重试和最终违规有稳定事件与错误码。
+- [x] 不在常规日志泄露正文、完整证据、Prompt 或凭据。
+- [x] 诊断失败不会阻止正文翻译或损坏术语数据。
 
 ### P2-03 收口配置、旧累计词表兼容与用户文档
 
@@ -910,3 +919,4 @@ compliance_retry_count = 1
 | 2026-08-31 | P1-02 | 已完成 | `5297eef` | 新增项目本地确定性候选过滤：普通词/结构异常/幻觉拒绝，Unicode 边界匹配，保守术语清洗，逐页精确页码与有界证据，规则版本可审计；不影响用户权威术语或正文有效词表。 |
 | 2026-08-31 | P1-05 | 已完成 | `bd5ff53` | 冻结 job/document/pdf_hash/revision/词条摘要到严格上下文；候选服务拆为两阶段——`prepare` 在严格翻译前读取输入 PDF、模型提取/过滤并返回不可变 `PreparedCandidates`（observations + report + 冻结 identity，绝不写 `CandidateStore`），`commit` 只在 PDF 成功提交后以冻结身份为权威重验 active job 的 job_id/document_id/pdf_hash/document_dir 再原子写 `CandidateStore`（另传 identity 必须完全相等、写目录必须等于冻结 identity.document_dir、无身份 prepared 不得升级，任何 mismatch 均 `identity_rejected` 且不写）；单页/批量共享「输入/活跃词条 → prepare → run_translation → 合规/重试 → 提交 PDF → commit → finish」顺序，prepare 失败只降级正文继续，合规/PDF/断开/取消可已 prepare 但不得 commit，identity 在 prepare 后变化拒绝，commit 失败不反转已提交 finished；系统级回归覆盖候选提取/写入失败、断开、合规与 PDF 写入失败；`scripts/verify.ps1` 全绿（1335 Python tests）。 |
 | 2026-08-31 | P2-01 | 已完成 | `4686598` | 建立三类黄金文本 fixture（医学指南/技术论文/教材）与受控模型响应（解析与后置过滤分别评测），带 AGPL-3.0-only 原创/合成 provenance 元数据；新增 `src/pdf_reader/term_quality.py` 与 `scripts/term_quality_gate.py`：固定普通词污染、`AD` 子串边界、TCS 全称/缩写多表述、错误首译不锁死、rejected 不重复提示；candidate precision（术语识别）与 candidate_target_accuracy（黄金中文）分离考核；有方向指标 batch_minus_single_core_recall_delta 只防批量相对单页退化；所有指标分子/分母/方向/空集合语义进入版本化 metric_definitions；fixture 必需维度（compliance pass/fail/unknown、boundary kept/rejected、store wrong-first/rejected、每响应解析与过滤期望、每类文档 core_terms/common_words）fail-closed；基线校验键集合/值类型/有限性/fixture_sha256；版本化基线 `docs/reports/term-quality-baseline.json` 支持漂移检测与前后对比，质量门已接入 `scripts/verify.ps1`，全部离线、无 API Key、只写临时目录；`scripts/verify.ps1` 全绿（1393 Python tests）。 |
+| 2026-08-31 | P2-02 | 已完成 | `a357860` | 新增 `src/pdf_reader/term_diagnostics.py` 与 `term_extraction.TokenUsage/TermExtractionResult/extract_terms_with_usage`：候选报告扩展 `proposed/elapsed_ms/usage`（failed 由受控 status 集合计算，不存冗余字段），prepare 摘要只含批内 proposed/kept/filtered/failed，commit 的所有返回路径都发 `candidate_commit` 摘要并追加 best-effort 真实持久状态计数 pending/accepted/rejected（统计失败三者均 unavailable）；任务日志前缀增加截断 12 字符的 `rev=`（路由冻结 `effective_glossary_revision`），正文活跃词条数量摘要 `glossary_active_terms`，合规稳定事件 `compliance_pass/fail/unknown/unavailable/retry_scheduled/failed_final`（SSE 错误码不变）；event/status/reason 全部走显式常量白名单（未知 → unknown，先类型/白名单判断再派生 event，任意对象绝不进入格式化），`TokenUsage.available` 三字段全真、缺失/部分/非法一律 unavailable 不伪造；全部诊断经 `safe_task_log`/`_safe_diagnostics`/`_log_diagnostics` 多层故障隔离，格式化/发射/统计/合规诊断抛错均不阻止正文、不改变终态、不损坏术语数据；普通 INFO 日志仍不泄露 source/target/证据/正文/Prompt/凭据；`scripts/verify.ps1` 全绿（1447 Python tests，coverage line 92.8%、branch 86.4%，静态与九个前端套件全部通过）。 |
