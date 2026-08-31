@@ -146,6 +146,7 @@ def test_full_script_explicit_fake_commands(tmp_path):
     assert "Python version: 3.12.0" in result.stdout
     assert "Coverage + Python tests" in result.stdout
     assert "Coverage policy" in result.stdout
+    assert "Term quality gate" in result.stdout
     assert "Mypy" in result.stdout
     assert "JS lint" in result.stdout
     assert "Frontend tests" in result.stdout
@@ -190,6 +191,45 @@ def test_full_script_coverage_policy_failure_short_circuits(tmp_path):
     assert result.returncode != 0
     assert "Coverage policy failed" in result.stderr
     assert not marker.exists(), "npm must not run when coverage policy fails"
+
+
+def test_full_script_term_quality_failure_short_circuits(tmp_path):
+    fake = _fake_bin(tmp_path)
+    _write_cmd(
+        fake / "python.cmd",
+        "@echo off\n"
+        "echo %~f0\n"
+        "echo 3.12.0\n"
+        'echo %* | findstr /C:"term_quality_gate" >nul\n'
+        "if not errorlevel 1 exit /b 1\n"
+        "exit /b 0\n",
+    )
+    marker = tmp_path / "npm-invoked.txt"
+    _write_cmd(fake / "npm.cmd", f'@echo off\necho x > "{marker}"\nexit /b 0\n')
+    python = fake / "python.cmd"
+    env = os.environ.copy()
+    env["PATH"] = str(fake) + os.pathsep + env["PATH"]
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(VERIFY),
+            "-PythonExecutable",
+            str(python),
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode != 0
+    assert "Term quality gate failed" in result.stderr
+    assert not marker.exists(), "npm must not run when term quality gate fails"
 
 
 def test_full_script_invalid_explicit_fails_fast(tmp_path):

@@ -252,63 +252,80 @@ class TermExtractionClient:
         return b"".join(chunks)
 
     def _extract_content(self, raw: bytes) -> str:
-        try:
-            data = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError) as exc:
-            raise TermExtractionParseError("invalid JSON response") from exc
-        if not isinstance(data, dict):
-            raise TermExtractionParseError("invalid JSON response")
-        choices = data.get("choices")
-        if not isinstance(choices, list) or not choices:
-            raise TermExtractionParseError("invalid choices")
-        choice = choices[0]
-        if not isinstance(choice, dict):
-            raise TermExtractionParseError("invalid choices")
-        message = choice.get("message")
-        if not isinstance(message, dict):
-            raise TermExtractionParseError("invalid message")
-        content = message.get("content")
-        if not isinstance(content, str) or not content.strip():
-            raise TermExtractionParseError("empty message content")
-        return content
+        return _extract_content(raw)
 
     def _parse_terms(self, content: str) -> list[TermCandidate]:
-        try:
-            data = json.loads(content)
-        except ValueError as exc:
-            raise TermExtractionParseError("invalid terms JSON") from exc
-        if not isinstance(data, dict):
-            raise TermExtractionParseError("invalid terms JSON")
-        raw_terms = data.get("terms")
-        if not isinstance(raw_terms, list):
-            raise TermExtractionParseError("invalid terms")
-        if len(raw_terms) > MAX_TERMS:
-            raise TermExtractionParseError("too many terms")
-        result: list[TermCandidate] = []
-        seen: set[tuple[str, str]] = set()
-        for item in raw_terms:
-            if not isinstance(item, dict):
-                raise TermExtractionParseError("invalid term item")
-            if set(item) != {"source", "target"}:
-                raise TermExtractionParseError("invalid term item")
-            source = item.get("source")
-            target = item.get("target")
-            if not isinstance(source, str) or not isinstance(target, str):
-                raise TermExtractionParseError("invalid term fields")
-            if len(source) > MAX_TERM_LENGTH or len(target) > MAX_TERM_LENGTH:
-                raise TermExtractionParseError("term too long")
-            try:
-                source = validate_term_text(source, "source")
-                target = validate_term_text(target, "target")
-            except TermStoreError as exc:
-                raise TermExtractionParseError("invalid term fields") from exc
-            key = (normalize_source_key(source), target)
-            if key in seen:
-                continue
-            seen.add(key)
-            result.append(TermCandidate(source=source, target=target))
-        return result
+        return _parse_terms(content)
 
     @staticmethod
     def _backoff(attempt: int) -> float:
         return min(0.5 * float(2 ** (attempt - 1)), 4.0)
+
+
+def parse_model_response(raw: bytes) -> list[TermCandidate]:
+    """P2-01 公开纯解析入口：从受控 chat completions 响应体提取并解析术语。
+
+    与 ``TermExtractionClient.extract_terms`` 共用同一套受控 JSON 解析，
+    供离线黄金样本质量评测复用；不执行任何网络请求。
+    """
+    return _parse_terms(_extract_content(raw))
+
+
+def _extract_content(raw: bytes) -> str:
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise TermExtractionParseError("invalid JSON response") from exc
+    if not isinstance(data, dict):
+        raise TermExtractionParseError("invalid JSON response")
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise TermExtractionParseError("invalid choices")
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        raise TermExtractionParseError("invalid choices")
+    message = choice.get("message")
+    if not isinstance(message, dict):
+        raise TermExtractionParseError("invalid message")
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise TermExtractionParseError("empty message content")
+    return content
+
+
+def _parse_terms(content: str) -> list[TermCandidate]:
+    try:
+        data = json.loads(content)
+    except ValueError as exc:
+        raise TermExtractionParseError("invalid terms JSON") from exc
+    if not isinstance(data, dict):
+        raise TermExtractionParseError("invalid terms JSON")
+    raw_terms = data.get("terms")
+    if not isinstance(raw_terms, list):
+        raise TermExtractionParseError("invalid terms")
+    if len(raw_terms) > MAX_TERMS:
+        raise TermExtractionParseError("too many terms")
+    result: list[TermCandidate] = []
+    seen: set[tuple[str, str]] = set()
+    for item in raw_terms:
+        if not isinstance(item, dict):
+            raise TermExtractionParseError("invalid term item")
+        if set(item) != {"source", "target"}:
+            raise TermExtractionParseError("invalid term item")
+        source = item.get("source")
+        target = item.get("target")
+        if not isinstance(source, str) or not isinstance(target, str):
+            raise TermExtractionParseError("invalid term fields")
+        if len(source) > MAX_TERM_LENGTH or len(target) > MAX_TERM_LENGTH:
+            raise TermExtractionParseError("term too long")
+        try:
+            source = validate_term_text(source, "source")
+            target = validate_term_text(target, "target")
+        except TermStoreError as exc:
+            raise TermExtractionParseError("invalid term fields") from exc
+        key = (normalize_source_key(source), target)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(TermCandidate(source=source, target=target))
+    return result

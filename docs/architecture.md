@@ -7,8 +7,8 @@
 - 核验日期：2026-08-31。事实来源、锁定版本与测试/覆盖率基线见下。
 - 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml`、`tests/test_upstream_contract.py` 和测试收集结果。
 - 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2、tomlkit 0.13.3。
-- 测试基线：`scripts/verify.ps1` 实测 1335 个 Python 测试通过（2026-08-31 P1-05 核验值，含上游契约、文档治理、日志/配置、P0/P1 术语主线、术语管理 API 与生命周期回归）；`package.json` 的 `test:frontend` 定义九个正式前端套件（UI copy、error-safety、client-error、translation-ui、translator、zoom、alignment controller、config panel、glossary panel），verify 全绿。
-- 覆盖率基线：全局 line 92.9%、branch 85.8%（2026-08-31 P1-05 核验值，`coverage run --branch -m pytest` 实测；策略与关键模块 floor 见“测试、CI 与验证入口”）。
+- 测试基线：`scripts/verify.ps1` 实测 1393 个 Python 测试通过（2026-08-31 P2-01 核验值，含上游契约、文档治理、日志/配置、P0/P1 术语主线、术语管理 API 与生命周期回归、P2-01 黄金样本与质量门槛）；`package.json` 的 `test:frontend` 定义九个正式前端套件（UI copy、error-safety、client-error、translation-ui、translator、zoom、alignment controller、config panel、glossary panel），verify 全绿。
+- 覆盖率基线：全局 line 93.0%、branch 86.4%（2026-08-31 P2-01 核验值，`coverage run --branch -m pytest` 实测；策略与关键模块 floor 见“测试、CI 与验证入口”）。
 - 基线说明：测试数量与覆盖率是易腐数字，任何新的架构核对都应以当前源码、锁定文件、测试收集结果与 coverage 报告为准；本文数值只代表 2026-08-31 的核验结果。
 
 ## 系统总览
@@ -93,6 +93,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/glossary_compiler.py` | P0-03 确定性有效词表编译：文档权威 > accepted 候选 > 全局优先级、输入锁内一致快照摘要、同级冲突 fail-closed、CSV + sidecar 原子成对提交、严格 sidecar 校验与 stale 检测 |
 | `src/pdf_reader/strict_glossary.py` | P0-04 严格正文术语路径：迁移→编译→验证的单一准备入口、活跃词条边界匹配与约束 Prompt 合成 |
 | `src/pdf_reader/terminology_compliance.py` | P0-05 独立验证模块：纯文本判定核心 `verify_translated_text`（规范化 + 逐条 pass/fail/unknown）与 PyMuPDF 提取包装 `verify_translated_pdf`（路径/页数/提取异常/空文本边界，委托纯函数）、有界确定性重试纠错块合成 |
+| `src/pdf_reader/term_quality.py` | P2-01 离线术语质量评测：黄金样本 fixture 校验（必需维度/AD-TCS 边界/合规三分支/两条存储主路径/provenance 元数据 fail-closed）、解析/后置过滤/合规/候选存储边界复用、candidate precision 与 candidate_target_accuracy 分离考核、版本化 metric_definitions、阈值与基线键集合/类型/有限性校验、fixture_sha256 防漂移、确定性报告（不联网、不需要 API Key、只写调用方临时目录） |
 | `src/pdf_reader/logging_config.py` | 统一日志管线：同一对控制台 + `logs/pdf_reader.log` 轮转 handler 托管 `pdf_reader`/`werkzeug`/`pdf2zh_next`/`babeldoc`、ISO 元数据行格式与 run_id、sys/threading 未捕获异常钩子、reset 快照恢复 |
 | `src/pdf_reader/debug_trace.py` | 按任务的有界调试会话：`cache/<hash>/debug_trace.log`（2MB × 3，job 过滤，start/end/elapsed/traceback），debug 关闭时零 IO |
 | `templates/index.html` | 唯一 HTML 页面：打开区、双栏、工具栏、始终可见的“配置”按钮 |
@@ -101,8 +102,11 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
 | `tests/test_upstream_contract.py` | P3-06 上游最小契约：固定版本、SettingsModel 消费字段/引擎字段映射、事件映射与未知事件忽略、输出路径与 mono→dual/glossary、协作式取消与 join/is_alive 所有权（离线确定性 fake） |
 | `tests/test_documentation_governance.py` | P3-06 文档治理：常青文档职责边界、链接可解析、上游契约命令一致、易腐数字基线 |
-| `tests/` | pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证、P3-05 缓存与关闭、P3-06 上游契约/文档治理、P3-07 密钥扫描与仓库治理、P0-03 有效词表编译、日志管线/调试轨迹/前端错误上报、配置示例契约、配置中心后端用例）与前端 `.mjs` 测试运行器（含 client-error 与 config panel 用例） |
-| `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、前端测试） |
+| `tests/` | pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证、P3-05 缓存与关闭、P3-06 上游契约/文档治理、P3-07 密钥扫描与仓库治理、P0-03 有效词表编译、日志管线/调试轨迹/前端错误上报、配置示例契约、配置中心后端用例、P2-01 黄金样本/质量门槛）与前端 `.mjs` 测试运行器（含 client-error 与 config panel 用例） |
+| `tests/fixtures/term_quality/fixture.json` | P2-01 版本化黄金样本：三类最小文本 fixture、AGPL-3.0-only 原创/合成 provenance 元数据、人工核心术语/普通词/缩写边界/同义形式标注、模型响应与解析/过滤期望、合规三分支案例与 wrong-first/rejected 两条候选存储场景 |
+| `scripts/term_quality_gate.py` | P2-01 独立稳定质量门：确定性 JSON 报告（含 metric_definitions）、阈值与基线漂移/哈希检查、非法 `--tolerance` 稳定返回 usage code、非零退出、`--update-baseline` 原子更新版本化基线 |
+| `docs/reports/term-quality-baseline.json` | P2-01 版本化基线报告：当前 HEAD 的指标/阈值/metric_definitions_version/fixture_sha256 快照，供 Prompt/过滤规则变化前后对比与漂移检测 |
+| `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、术语质量门、前端测试） |
 | `scripts/secret_scan.py` | 高可信密钥扫描：只扫 Git 跟踪内容，占位示例放行，不输出 secret 值 |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
 | `.github/dependabot.yml` | pip/npm 月度依赖升级 PR |
@@ -537,9 +541,9 @@ debug 开启时，单页/批量翻译在 `debug_trace.debug_session(...)` 内把
 
 `pyproject.toml` 是唯一直接依赖声明源（`project.dependencies` 运行依赖、`project.optional-dependencies.dev` 开发工具）；已删除 `requirements.txt`/`requirements-dev.txt`。`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从 `pyproject.toml`（含 dev extra）生成，header 记录真实命令（用 `CUSTOM_COMPILE_COMMAND` 规避 pip-tools 7.6.1 在本环境写入多余 `--no-index` 的怪癖）。锁文件不包含 editable、本机路径或 `file:///` 来源。安装契约：`pip install -r requirements.lock` 后 `pip install -e . --no-deps`；便捷安装 `pip install -e .[dev]` 与可复现安装明确区分。
 
-统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:client-error`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`、`run-config-panel-tests.mjs`、`run-glossary-panel-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
+统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ 术语质量门（`scripts/term_quality_gate.py`，黄金样本指标阈值 + 版本化基线漂移对比，失败非零退出）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:client-error`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`、`run-config-panel-tests.mjs`、`run-glossary-panel-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
 
-覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-08-31 P1-05 核验值）：全局 line 92.9%、branch 85.8%，关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
+覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-08-31 P2-01 核验值）：全局 line 93.0%、branch 86.4%，关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
 
 测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
 
@@ -604,6 +608,27 @@ prepare/commit 失败仍 finish、合规/PDF 替换/断开不 commit、身份变
 `tests/test_system_concurrency_failure.py` 增加单页/批量候选存储写失败、
 单页/批量候选提取失败、断开、PDF 替换失败与合规失败，最终
 PDF/候选文件/coordinator/worker/工作区状态一致（该文件现收集 22 个系统用例）。
+
+P2-01 术语质量门槛回归：`tests/fixtures/term_quality/fixture.json` 提供医学指南、
+技术论文、教材/一般技术文档三类最小黄金文本与人工标注（核心术语、普通词、
+`AD` 缩写边界、TCS 全称/缩写多种表述、期望中文），并携带“原创/合成、按仓库
+AGPL-3.0-only 留存”的 provenance/license 元数据；模型响应以受控 chat
+completions 响应体保存，解析与后置过滤可分别评测；`src/pdf_reader/term_quality.py`
+复用 `parse_model_response`/`filter_candidates`/`CandidateStore`/`verify_translated_text`
+纯边界，把“术语识别”与“中文译法”分开考核：candidate precision 只算 source/forms
+命中，candidate_target_accuracy 只在 TP 候选上核对 golden expected_target；其余
+指标含 core term recall、普通词污染率、用户术语合规率、repeat-run determinism、
+有方向指标 batch_minus_single_core_recall_delta（batch_recall - single_page_recall，
+阈值只防批量相对单页退化）、rejected 候选重复提示率与错误首译锁死率。全部指标的
+分子/分母/方向/空集合语义在版本化 `metric_definitions` 中随报告输出；fixture
+校验 fail-closed 要求 compliance 覆盖 pass/fail/unknown、boundary 覆盖
+AD/TCS 独立命中与子串误命中、store 同时包含 wrong-first 与 rejected 两条主路径、
+每个 response 的解析与过滤期望非空、每类文档 core_terms/common_words 非空。
+`scripts/term_quality_gate.py` 是独立稳定命令（`--json` 输出确定性报告、
+`--update-baseline` 原子更新 `docs/reports/term-quality-baseline.json`、基线键集合/
+值类型/有限性与 fixture_sha256 不匹配或低于阈值/漂移超出容差时非零退出），已接入
+`scripts/verify.ps1`；评测不联网、不需要 API Key、只写 pytest/临时目录，基线漂移、
+NaN/Infinity/类型错误、缺失必需维度与目标译法回归均有测试（`tests/test_term_quality*.py`）。
 
 术语状态模型与迁移回归（P0-02）：`tests/test_term_model.py`、`tests/test_path_locks.py`、`tests/test_user_glossary.py`、`tests/test_candidate_store.py` 与 `tests/test_legacy_migration.py` 覆盖规范化/校验（含 strategy_version 与控制字符对称校验）、按规范路径共享锁（含两个不同 Store 实例并发写同一文档）、文档级权威词表 CRUD 与锁定、revision 冲突、原子写失败保留旧版本、损坏/schema/字段类型 fail-closed 且原字节不变、旧累计 CSV 的幂等合入迁移（保留 accepted/rejected 用户状态、并发迁移只合入一次、自动合并与迁移共用 cumulative 锁同一快照、备份不覆盖/目录 fail-closed、无半备份、失败重试）以及自动合并拒绝受保护文件名；全部使用 pytest 临时数据根。
 

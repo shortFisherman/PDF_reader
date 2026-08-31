@@ -97,6 +97,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         Invoke-Checked 'Coverage report' { & $pythonCommand -m coverage report }
         Invoke-Checked 'Coverage JSON' { & $pythonCommand -m coverage json -o $coverageJson }
         Invoke-Checked 'Coverage policy' { & $pythonCommand scripts/check_coverage_policy.py $coverageJson }
+        Invoke-Checked 'Term quality gate' { & $pythonCommand scripts/term_quality_gate.py }
         Invoke-Checked 'Mypy' { & $pythonCommand -m mypy }
         Invoke-Checked 'JS lint' { npm run lint:js }
         Invoke-Checked 'Frontend tests' { npm test }

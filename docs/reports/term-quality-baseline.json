@@ -1,0 +1,41 @@
+{
+  "fixture": "tests\\fixtures\\term_quality\\fixture.json",
+  "fixture_sha256": "872fa2734f31d9c82a89f6fb85b2abca672a7f1a92bd9ec08cbc3c9560894717",
+  "metric_definitions_version": 1,
+  "metrics": {
+    "authoritative_compliance_rate": 0.75,
+    "batch_minus_single_core_recall_delta": 0.272727,
+    "batch_recall": 1.0,
+    "boundary_check_pass_rate": 1.0,
+    "candidate_precision": 0.851852,
+    "candidate_target_accuracy": 1.0,
+    "common_word_contamination_rate": 0.0,
+    "compliance_fail_detected_rate": 1.0,
+    "core_term_recall": 0.875,
+    "filter_check_pass_rate": 1.0,
+    "parse_check_pass_rate": 1.0,
+    "rejected_candidate_reprompt_rate": 0.0,
+    "repeat_run_determinism": true,
+    "single_page_recall": 0.727273,
+    "wrong_first_translation_lock_rate": 0.0
+  },
+  "schema_version": 1,
+  "source": "scripts/term_quality_gate.py --update-baseline",
+  "thresholds": {
+    "authoritative_compliance_rate": 0.5,
+    "batch_minus_single_core_recall_delta": -0.25,
+    "batch_recall": 0.8,
+    "boundary_check_pass_rate": 1.0,
+    "candidate_precision": 0.75,
+    "candidate_target_accuracy": 0.9,
+    "common_word_contamination_rate": 0.0,
+    "compliance_fail_detected_rate": 1.0,
+    "core_term_recall": 0.8,
+    "filter_check_pass_rate": 1.0,
+    "parse_check_pass_rate": 1.0,
+    "rejected_candidate_reprompt_rate": 0.0,
+    "repeat_run_determinism": true,
+    "single_page_recall": 0.5,
+    "wrong_first_translation_lock_rate": 0.0
+  }
+}

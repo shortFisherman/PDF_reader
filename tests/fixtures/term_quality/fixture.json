@@ -1,0 +1,437 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "title": "P2-01 术语黄金样本",
+    "created": "2026-08-31",
+    "provenance": "synthetic-original",
+    "license": "AGPL-3.0-only",
+    "statement": "本 fixture 的文本与标注均为本项目为离线质量评测原创/合成，不取自任何真实受版权保护的文档；按仓库 AGPL-3.0-only 许可证留存。"
+  },
+  "documents": [
+    {
+      "id": "medical-guideline-ad-tcs",
+      "category": "medical_guideline",
+      "title": "特应性皮炎与 TCS 指南节选",
+      "pages": [
+        {
+          "page": 1,
+          "text": "Atopic dermatitis (AD) is a chronic inflammatory skin disease. Topical corticosteroids (TCS) remain first-line therapy for AD flares. Benefits, cost, and patient education are important considerations in treatment decisions. Adherence to therapy affects outcomes; adverse events and the shadow of under-treatment are common concerns."
+        },
+        {
+          "page": 2,
+          "text": "The guideline recommends topical corticosteroids for acute AD. TCS are preferred over systemic agents. Using TCS for a short course avoids confusion and burden."
+        }
+      ],
+      "golden": {
+        "core_terms": [
+          {
+            "source": "AD",
+            "forms": ["AD", "Atopic dermatitis", "atopic dermatitis"],
+            "expected_target": "特应性皮炎",
+            "pages": [1, 2]
+          },
+          {
+            "source": "TCS",
+            "forms": ["TCS", "topical corticosteroids", "topical corticosteroid"],
+            "expected_target": "外用糖皮质激素",
+            "pages": [1, 2]
+          },
+          {
+            "source": "adherence",
+            "forms": ["adherence"],
+            "expected_target": "依从性",
+            "pages": [1]
+          },
+          {
+            "source": "systemic agents",
+            "forms": ["systemic agents"],
+            "expected_target": "全身性用药",
+            "pages": [2]
+          }
+        ],
+        "common_words": ["benefits", "cost", "education", "confusion", "burden"]
+      }
+    },
+    {
+      "id": "technical-paper-contrastive",
+      "category": "technical_paper",
+      "title": "对比学习技术论文节选",
+      "pages": [
+        {
+          "page": 1,
+          "text": "Self-attention computes attention weights for every pair of tokens. Multimodal alignment improves retrieval results. Our analysis focuses on the role of the learning rate schedule in contrastive learning."
+        },
+        {
+          "page": 2,
+          "text": "The learning rate schedule is tuned before evaluation. Contrastive learning benefits from a well-chosen temperature. Our study reports mean results for the temperature value; data and analysis are available."
+        }
+      ],
+      "golden": {
+        "core_terms": [
+          {
+            "source": "self-attention",
+            "forms": ["self-attention"],
+            "expected_target": "自注意力",
+            "pages": [1]
+          },
+          {
+            "source": "multimodal alignment",
+            "forms": ["multimodal alignment"],
+            "expected_target": "多模态对齐",
+            "pages": [1]
+          },
+          {
+            "source": "learning rate schedule",
+            "forms": ["learning rate schedule"],
+            "expected_target": "学习率调度",
+            "pages": [1, 2]
+          },
+          {
+            "source": "contrastive learning",
+            "forms": ["contrastive learning"],
+            "expected_target": "对比学习",
+            "pages": [1, 2]
+          }
+        ],
+        "common_words": ["results", "analysis", "role", "study", "data", "mean", "value"]
+      }
+    },
+    {
+      "id": "textbook-network-fundamentals",
+      "category": "textbook_general_technical",
+      "title": "网络基础教材节选",
+      "pages": [
+        {
+          "page": 1,
+          "text": "A router forwards packets based on the destination IP address. The TCP handshake establishes a connection. This chapter provides an overview of the three-way handshake and concludes with a summary of packet loss factors."
+        },
+        {
+          "page": 2,
+          "text": "Packet loss increases latency. The transmission control protocol (TCP) is contrasted with the user datagram protocol (UDP) in the next section. The chapter compares connection-oriented and connectionless transport."
+        }
+      ],
+      "golden": {
+        "core_terms": [
+          {
+            "source": "router",
+            "forms": ["router"],
+            "expected_target": "路由器",
+            "pages": [1]
+          },
+          {
+            "source": "TCP handshake",
+            "forms": ["TCP handshake", "three-way handshake"],
+            "expected_target": "三次握手",
+            "pages": [1]
+          },
+          {
+            "source": "transmission control protocol",
+            "forms": ["transmission control protocol", "TCP"],
+            "expected_target": "传输控制协议",
+            "pages": [1, 2]
+          },
+          {
+            "source": "user datagram protocol",
+            "forms": ["user datagram protocol", "UDP"],
+            "expected_target": "用户数据报协议",
+            "pages": [2]
+          },
+          {
+            "source": "packet loss",
+            "forms": ["packet loss"],
+            "expected_target": "丢包",
+            "pages": [1, 2]
+          }
+        ],
+        "common_words": ["overview", "summary", "factor"]
+      }
+    }
+  ],
+  "model_responses": [
+    {
+      "id": "med-guideline-single",
+      "document_id": "medical-guideline-ad-tcs",
+      "scope": "single_page",
+      "pages": [1],
+      "raw": {
+        "choices": [
+          {
+            "message": {
+              "content": "{\"terms\":[{\"source\":\"AD\",\"target\":\"特应性皮炎\"},{\"source\":\"TCS\",\"target\":\"外用糖皮质激素\"},{\"source\":\"benefits\",\"target\":\"获益\"},{\"source\":\"cost\",\"target\":\"成本\"},{\"source\":\"education\",\"target\":\"教育\"},{\"source\":\"hallucinatedterm\",\"target\":\"幻觉术语\"}]}"
+            }
+          }
+        ]
+      },
+      "expected_parsed_terms": [
+        ["AD", "特应性皮炎"],
+        ["TCS", "外用糖皮质激素"],
+        ["benefits", "获益"],
+        ["cost", "成本"],
+        ["education", "教育"],
+        ["hallucinatedterm", "幻觉术语"]
+      ],
+      "expected_filter": {
+        "AD": {"kept": true, "reason": null},
+        "TCS": {"kept": true, "reason": null},
+        "benefits": {"kept": false, "reason": "common_word"},
+        "cost": {"kept": false, "reason": "common_word"},
+        "education": {"kept": false, "reason": "common_word"},
+        "hallucinatedterm": {"kept": false, "reason": "no_source_match"}
+      }
+    },
+    {
+      "id": "med-guideline-batch",
+      "document_id": "medical-guideline-ad-tcs",
+      "scope": "batch",
+      "pages": [1, 2],
+      "raw": {
+        "choices": [
+          {
+            "message": {
+              "content": "{\"terms\":[{\"source\":\"AD\",\"target\":\"特应性皮炎\"},{\"source\":\"TCS\",\"target\":\"外用糖皮质激素\"},{\"source\":\"topical corticosteroids\",\"target\":\"外用糖皮质激素\"},{\"source\":\"systemic agents\",\"target\":\"全身性用药\"},{\"source\":\"adherence\",\"target\":\"依从性\"},{\"source\":\"chronic inflammatory skin disease\",\"target\":\"慢性炎症性皮肤病\"},{\"source\":\"burden\",\"target\":\"负担\"}]}"
+            }
+          }
+        ]
+      },
+      "expected_parsed_terms": [
+        ["AD", "特应性皮炎"],
+        ["TCS", "外用糖皮质激素"],
+        ["topical corticosteroids", "外用糖皮质激素"],
+        ["systemic agents", "全身性用药"],
+        ["adherence", "依从性"],
+        ["chronic inflammatory skin disease", "慢性炎症性皮肤病"],
+        ["burden", "负担"]
+      ],
+      "expected_filter": {
+        "AD": {"kept": true, "reason": null},
+        "TCS": {"kept": true, "reason": null},
+        "topical corticosteroids": {"kept": true, "reason": null},
+        "systemic agents": {"kept": true, "reason": null},
+        "adherence": {"kept": true, "reason": null},
+        "chronic inflammatory skin disease": {"kept": true, "reason": null},
+        "burden": {"kept": false, "reason": "common_word"}
+      }
+    },
+    {
+      "id": "tech-paper-single",
+      "document_id": "technical-paper-contrastive",
+      "scope": "single_page",
+      "pages": [1],
+      "raw": {
+        "choices": [
+          {
+            "message": {
+              "content": "{\"terms\":[{\"source\":\"self-attention\",\"target\":\"自注意力\"},{\"source\":\"multimodal alignment\",\"target\":\"多模态对齐\"},{\"source\":\"learning rate schedule\",\"target\":\"学习率调度\"},{\"source\":\"contrastive learning\",\"target\":\"对比学习\"},{\"source\":\"results\",\"target\":\"结果\"},{\"source\":\"analysis\",\"target\":\"分析\"},{\"source\":\"role\",\"target\":\"作用\"}]}"
+            }
+          }
+        ]
+      },
+      "expected_parsed_terms": [
+        ["self-attention", "自注意力"],
+        ["multimodal alignment", "多模态对齐"],
+        ["learning rate schedule", "学习率调度"],
+        ["contrastive learning", "对比学习"],
+        ["results", "结果"],
+        ["analysis", "分析"],
+        ["role", "作用"]
+      ],
+      "expected_filter": {
+        "self-attention": {"kept": true, "reason": null},
+        "multimodal alignment": {"kept": true, "reason": null},
+        "learning rate schedule": {"kept": true, "reason": null},
+        "contrastive learning": {"kept": true, "reason": null},
+        "results": {"kept": false, "reason": "common_word"},
+        "analysis": {"kept": false, "reason": "common_word"},
+        "role": {"kept": false, "reason": "common_word"}
+      }
+    },
+    {
+      "id": "tech-paper-batch",
+      "document_id": "technical-paper-contrastive",
+      "scope": "batch",
+      "pages": [1, 2],
+      "raw": {
+        "choices": [
+          {
+            "message": {
+              "content": "{\"terms\":[{\"source\":\"self-attention\",\"target\":\"自注意力\"},{\"source\":\"multimodal alignment\",\"target\":\"多模态对齐\"},{\"source\":\"learning rate schedule\",\"target\":\"学习率调度\"},{\"source\":\"contrastive learning\",\"target\":\"对比学习\"},{\"source\":\"attention weights\",\"target\":\"注意力权重\"},{\"source\":\"temperature\",\"target\":\"温度\"},{\"source\":\"data\",\"target\":\"数据\"},{\"source\":\"mean\",\"target\":\"均值\"},{\"source\":\"study\",\"target\":\"研究\"},{\"source\":\"value\",\"target\":\"数值\"}]}"
+            }
+          }
+        ]
+      },
+      "expected_parsed_terms": [
+        ["self-attention", "自注意力"],
+        ["multimodal alignment", "多模态对齐"],
+        ["learning rate schedule", "学习率调度"],
+        ["contrastive learning", "对比学习"],
+        ["attention weights", "注意力权重"],
+        ["temperature", "温度"],
+        ["data", "数据"],
+        ["mean", "均值"],
+        ["study", "研究"],
+        ["value", "数值"]
+      ],
+      "expected_filter": {
+        "self-attention": {"kept": true, "reason": null},
+        "multimodal alignment": {"kept": true, "reason": null},
+        "learning rate schedule": {"kept": true, "reason": null},
+        "contrastive learning": {"kept": true, "reason": null},
+        "attention weights": {"kept": true, "reason": null},
+        "temperature": {"kept": true, "reason": null},
+        "data": {"kept": false, "reason": "common_word"},
+        "mean": {"kept": false, "reason": "common_word"},
+        "study": {"kept": false, "reason": "common_word"},
+        "value": {"kept": false, "reason": "common_word"}
+      }
+    },
+    {
+      "id": "textbook-single",
+      "document_id": "textbook-network-fundamentals",
+      "scope": "single_page",
+      "pages": [1],
+      "raw": {
+        "choices": [
+          {
+            "message": {
+              "content": "{\"terms\":[{\"source\":\"router\",\"target\":\"路由器\"},{\"source\":\"TCP handshake\",\"target\":\"三次握手\"},{\"source\":\"overview\",\"target\":\"概述\"},{\"source\":\"summary\",\"target\":\"总结\"}]}"
+            }
+          }
+        ]
+      },
+      "expected_parsed_terms": [
+        ["router", "路由器"],
+        ["TCP handshake", "三次握手"],
+        ["overview", "概述"],
+        ["summary", "总结"]
+      ],
+      "expected_filter": {
+        "router": {"kept": true, "reason": null},
+        "TCP handshake": {"kept": true, "reason": null},
+        "overview": {"kept": false, "reason": "common_word"},
+        "summary": {"kept": false, "reason": "common_word"}
+      }
+    },
+    {
+      "id": "textbook-batch",
+      "document_id": "textbook-network-fundamentals",
+      "scope": "batch",
+      "pages": [1, 2],
+      "raw": {
+        "choices": [
+          {
+            "message": {
+              "content": "{\"terms\":[{\"source\":\"router\",\"target\":\"路由器\"},{\"source\":\"TCP handshake\",\"target\":\"三次握手\"},{\"source\":\"transmission control protocol\",\"target\":\"传输控制协议\"},{\"source\":\"user datagram protocol\",\"target\":\"用户数据报协议\"},{\"source\":\"UDP\",\"target\":\"用户数据报协议\"},{\"source\":\"packet loss\",\"target\":\"丢包\"},{\"source\":\"destination IP address\",\"target\":\"目的IP地址\"},{\"source\":\"factor\",\"target\":\"因素\"}]}"
+            }
+          }
+        ]
+      },
+      "expected_parsed_terms": [
+        ["router", "路由器"],
+        ["TCP handshake", "三次握手"],
+        ["transmission control protocol", "传输控制协议"],
+        ["user datagram protocol", "用户数据报协议"],
+        ["UDP", "用户数据报协议"],
+        ["packet loss", "丢包"],
+        ["destination IP address", "目的IP地址"],
+        ["factor", "因素"]
+      ],
+      "expected_filter": {
+        "router": {"kept": true, "reason": null},
+        "TCP handshake": {"kept": true, "reason": null},
+        "transmission control protocol": {"kept": true, "reason": null},
+        "user datagram protocol": {"kept": true, "reason": null},
+        "UDP": {"kept": true, "reason": null},
+        "packet loss": {"kept": true, "reason": null},
+        "destination IP address": {"kept": true, "reason": null},
+        "factor": {"kept": false, "reason": "common_word"}
+      }
+    }
+  ],
+  "compliance_cases": [
+    {
+      "id": "ad-tcs-compliant",
+      "active_terms": [["AD", "特应性皮炎"], ["TCS", "外用糖皮质激素"]],
+      "translated_text": "患者出现特应性皮炎（AD），建议使用外用糖皮质激素（TCS）控制症状。",
+      "expected": "pass"
+    },
+    {
+      "id": "tcp-handshake-compliant",
+      "active_terms": [["TCP handshake", "三次握手"]],
+      "translated_text": "本协议通过三次握手建立可靠连接。",
+      "expected": "pass"
+    },
+    {
+      "id": "tcs-noncompliant",
+      "active_terms": [["TCS", "外用糖皮质激素"]],
+      "translated_text": "患者使用外用皮质类固醇治疗。",
+      "expected": "fail"
+    },
+    {
+      "id": "empty-text-unverifiable",
+      "active_terms": [["AD", "特应性皮炎"]],
+      "translated_text": "",
+      "expected": "unknown"
+    }
+  ],
+  "boundary_cases": [
+    {
+      "id": "ad-standalone-kept",
+      "source": "AD",
+      "text": "AD is listed separately; adherence, adverse events, and the shadow of doubt are also mentioned.",
+      "expected_kept": true,
+      "expected_reason": null
+    },
+    {
+      "id": "ad-inside-words-rejected",
+      "source": "AD",
+      "text": "Adherence and adverse events cast a shadow over these results.",
+      "expected_kept": false,
+      "expected_reason": "no_source_match"
+    },
+    {
+      "id": "tcs-standalone-kept",
+      "source": "TCS",
+      "text": "TCS are preferred over systemic agents.",
+      "expected_kept": true,
+      "expected_reason": null
+    },
+    {
+      "id": "tcs-inside-words-rejected",
+      "source": "TCS",
+      "text": "Corticosteroids are topical agents; the abbreviation is not used alone here.",
+      "expected_kept": false,
+      "expected_reason": "no_source_match"
+    },
+    {
+      "id": "tcs-full-form-kept",
+      "source": "topical corticosteroids",
+      "text": "The guideline recommends topical corticosteroids (TCS) for acute AD.",
+      "expected_kept": true,
+      "expected_reason": null
+    }
+  ],
+  "store_scenarios": [
+    {
+      "id": "tcs-wrong-first-then-correct",
+      "source": "TCS",
+      "observations": [
+        {"target": "外用皮质类固醇", "pages": [1], "count": 1},
+        {"target": "外用糖皮质激素", "pages": [1, 2, 3], "count": 10}
+      ],
+      "expected_recommended_target": "外用糖皮质激素"
+    },
+    {
+      "id": "ad-rejected-not-reprompted",
+      "source": "AD",
+      "observations": [
+        {"target": "阿尔茨海默氏病", "pages": [1], "count": 1}
+      ],
+      "reject_target": "阿尔茨海默氏病",
+      "later_observations": [
+        {"target": "阿尔茨海默氏病", "pages": [2], "count": 5}
+      ],
+      "expected_suppressed_after_reject": true,
+      "expected_entries_after": 1
+    }
+  ]
+}
