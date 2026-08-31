@@ -66,7 +66,8 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/config.py` | 读取 `config.toml`、定义冻结运行时配置（`ModelRuntimeConfig`/`TranslationRuntimeConfig`/`Pdf2zhRuntimeConfig`/`CandidateExtractionRuntimeConfig`/`UpstreamRuntimeConfig`）、严格/宽松解析、`EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH` |
 | `src/pdf_reader/config_editor.py` | 配置中心后端：48 字段 schema（分组/控件/说明/默认与常用值/Provider 适用性）、GET 密钥脱敏（只返回 configured/source）、已知字段白名单、复用 `validate_startup_requirements`/`resolve_server_config` 严格校验、revision 乐观冲突、模块级 RLock、同目录临时文件 fsync + `os.replace` 原子写并保留权限/未知字段/注释与顺序（tomlkit）；只写 `config.toml`，不热改冻结 `AppSettings`，保存返回 `restart_required=true` |
 | `src/pdf_reader/term_extraction.py` | P1-01 项目自有 `TermExtractionClient`：标准库 urllib 走 OpenAI-compatible `/chat/completions`（支持 deepseek/openai/openai_compatible，其余 Provider 稳定 unsupported）、严格受控 JSON 解析（条数/长度/控制字符/正文大小有界）、独立 QPS/timeout/有界重试（只重试超时/429/5xx），请求/响应/Prompt/Key 不入日志 |
-| `src/pdf_reader/candidate_service.py` | P1-01 旁路候选提取服务：正文最终验证并提交成功后运行（单页/批量同规则），PyMuPDF 读取已抽取页文本（1-based 页码、空跳过、超限前缀截断），只经 `CandidateStore.record_observations` 原子写候选，任何失败降级安全日志且不阻正文 finish |
+| `src/pdf_reader/candidate_filter.py` | P1-02 候选后置过滤：确定性前后标点清理/异常空白折叠、英文单词/缩写边界感知匹配、小型普通词/功能词/通用学术词精确拒绝、完整句/超词数/超字符/纯数字/公式/变量/页码/占位符结构拒绝、target 必须含 Han 字符、幻觉 source 拒绝、逐页命中页码与有界证据窗口；每条被过滤候选带稳定原因，规则版本 `candidate-filter/1` 组合进候选 `strategy_version`；只作用于模型自动候选，绝不删除/降级/重写用户权威决定 |
+| `src/pdf_reader/candidate_service.py` | P1-01/P1-02 旁路候选提取服务：正文最终验证并提交成功后运行（单页/批量同规则），PyMuPDF 读取已抽取逐页文本（1-based 页码、空跳过、与 `max_input_chars` 前缀截断完全一致的逐页块），候选先经 `candidate_filter` 过滤再只经 `CandidateStore.record_observations` 原子写（保留候选携带实际命中页+有界证据，策略版本 `term-extraction-client/1+candidate-filter/1`），任何失败降级安全日志且不阻正文 finish |
 | `src/pdf_reader/paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
 | `src/pdf_reader/task_logging.py` | 集中任务日志上下文：不可变 `TaskContext`、`contextvars` 传播、统一前缀/截断/1-based 页码、生命周期状态、`SafeFormatter` 脱敏（API Key、sk-/Bearer、api_key、prompt 类字段） |
 | `src/pdf_reader/routes.py` | Blueprint：12 个 HTTP/SSE 端点（含配置中心 GET/PUT `/api/config` 与 `POST /api/client-errors` 的 loopback-only 守卫）；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器与 409 `translation_busy`、403 `config_local_only`/`client_errors_local_only` |
@@ -230,9 +231,13 @@ close；网络重试只针对超时/429/5xx（连接类错误、4xx 与解析/sc
 重试）；QPS、并发（信号量上限）、timeout 均独立于正文。候选经
 `CandidateStore.record_observations` 批量原子写
 入 `term_candidates.json`（一次响应整体合法后单 revision 合并，任一观察非法
-则整体不写），保留 accepted/rejected 状态与 `accepted_target`；P1-02 前
-evidence 为空、页码为“参与本次输入的页范围”的粗粒度归属。候选变化不触发有效
-词表 stale，未确认候选永不进入 `effective_glossary.csv` 或正文 `SettingsModel`；
+则整体不写），保留 accepted/rejected 状态与 `accepted_target`。P1-02 起，保留
+候选先经 `candidate_filter` 确定性后置过滤：普通词/完整句/超限/纯数字/公式/变量/
+页码/占位符/无 Han target/不存在于实际发送文本（含截断后）的幻觉 source 被
+拒绝；每条保留候选携带边界感知匹配的实际命中页（1-based，可跨多页）与
+折叠空白后的有界证据片段（固定窗口、最多 5 条、每条 ≤160 字符）。候选变化不
+触发有效词表 stale，未确认候选永不进入 `effective_glossary.csv` 或正文
+`SettingsModel`；
 网络/解析/存储失败及不支持 Provider 全部降级为安全日志，正文仍 finish，不启动
 第二个 coordinator job，同步首版无悬挂线程。
 
@@ -483,6 +488,16 @@ rejected 不被覆盖、unsupported/disabled/empty/超限/网络失败/存储失
 合规失败不调用、候选失败不阻 finish、候选不进 effective/Settings；
 `tests/test_candidate_store.py` 覆盖 `record_observations` 批量原子性与状态保护。
 
+P1-02 候选过滤回归：`tests/test_candidate_filter.py` 固定 AD 边界（独立 `AD`
+可命中，`adherence`/`adverse`/`shadow` 内部不命中）、大小写与内部空白折叠、
+标点清理、普通词（benefits/cost/confusion/education/burden/gaining control）、
+完整句/词数/字符/数字/公式/变量/页码/占位符拒绝、Han target 与幻觉 source
+拒绝、医学药名/疾病名/缩写/指南术语保留、逐页页码与有界证据、跨页匹配拒绝、
+确定性、单条坏候选不使整批失败与规则版本进入 strategy_version；
+`tests/test_candidate_service.py` 扩展固定实际写入候选数/页码/证据、
+all_filtered 不写空 revision、rejected source/target 自动观察保持用户状态；
+`tests/test_candidate_store.py` 增加 rejected 再观察不创建重复条目的回归。
+
 术语状态模型与迁移回归（P0-02）：`tests/test_term_model.py`、`tests/test_path_locks.py`、`tests/test_user_glossary.py`、`tests/test_candidate_store.py` 与 `tests/test_legacy_migration.py` 覆盖规范化/校验（含 strategy_version 与控制字符对称校验）、按规范路径共享锁（含两个不同 Store 实例并发写同一文档）、文档级权威词表 CRUD 与锁定、revision 冲突、原子写失败保留旧版本、损坏/schema/字段类型 fail-closed 且原字节不变、旧累计 CSV 的幂等合入迁移（保留 accepted/rejected 用户状态、并发迁移只合入一次、自动合并与迁移共用 cumulative 锁同一快照、备份不覆盖/目录 fail-closed、无半备份、失败重试）以及自动合并拒绝受保护文件名；全部使用 pytest 临时数据根。
 
 有效词表编译回归（P0-03）：`tests/test_glossary_compiler.py` 覆盖空词表、
@@ -523,7 +538,7 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
 6. **部分提交语义。** 单页/批量翻译结束时先提交 `right.pdf` 再合并术语表；术语表合并失败被包含（记录 WARNING），不会回滚已提交的 PDF，也不改变任务终态；PDF 提交失败则术语合并不执行。不存在跨两个文件的全局事务。
 7. **启动脚本不自动释放端口。** `start.bat` 只检测并报告端口 5000 的 `LISTENING` 占用，不包含任何进程终止命令；端口冲突需要用户自行确认归属并处理（命令见 README「启动」），或改用 `config.toml` 中 `[server].port` 指定的其他端口。
 8. **临时工作区清理有明确安全边界。** 每个翻译任务拥有 cache 根下带前缀+标记的根工作区（`input/`/`output/`）；只有名称带固定前缀、含有效标记（`kind` 匹配且 `pid` 为正整数）、非符号链接/junction 且 PID 已不存活的 `cache/` 直接子目录才会被启动恢复或 `cache_manage.py clean --yes` 删除；未知、无标记、标记损坏、链接路径或可能仍在使用的目录一律保守保留；持久用户数据（`right.pdf`、术语表、阅读进度）永不作为清理目标。Windows PID 探测只读，且只把明确不存在（`ERROR_INVALID_PARAMETER` 等）判为不存活；PID 复用或查询失败时按“可能存活”保留，可能留下少量无法自动清理的目录，需要用户确认后手动处理。
-9. **候选提取是正文提交后的同步旁路且有粗粒度页码。** 候选提取在提交成功后于同一 SSE 生成器内同步执行，严格 timeout（1-120s）与有界重试保证不会无限阻塞；客户端断开时若正阻塞在候选请求上，最多等待一次请求 timeout 后在 finally 以 finished 释放 job（PDF 已提交）。P1-02 前候选页码是“参与本次输入的页范围”，evidence 为空，不做精确源文证据/普通词过滤；候选失败只降级日志，不改正文终态。
+9. **候选提取是正文提交后的同步旁路，页码/证据为逐页精确命中。** 候选提取在提交成功后于同一 SSE 生成器内同步执行，严格 timeout（1-120s）与有界重试保证不会无限阻塞；客户端断开时若正阻塞在候选请求上，最多等待一次请求 timeout 后在 finally 以 finished 释放 job（PDF 已提交）。P1-02 起，模型候选先经本地确定性过滤：普通词/结构异常/幻觉 source 被拒绝，保留候选携带实际命中页与有界证据；过滤后为空返回稳定 `all_filtered` 摘要且不写空 revision；候选失败只降级日志，不改正文终态。
 
 ## 上游与历史参考
 

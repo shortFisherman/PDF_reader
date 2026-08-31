@@ -1,27 +1,36 @@
-"""P1-01 候选提取服务：正文翻译成功提交后的旁路运行器。
+"""P1-01/P1-02 候选提取服务：正文翻译成功提交后的旁路运行器。
 
 不变量：
 - 只在调用方确认正文已经最终验证并提交成功后运行；正文失败路径不会调用本服务；
 - 候选只写入 ``term_candidates.json``（``CandidateStore``），绝不写
   user/effective/global 权威词表，也不改变正文 ``SettingsModel``；
+- P1-02 起，模型候选先经 ``candidate_filter`` 确定性后置过滤：普通词/幻觉/
+  格式异常被拒绝，保留候选必须携带实际命中页与有界源文证据；过滤只作用于
+  自动候选，绝不删除、降级或重写用户 authoritative/locked/accepted 决定；
 - 网络/解析/存储失败全部降级为安全日志，不阻止正文 ``finish``；
-- 常规日志只记录 provider/状态/数量/页码等稳定字段，不记录全文、Prompt、
-  target、路径、API Key 或响应正文。
+- 常规日志只记录 provider/状态/数量/页码/过滤原因计数等稳定字段，不记录
+  source、target、证据、全文、Prompt、路径、API Key 或响应正文。
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import pymupdf
 
+from pdf_reader.candidate_filter import (
+    CANDIDATE_STRATEGY_VERSION,
+    FilteredCandidate,
+    filter_candidates,
+)
 from pdf_reader.candidate_store import CandidateObservation, CandidateStore
 from pdf_reader.config import CandidateExtractionRuntimeConfig, ModelRuntimeConfig
 from pdf_reader.task_logging import TaskContext, task_log
-from pdf_reader.term_extraction import STRATEGY_VERSION, TermExtractionClient, TermExtractionError
+from pdf_reader.term_extraction import TermExtractionClient, TermExtractionError
 from pdf_reader.term_model import TermStoreError
 
 logger = logging.getLogger("pdf_reader.candidate")
@@ -34,6 +43,8 @@ class CandidateExtractionReport:
     status: str
     candidates: int = 0
     pages: tuple[int, ...] = ()
+    filtered: int = 0
+    filtered_by_reason: tuple[tuple[str, int], ...] = ()
 
 
 class CandidateExtractionService:
@@ -81,7 +92,7 @@ class CandidateExtractionService:
             return CandidateExtractionReport(status="unsupported")
 
         try:
-            text, pages = self._read_source_text(pdf_path, page_indices)
+            page_texts = self._read_source_text(pdf_path, page_indices)
         except Exception as exc:
             task_log(
                 logger,
@@ -91,22 +102,24 @@ class CandidateExtractionService:
                 task=task_ctx,
             )
             return CandidateExtractionReport(status="source_failed")
-        if not text.strip():
+        if not page_texts:
             task_log(
                 logger,
                 logging.INFO,
-                "candidate extraction skipped: empty source pages=%s",
-                pages,
+                "candidate extraction skipped: empty source",
                 task=task_ctx,
             )
-            return CandidateExtractionReport(status="empty", pages=pages)
+            return CandidateExtractionReport(status="empty")
 
-        truncated = len(text) > self._cfg.max_input_chars
-        if truncated:
-            # 确定性有界策略：超限时保留前缀，不随机/不按行猜测边界。
-            text = text[: self._cfg.max_input_chars]
+        pages = tuple(sorted({page for page, _ in page_texts}))
+        full_text = "\n".join(text for _, text in page_texts)
+        truncated = len(full_text) > self._cfg.max_input_chars
+        # 确定性有界策略：超限时保留前缀，不随机/不按行猜测边界；逐页截断块
+        # 与送给模型的 sent_text 完全一致，保证页码/证据只来自实际输入。
+        sent_text = full_text[: self._cfg.max_input_chars]
+        page_chunks = _truncate_pages(page_texts, sent_text)
         try:
-            candidates = self._client.extract_terms(text)
+            candidates = self._client.extract_terms(sent_text)
         except TermExtractionError as exc:
             task_log(
                 logger,
@@ -135,16 +148,51 @@ class CandidateExtractionService:
             )
             return CandidateExtractionReport(status="no_candidates", pages=pages)
 
+        filtered = filter_candidates(candidates, sent_text, page_chunks)
+        kept = [item for item in filtered if item.reason is None]
+        rejected = [item for item in filtered if item.reason is not None]
+        reasons = _reason_counts(filtered)
+        if rejected:
+            task_log(
+                logger,
+                logging.INFO,
+                "candidate filter: filtered=%d reasons=%s",
+                len(rejected),
+                reasons,
+                task=task_ctx,
+            )
+        if not kept:
+            task_log(
+                logger,
+                logging.INFO,
+                "candidate extraction done: no candidates pages=%s filtered=%d",
+                pages,
+                len(rejected),
+                task=task_ctx,
+            )
+            return CandidateExtractionReport(
+                status="all_filtered",
+                candidates=0,
+                pages=pages,
+                filtered=len(rejected),
+                filtered_by_reason=reasons,
+            )
+
         observations = [
-            CandidateObservation(source=candidate.source, target=candidate.target, pages=pages)
-            for candidate in candidates
+            CandidateObservation(
+                source=item.source,
+                target=item.target,
+                pages=item.pages,
+                evidence=item.evidence,
+            )
+            for item in kept
         ]
         try:
             if document_dir is None:
                 raise TermStoreError("missing document cache dir")
             CandidateStore(document_dir).record_observations(
                 observations,
-                strategy_version=STRATEGY_VERSION,
+                strategy_version=CANDIDATE_STRATEGY_VERSION,
             )
         except TermStoreError as exc:
             task_log(
@@ -168,39 +216,78 @@ class CandidateExtractionService:
         task_log(
             logger,
             logging.INFO,
-            "candidate extraction done: candidates=%d pages=%s truncated=%s",
-            len(candidates),
+            "candidate extraction done: candidates=%d pages=%s truncated=%s filtered=%d",
+            len(kept),
             pages,
             truncated,
+            len(rejected),
             task=task_ctx,
         )
-        return CandidateExtractionReport(status="ok", candidates=len(candidates), pages=pages)
+        return CandidateExtractionReport(
+            status="ok",
+            candidates=len(kept),
+            pages=pages,
+            filtered=len(rejected),
+            filtered_by_reason=reasons,
+        )
 
     @staticmethod
     def _read_source_text(
         pdf_path: str | Path,
         page_indices: list[int] | tuple[int, ...],
-    ) -> tuple[str, tuple[int, ...]]:
-        """用 PyMuPDF 读取已抽取局部 PDF 的源文本。
+    ) -> list[tuple[int, str]]:
+        """用 PyMuPDF 读取已抽取局部 PDF 的逐页源文本。
 
         ``pdf_path`` 是仅含本次任务页的局部 PDF（页索引 0..k-1），
         ``page_indices`` 是原文 0-based 页索引。必须按局部索引读取，并按
-        原文索引 +1 记录 1-based 证据页；局部 PDF 页数与请求页数不一致时
-        拒绝读取（由调用方降级为 source_failed）。
+        原文索引 +1 记录 1-based 证据页；空文本页跳过。局部 PDF 页数与请求
+        页数不一致时拒绝读取（由调用方降级为 source_failed）。
         """
         doc = pymupdf.open(str(pdf_path))
         try:
             if doc.page_count != len(page_indices):
                 raise ValueError("extracted pdf page count mismatch")
-            parts: list[str] = []
-            pages: list[int] = []
+            result: list[tuple[int, str]] = []
             for local_index, original_index in enumerate(page_indices):
                 if isinstance(original_index, bool) or not isinstance(original_index, int) or original_index < 0:
                     raise ValueError("invalid page index")
                 page_text = doc[local_index].get_text()
                 if page_text.strip():
-                    parts.append(page_text)
-                    pages.append(original_index + 1)
-            return "\n".join(parts), tuple(sorted(set(pages)))
+                    result.append((original_index + 1, page_text))
+            return result
         finally:
             doc.close()
+
+
+def _truncate_pages(
+    page_texts: list[tuple[int, str]],
+    sent_text: str,
+) -> list[tuple[int, str]]:
+    """把已截断的 ``sent_text`` 映射回逐页文本块。
+
+    页间 ``"\\n"`` 分隔符按旧服务语义计入 ``sent_text`` 前缀；返回的每页
+    文本块只包含实际落入送给模型前缀内的内容。
+    """
+    chunks: list[tuple[int, str]] = []
+    pos = 0
+    for index, (page, text) in enumerate(page_texts):
+        if pos >= len(sent_text):
+            break
+        if index > 0:
+            if pos + 1 >= len(sent_text):
+                break
+            pos += 1
+        chunk = text[: len(sent_text) - pos]
+        if chunk:
+            chunks.append((page, chunk))
+        pos += len(chunk)
+    return chunks
+
+
+def _reason_counts(filtered: Sequence[FilteredCandidate]) -> tuple[tuple[str, int], ...]:
+    """按原因汇总过滤数量，输出稳定有序（只含原因名与数量，不含原文）。"""
+    counts: dict[str, int] = {}
+    for item in filtered:
+        if item.reason is not None:
+            counts[item.reason] = counts.get(item.reason, 0) + 1
+    return tuple(sorted(counts.items()))

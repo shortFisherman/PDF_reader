@@ -203,6 +203,21 @@ def test_reject_marks_status_and_rejected_targets(tmp_path):
     assert suggestion.pages == (9,)
 
 
+def test_rejected_source_target_reobservation_never_creates_duplicate(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    store.record_observation("AD", "特应性皮炎")
+    store.reject("AD", target="特应性皮炎")
+    store.record_observation("AD", "特应性皮炎", pages=[1], evidence=["again"])
+    entries, revision, _ = store.load()
+    assert revision == 3
+    assert len(entries) == 1
+    assert entries[0].status == "rejected"
+    assert entries[0].rejected_targets == ["特应性皮炎"]
+    suggestion = entries[0].targets[0]
+    assert suggestion.observations == 2
+    assert suggestion.pages == (1,)
+
+
 def test_revision_conflict_is_reported(tmp_path):
     store = CandidateStore(doc_dir(tmp_path))
     store.record_observation("AD", "特应性皮炎")

@@ -13,10 +13,10 @@ from typing import Never
 import pymupdf
 import pytest
 
+from pdf_reader.candidate_filter import CANDIDATE_STRATEGY_VERSION
 from pdf_reader.candidate_service import CandidateExtractionService
 from pdf_reader.candidate_store import CandidateStore
 from pdf_reader.config import CandidateExtractionRuntimeConfig, ModelRuntimeConfig
-from pdf_reader.term_extraction import STRATEGY_VERSION
 from pdf_reader.term_model import TermStoreError
 
 
@@ -127,12 +127,16 @@ def test_success_writes_candidates_with_pages_and_strategy(tmp_path, fake_server
     assert report.status == "ok"
     assert report.candidates == 2
     assert report.pages == (1, 2)
+    assert report.filtered == 0
     entries, revision, _ = CandidateStore(document_dir).load()
     assert revision == 1
     by_source = {entry.source_key: entry for entry in entries}
-    assert by_source["ad"].targets[0].pages == (1, 2)
-    assert by_source["ad"].strategy_version == STRATEGY_VERSION
+    assert by_source["ad"].targets[0].pages == (1,)
+    assert by_source["ad"].targets[0].evidence == ("AD is a common term.",)
+    assert by_source["ad"].strategy_version == CANDIDATE_STRATEGY_VERSION
     assert by_source["tcs"].targets[0].target == "外用糖皮质激素"
+    assert by_source["tcs"].targets[0].pages == (2,)
+    assert by_source["tcs"].targets[0].evidence == ("TCS is another term.",)
 
 
 def test_nonzero_single_page_maps_local_pdf_to_original_page(tmp_path, fake_server):
@@ -167,9 +171,81 @@ def test_nonzero_batch_maps_local_indices_to_original_pages(tmp_path, fake_serve
     assert report.pages == (3, 6)
     entries, _, _ = CandidateStore(document_dir).load()
     by_source = {entry.source_key: entry for entry in entries}
-    # P1-02 前页码为“参与本次输入的页范围”的粗粒度归属：两个候选都带 (3, 6)。
-    assert by_source["ad"].targets[0].pages == (3, 6)
-    assert by_source["tcs"].targets[0].pages == (3, 6)
+    assert by_source["ad"].targets[0].pages == (3,)
+    assert by_source["ad"].targets[0].evidence == ("AD on original page three.",)
+    assert by_source["tcs"].targets[0].pages == (6,)
+    assert by_source["tcs"].targets[0].evidence == ("TCS on original page six.",)
+
+
+def test_hallucinated_candidate_filtered_and_not_written(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD appears in the guideline."])
+    _FakeHandler.responses.append(
+        _ok(
+            [
+                {"source": "AD", "target": "阿尔茨海默病"},
+                {"source": "nonexistentterm", "target": "不存在的术语"},
+            ]
+        )
+    )
+    document_dir = _doc_dir(tmp_path)
+    service = _service(fake_server)
+
+    report = service.run_for_pdf(pdf, [0], document_dir)
+
+    assert report.status == "ok"
+    assert report.candidates == 1
+    assert report.filtered == 1
+    assert ("no_source_match", 1) in report.filtered_by_reason
+    entries, revision, _ = CandidateStore(document_dir).load()
+    assert revision == 1
+    assert len(entries) == 1
+    assert entries[0].source == "AD"
+
+
+def test_common_word_all_filtered_writes_no_empty_revision(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["Benefits are important for patients."])
+    document_dir = _doc_dir(tmp_path)
+    store = CandidateStore(document_dir)
+    store.record_observation("TCS", "外用糖皮质激素")
+    old_bytes = store.path.read_bytes()
+    _FakeHandler.responses.append(_ok([{"source": "benefits", "target": "获益"}]))
+    service = _service(fake_server)
+
+    report = service.run_for_pdf(pdf, [0], document_dir)
+
+    assert report.status == "all_filtered"
+    assert report.candidates == 0
+    assert report.filtered == 1
+    assert ("common_word", 1) in report.filtered_by_reason
+    entries, revision, _ = store.load()
+    assert revision == 1
+    assert len(entries) == 1
+    assert store.path.read_bytes() == old_bytes
+
+
+def test_rejected_source_target_auto_observation_keeps_user_state(tmp_path, fake_server):
+    pdf = _pdf(tmp_path, ["AD appears in the guideline."])
+    document_dir = _doc_dir(tmp_path)
+    store = CandidateStore(document_dir)
+    store.record_observation("AD", "自动建议")
+    store.reject("AD", target="自动建议")
+    _FakeHandler.responses.append(_ok([{"source": "AD", "target": "自动建议"}]))
+    service = _service(fake_server)
+
+    report = service.run_for_pdf(pdf, [0], document_dir)
+
+    assert report.status == "ok"
+    assert report.candidates == 1
+    entries, revision, _ = store.load()
+    assert revision == 3
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.status == "rejected"
+    assert entry.rejected_targets == ["自动建议"]
+    suggestion = entry.targets[0]
+    assert suggestion.observations == 2
+    assert suggestion.pages == (1,)
+    assert suggestion.evidence
 
 
 def test_local_pdf_page_count_mismatch_degrades_without_store(tmp_path, fake_server):
@@ -305,18 +381,30 @@ def test_store_failure_degrades_and_body_semantics_unaffected(tmp_path, fake_ser
 
 
 def test_logs_never_contain_text_prompt_targets_or_keys(tmp_path, fake_server, managed_caplog):
-    pdf = _pdf(tmp_path, ["SECRET-SOURCE-TERM appears in the guideline."])
+    pdf = _pdf(tmp_path, ["SECRET-SOURCE-TERM appears in the guideline. Confusion is common."])
     document_dir = _doc_dir(tmp_path)
-    _FakeHandler.responses.append(_ok([{"source": "SECRET-SOURCE-TERM", "target": "秘密目标译法"}]))
+    _FakeHandler.responses.append(
+        _ok(
+            [
+                {"source": "SECRET-SOURCE-TERM", "target": "秘密目标译法"},
+                {"source": "confusion", "target": "混淆"},
+            ]
+        )
+    )
     service = _service(fake_server)
     with managed_caplog.at_level(logging.INFO, logger="pdf_reader.candidate"):
         report = service.run_for_pdf(pdf, [0], document_dir)
     assert report.status == "ok"
+    assert report.candidates == 1
+    assert report.filtered == 1
     text = managed_caplog.text
     assert "SECRET-SOURCE-TERM" not in text
     assert "秘密目标译法" not in text
+    assert "confusion" not in text
+    assert "混淆" not in text
     assert "sk-service-test" not in text
     assert str(pdf) not in text
     assert "Traceback" not in text
+    assert "common_word" in text
     assert "candidates=1" in text
     assert "pages=(1,)" in text
