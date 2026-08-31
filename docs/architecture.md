@@ -4,12 +4,12 @@
 
 ## 核验基线
 
-- 核验日期：2026-08-31。事实来源、锁定版本与测试/覆盖率基线见下。
+- 核验日期：2026-09-01。事实来源、锁定版本与测试/覆盖率基线见下。
 - 事实来源：CodeGraph（`codegraph explore` / `codegraph node`）输出、当前源码逐行核对、`requirements.lock`、`package.json`、`scripts/verify.ps1`、`.github/workflows/ci.yml`、`tests/test_upstream_contract.py` 和测试收集结果。
 - 锁定版本：Python 3.12.8、Flask 3.1.3、PyMuPDF 1.25.2、pdf2zh-next 2.9.0、BabelDOC 0.6.2、tomlkit 0.13.3。
-- 测试基线：`scripts/verify.ps1` 实测 1459 个 Python 测试通过（2026-08-31 P2-03 最终核验值，含上游契约、文档治理、日志/配置、P0/P1 术语主线、术语管理 API 与生命周期回归、P2-01 黄金样本与质量门槛、P2-02 术语诊断回归、P2-03 配置收口/旧表兼容/用户文档回归）；`package.json` 的 `test:frontend` 定义九个正式前端套件（UI copy、error-safety、client-error、translation-ui、translator、zoom、alignment controller、config panel、glossary panel），verify 全绿。
-- 覆盖率基线：全局 line 92.8%、branch 86.5%（2026-08-31 P2-03 最终核验值，`coverage run --branch -m pytest` 实测；策略与关键模块 floor 见“测试、CI 与验证入口”）。
-- 基线说明：测试数量与覆盖率是易腐数字，任何新的架构核对都应以当前源码、锁定文件、测试收集结果与 coverage 报告为准；本文数值只代表 2026-08-31 的核验结果。
+- 测试基线：`pytest -q` 实测 1495 个 Python 测试通过（2026-09-01 P2-04 最终核验值，含上游契约、文档治理、日志/配置、P0/P1 术语主线、术语管理 API 与生命周期回归、P2-01 黄金样本与质量门槛、P2-02 术语诊断回归、P2-03 配置收口/旧表兼容/用户文档回归、P2-04 升级治理门回归 36 项）；`package.json` 的 `test:frontend` 定义九个正式前端套件（UI copy、error-safety、client-error、translation-ui、translator、zoom、alignment controller、config panel、glossary panel），verify 全绿。
+- 覆盖率基线：全局 line 92.8%、branch 86.6%（2026-09-01 P2-04 最终核验值，`coverage run --branch -m pytest` 实测；策略与关键模块 floor 见“测试、CI 与验证入口”）。
+- 基线说明：测试数量与覆盖率是易腐数字，任何新的架构核对都应以当前源码、锁定文件、测试收集结果与 coverage 报告为准；本文数值分别标注核验日期——测试基线为 2026-09-01（P2-04 最终核验值），覆盖率基线为 2026-09-01（P2-04 最终核验值）。
 
 ## 系统总览
 
@@ -47,6 +47,10 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 ## 上游最小契约（P3-06）
 
 - 契约测试入口：`tests/test_upstream_contract.py`（离线、确定性，全部使用 fake 上游流，不联网、不运行真实翻译、不需要 API Key）；升级 pdf2zh-next/BabelDOC 前必须运行（命令见 [依赖升级流程](governance/dependency-upgrade.md)）。
+- 升级治理门（P2-04）：`python scripts/upgrade_governance_gate.py` 一键运行静态治理
+  检查（依赖来源、任意位置影子包/fork/vendor/上游源码副本/生产 Monkey-patch）与固定
+  契约测试选择（依赖契约、上游术语选择、严格正文路径、候选隔离、合规提交门），
+  离线且不修改文件；`--static-only` 模式已接入 `scripts/verify.ps1`。
 - 固定版本：pdf2zh-next 2.9.0 与 babeldoc 0.6.2 同时受 `pyproject.toml`/`requirements.lock` 与安装元数据约束；babeldoc 是传递依赖，只由 `requirements.lock` 固定。
 - SettingsModel 消费面：`basic.debug=False`；`translation` 的 `lang_in`/`lang_out`/`min_text_length`/`qps`/`pool_max_workers`/`term_qps`/`term_pool_max_workers`（两个 term 字段为 1.x 兼容别名，仅兼容转发旧上游 SettingsModel，严格正文路径与项目候选提取不使用，启动 WARNING，计划 2.0.0 移除）/`ignore_cache=True`/`primary_font_family`/`output`（由 SSE 生成器按 attempt 赋值注入）/`custom_system_prompt`（页面 Prompt > `default_system_prompt` > 上游默认）；正文恒为 `no_auto_extract_glossary=True`、`save_auto_extracted_glossary=False`（P0-04，不再由 `translation.auto_extract_glossary` 反转）；`glossaries` 由严格正文路径传入本次 fresh 的单个 `effective_glossary.csv`（零权威行时省略，不再逗号连接多文件）。`pdf` 的 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，以及 `[pdf2zh]` 已开放的 15 个字段（含项目正确拼写 `formula_*` → 上游历史拼写 `formular_*`）；`translate_engine_settings` 按 `ENGINE_REGISTRY` 的字段映射构造，发送开关按 Provider 映射（OpenAI 使用历史拼写 `openai_send_temprature`，Aliyun/Compatible 使用各自字段）。
 - 事件适配边界：本项目只承诺 `progress_start`、`progress_update`、`finish`、`error` 四种上游事件的映射；`progress_end` 等未承诺事件与未知事件被忽略（`format_sse_event` 返回 `None`），worker 空闲心跳（空串）原样透传为 SSE 空行。
@@ -103,11 +107,13 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `static/style.css` | 深色主题、双栏与缩放 CSS 变量 |
 | `tests/test_upstream_contract.py` | P3-06 上游最小契约：固定版本、SettingsModel 消费字段/引擎字段映射、事件映射与未知事件忽略、输出路径与 mono→dual/glossary、协作式取消与 join/is_alive 所有权（离线确定性 fake） |
 | `tests/test_documentation_governance.py` | P3-06 文档治理：常青文档职责边界、链接可解析、上游契约命令一致、易腐数字基线 |
-| `tests/` | pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P3-04 许可证、P3-05 缓存与关闭、P3-06 上游契约/文档治理、P3-07 密钥扫描与仓库治理、P0-03 有效词表编译、日志管线/调试轨迹/前端错误上报、配置示例契约、配置中心后端用例、P2-01 黄金样本/质量门槛）与前端 `.mjs` 测试运行器（含 client-error 与 config panel 用例） |
+| `tests/test_upgrade_governance_gate.py` | P2-04 升级治理门回归：违规 fixture 证明依赖来源/影子包/fork/vendor/源码副本/生产 Monkey-patch 检测确实能抓到问题，合法 tests patch 与 venv/node_modules/缓存不误报，契约测试选择与 verify.ps1/CI/文档关系固定不漂移 |
+| `tests/` | pytest 文件（含 P2-07 路径、P2-06 任务日志、P2-01 包布局、P2-03 契约、P2-04 升级治理门回归、P3-04 许可证、P3-05 缓存与关闭、P3-06 上游契约/文档治理、P3-07 密钥扫描与仓库治理、P0-03 有效词表编译、日志管线/调试轨迹/前端错误上报、配置示例契约、配置中心后端用例、P2-01 黄金样本/质量门槛）与前端 `.mjs` 测试运行器（含 client-error 与 config panel 用例） |
 | `tests/fixtures/term_quality/fixture.json` | P2-01 版本化黄金样本：三类最小文本 fixture、AGPL-3.0-only 原创/合成 provenance 元数据、人工核心术语/普通词/缩写边界/同义形式标注、模型响应与解析/过滤期望、合规三分支案例与 wrong-first/rejected 两条候选存储场景 |
 | `scripts/term_quality_gate.py` | P2-01 独立稳定质量门：确定性 JSON 报告（含 metric_definitions）、阈值与基线漂移/哈希检查、非法 `--tolerance` 稳定返回 usage code、非零退出、`--update-baseline` 原子更新版本化基线 |
+| `scripts/upgrade_governance_gate.py` | P2-04 上游升级与无补丁治理门：pyproject/requirements.lock 依赖来源治理（禁 VCS/editable/path/URL/未锁定）、全工作树影子包/fork/vendor/上游源码副本/补丁目录扫描、`src/pdf_reader` 生产 Monkey-patch 扫描、固定契约测试选择；`--static-only` 供 verify.ps1，完整模式升级前后运行，离线不修改文件 |
 | `docs/reports/term-quality-baseline.json` | P2-01 版本化基线报告：当前 HEAD 的指标/阈值/metric_definitions_version/fixture_sha256 快照，供 Prompt/过滤规则变化前后对比与漂移检测 |
-| `scripts/verify.ps1` | 统一验证入口（lint、格式、Python 测试、术语质量门、前端测试） |
+| `scripts/verify.ps1` | 统一验证入口（密钥扫描、上游升级治理门静态检查、lint、格式、Python 测试、术语质量门、前端测试） |
 | `scripts/secret_scan.py` | 高可信密钥扫描：只扫 Git 跟踪内容，占位示例放行，不输出 secret 值 |
 | `.github/workflows/ci.yml` | Windows + Python 3.12 + Node 22 的 CI |
 | `.github/dependabot.yml` | pip/npm 月度依赖升级 PR |
@@ -550,13 +556,13 @@ prepare 与 commit 各发一条 `candidate summary`：prepare（`event=candidate
 
 `pyproject.toml` 是唯一直接依赖声明源（`project.dependencies` 运行依赖、`project.optional-dependencies.dev` 开发工具）；已删除 `requirements.txt`/`requirements-dev.txt`。`requirements.lock` 是 README、CI 和本地安装共同使用的唯一锁文件，由 Python 3.12 与 pip-tools 7.6.1 从 `pyproject.toml`（含 dev extra）生成，header 记录真实命令（用 `CUSTOM_COMPILE_COMMAND` 规避 pip-tools 7.6.1 在本环境写入多余 `--no-index` 的怪癖）。锁文件不包含 editable、本机路径或 `file:///` 来源。安装契约：`pip install -r requirements.lock` 后 `pip install -e . --no-deps`；便捷安装 `pip install -e .[dev]` 与可复现安装明确区分。
 
-统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ 术语质量门（`scripts/term_quality_gate.py`，黄金样本指标阈值 + 版本化基线漂移对比，失败非零退出）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:client-error`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`、`run-config-panel-tests.mjs`、`run-glossary-panel-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
+统一入口 `scripts/verify.ps1`，顺序为：输出最终 Python 绝对路径与版本并核验 Python `>=3.12`、Node `>=22`（不满足快速失败）→ 密钥扫描（`scripts/secret_scan.py`，只扫 Git 跟踪内容，占位示例放行，匹配值不输出）→ 上游升级治理门静态检查（`python scripts/upgrade_governance_gate.py --static-only`，P2-04：依赖来源 + 任意位置影子包/fork/vendor/源码副本 + 生产 Monkey-patch，失败即停）→ Ruff lint → Ruff format check → coverage（`coverage run --branch -m pytest -q`，全部 Python 测试；`coverage report` + `coverage json` + `scripts/check_coverage_policy.py` 执行全局与关键模块阈值）→ 术语质量门（`scripts/term_quality_gate.py`，黄金样本指标阈值 + 版本化基线漂移对比，失败非零退出）→ `mypy`（仅 `src/pdf_reader`，`check_untyped_defs`/`no_implicit_optional`/`warn_unused_ignores`/`warn_redundant_casts`/`warn_return_any`/`strict_equality`）→ `npm run lint:js`（ESLint flat config，lint `static/**/*.js` 与正式 `tests/*.mjs`）→ `npm test`（前端套件：`test:ui-copy`、`test:error-safety`、`test:client-error`、`test:translation-ui`、`test:translator`、`test:zoom`、`run-alignment-controller-tests.mjs`、`run-config-panel-tests.mjs`、`run-glossary-panel-tests.mjs`）。脚本接受 `-PythonExecutable` 显式指定验证环境（无效显式路径快速失败、不回退）；未指定时优先使用仓库 `venv`，不存在时回退 PATH 中的 `python` 并输出醒目 WARNING（含实际路径与版本）。本地 coverage 数据写入临时目录并在 finally 清理；设置 `PDF_READER_COVERAGE_ARTIFACT_DIR` 时输出 coverage JSON/XML 到该目录供 CI 上传（`coverage-artifacts/` 已忽略）。P2-01 起测试与运行均从已安装的 `pdf_reader` 包导入：先 `pip install -r requirements.lock` 再 `pip install -e . --no-deps`（CI 同契约），仓库根不再提供生产模块 shim。
 
-覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-08-31 P2-02 最终核验值）：全局 line 92.8%、branch 86.4%，关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
+覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-09-01 P2-04 最终核验值）：全局 line 92.8%、branch 86.6%，关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
 
 测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
 
-上游契约与文档治理回归（P3-06）：`tests/test_upstream_contract.py` 用确定性 fake 验证固定版本、SettingsModel 消费字段与 ENGINE_REGISTRY 字段映射、承诺事件映射与未知事件忽略/心跳、workspace/output 注入与 mono/dual/glossary 路径、协作式取消/迟到丢弃/join 所有权，全部离线且不运行真实翻译；`tests/test_documentation_governance.py` 验证 architecture/project/roadmap 职责边界、常青文档链接可解析、README/architecture/dependency-upgrade 的契约命令一致与易腐数字基线。升级命令 `python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py` 与范围记录在 [依赖升级流程](governance/dependency-upgrade.md) 和 [长期文档治理](governance/documentation.md)。
+上游契约与文档治理回归（P3-06）：`tests/test_upstream_contract.py` 用确定性 fake 验证固定版本、SettingsModel 消费字段与 ENGINE_REGISTRY 字段映射、承诺事件映射与未知事件忽略/心跳、workspace/output 注入与 mono/dual/glossary 路径、协作式取消/迟到丢弃/join 所有权，全部离线且不运行真实翻译；`tests/test_documentation_governance.py` 验证 architecture/project/roadmap 职责边界、常青文档链接可解析、README/architecture/dependency-upgrade 的契约命令一致与易腐数字基线。升级命令 `python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`、P2-04 一键治理门 `python scripts/upgrade_governance_gate.py` 与范围记录在 [依赖升级流程](governance/dependency-upgrade.md) 和 [长期文档治理](governance/documentation.md)。
 
 配置中心回归：`tests/test_config_editor.py` 覆盖 GET 脱敏、PUT 保存与密钥保留、注释/未知字段保留、非法 provider/类型/范围、`openai_compatible` 缺 `base_url`、revision 冲突、原子失败不破坏原文件、环境变量状态与 loopback-only 访问；`tests/run-config-panel-tests.mjs` 覆盖面板打开/关闭、分组与说明、provider 映射、加载/保存、API Key 不回显、错误/成功与重启提示。
 

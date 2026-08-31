@@ -90,6 +90,14 @@ P1-01 候选服务落地后，自动候选收集由项目侧旁路服务恢复�
   也没有引入 mock/monkeypatch/patch 测试替身；
 - 守卫只扫描生产目录，`tests/` 使用 mock patch 不误报。
 
+P2-04 升级治理门（`scripts/upgrade_governance_gate.py`）在依赖升级前后对全工作树
+（排除 `venv/`、`node_modules/`、缓存/构建/工作流目录）做任意位置的
+`pdf2zh_next`/`babeldoc` 影子包与影子模块、名称含 pdf2zh/pdfmath/babeldoc 的 fork
+目录、含上游内容的 vendor/third_party/forks 变体、`patches/` 补丁目录和上游源码副本
+扫描，并只对 `src/pdf_reader` 扫描生产 Monkey-patch；`tests/` 的合法 mock patch
+不扫描不误报。该门以违规 fixture 回归测试证明检测能力，并已接入 `scripts/verify.ps1`
+（`--static-only`）与 CI。
+
 ## 4. 验证证据
 
 - 行为契约：`tests/test_upstream_contract.py` 的

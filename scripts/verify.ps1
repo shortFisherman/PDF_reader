@@ -91,6 +91,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     $coverageJson = Join-Path $coverageDir 'coverage.json'
     try {
         Invoke-Checked 'Secret scan' { & $pythonCommand scripts/secret_scan.py }
+        Invoke-Checked 'Upgrade governance gate (static)' { & $pythonCommand scripts/upgrade_governance_gate.py --static-only }
         Invoke-Checked 'Ruff lint' { & $pythonCommand -m ruff check . }
         Invoke-Checked 'Ruff format check' { & $pythonCommand -m ruff format --check . }
         Invoke-Checked 'Coverage + Python tests' { & $pythonCommand -m coverage run --branch -m pytest -q }

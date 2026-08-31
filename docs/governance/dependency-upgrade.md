@@ -22,13 +22,28 @@
    - 修改 `pyproject.toml` / `package.json` 的直接依赖声明。
    - 按 `README.md` 记录的 `pip-compile` 命令重新生成 `requirements.lock`（Python 3.12 +
      pip-tools 7.6.1）；npm 用 `npm install` 更新 `package-lock.json`。
-   - 运行 `python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`。
-   - 另运行 P0-01 上游边界守卫：`python -m pytest tests/test_upstream_boundary_governance.py`
+   - 运行一键升级治理门（推荐，等价于下方第 3 节全部前置契约 + 静态治理检查）：
+
+     ```powershell
+     python scripts/upgrade_governance_gate.py
+     ```
+
+   - 也可拆分运行：`python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`，
+     另运行 P0-01 上游边界守卫 `python -m pytest tests/test_upstream_boundary_governance.py`
      （拒绝影子包、上游源码副本与生产 Monkey-patch）。
    - 运行完整 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1`。
 3. 升级 `pdf2zh-next` 或 BabelDOC 的强制前置条件：
    - 核对 `docs/pdf2zh-next-development-guide.md` 与 `docs/reports/` 的版本适用范围；
-   - 运行关键上游契约测试：`python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`；
+   - 升级前后都运行一键升级治理门（离线、确定性、不修改任何文件）：
+
+     ```powershell
+     python scripts/upgrade_governance_gate.py
+     ```
+
+     该门先执行静态治理检查（依赖来源、任意位置影子包/fork/vendor/上游源码副本、
+     生产 Monkey-patch），再运行下列关键上游契约测试：
+     `python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`
+     以及严格正文路径、候选隔离、合规提交门回归（见下节“范围”）。
    - P0-01 术语行为契约（`tests/test_upstream_contract.py` 内，升级前后都必须通过）：
      - `SharedContextCrossSplitPart.get_glossaries_for_translation` 的正文词表选择：
        auto-on 且自动词表存在时只返回自动词表（用户/累计词表不直接进入正文）、
@@ -73,6 +88,46 @@
    - 升级前后都运行 P2-04/P0-01 上游边界守卫：
      `python -m pytest tests/test_upstream_boundary_governance.py`；若新上游原生修复了
      词表选择或边界匹配，先验证，再决定是否简化本地适配，不要直接删除本地正确性门。
+
+## 一键升级治理门（P2-04）
+
+`scripts/upgrade_governance_gate.py` 是稳定、离线、明确的上游升级术语治理门，升级
+pdf2zh-next/BabelDOC 前后都必须通过。命令：
+
+```powershell
+python scripts/upgrade_governance_gate.py
+```
+
+完整模式 = 静态治理检查 + 下列固定契约测试文件（`--static-only` 只做静态治理，
+`scripts/verify.ps1` 即使用该模式接入，因此 CI 每次运行都会执行静态治理检查）：
+
+```text
+tests/test_dependency_contract.py          依赖声明/锁文件/验证入口契约
+tests/test_upstream_contract.py            固定版本、Settings/BabelDOC 术语选择与严格正文映射
+tests/test_upstream_boundary_governance.py 跟踪内容影子包/源码副本/生产 Monkey-patch
+tests/test_strict_glossary.py              严格正文路径：自动提取恒关闭、只传有效词表
+tests/test_glossary_compliance_flow.py     合规验证、有界重试与 right.pdf 提交门
+tests/test_terminology_compliance.py       纯文本合规判定与 PDF 提取验证核心
+tests/test_glossary_compiler.py            候选隔离：未接受候选绝不进入有效词表
+```
+
+静态治理范围：
+
+- 依赖来源：`pyproject.toml` / `requirements.lock` 不允许 VCS URL、分支/commit 引用、
+  个人 fork、editable/path/file/URL 直接引用或未锁定版本；运行时直接依赖必须精确 `==`；
+  pdf2zh-next==2.9.0 与 babeldoc==0.6.2 在 pyproject 与锁文件间一致（babeldoc 只能作为
+  传递依赖由锁文件固定）。
+- 仓库结构：任意位置的 `pdf2zh_next`/`babeldoc` 影子包目录或影子模块文件、名称含
+  pdf2zh/pdfmath/babeldoc 的 fork 目录、含上游内容的 vendor/third_party/forks 等目录变体、
+  `patches/` 补丁目录、任意位置的上游源码副本，以及 `src/pdf_reader` 生产 Monkey-patch
+  都会被离线发现；`venv/`、`node_modules/`、缓存/构建目录不扫描（其中是真实安装而非
+  仓库影子包），`tests/` 的合法 mock patch 不扫描不误报。
+- 治理门自身有回归测试（`tests/test_upgrade_governance_gate.py`），用违规 fixture 证明
+  上述检测确实能抓到问题，而不是只验证当前仓库恰好干净。
+
+`scripts/verify.ps1` 在密钥扫描后执行 `python scripts/upgrade_governance_gate.py --static-only`，
+CI 通过同一 `scripts/verify.ps1` 运行，二者关系由
+`tests/test_upgrade_governance_gate.py` 固定，不允许静默漂移。
 
 ## 升级记录
 

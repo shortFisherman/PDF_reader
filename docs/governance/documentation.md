@@ -24,10 +24,12 @@
 
 1. 修改 `pyproject.toml` / `package.json` 的直接依赖声明；按 `README.md` 记录的
    `pip-compile` 命令重新生成 `requirements.lock`（Python 3.12 + pip-tools 7.6.1）。
-2. 运行契约测试 `python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`，
-   范围见 `docs/governance/dependency-upgrade.md`：固定版本、`SettingsModel` 消费字段与引擎字段映射、
-   承诺事件映射与未知事件忽略/心跳、`workspace/output` 注入与 mono/dual/glossary 路径、
-   协作式取消/迟到丢弃/`join` 所有权必须全部通过。
+2. 运行 P2-04 一键升级治理门 `python scripts/upgrade_governance_gate.py`（等价于静态
+   治理检查 + 下列契约测试；`--static-only` 已接入 `scripts/verify.ps1`），或拆分运行
+   `python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`；
+   范围见 `docs/governance/dependency-upgrade.md`：固定版本、`SettingsModel` 消费字段与
+   引擎字段映射、承诺事件映射与未知事件忽略/心跳、`workspace/output` 注入与
+   mono/dual/glossary 路径、协作式取消/迟到丢弃/`join` 所有权必须全部通过。
 3. 契约变化时先更新适配代码与测试，再合并依赖升级，禁止“先升级再观察”。
 4. 完整运行 `scripts/verify.ps1`；升级记录写入 `CHANGELOG.md` 与提交消息；
    许可证按 `docs/governance/license.md` 重新核验。

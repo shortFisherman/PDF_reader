@@ -415,13 +415,25 @@ Node.js `>=22`（版本不满足时快速失败并给出提示）：显式 `-Pyt
 优先仓库 `venv`；仓库 `venv` 缺失而回退 PATH 中的 `python` 时会输出醒目 WARNING（不会静默）。
 显式路径无效时快速失败、不回退。
 
-统一验证依次执行：密钥扫描（`scripts/secret_scan.py`，只扫描 Git 跟踪内容且不输出 secret 值）→ Ruff lint/format → coverage（`coverage run --branch -m pytest`，含全局与关键模块阈值策略）→ mypy（仅 `src/pdf_reader`）→ JS lint（`npm run lint:js`，ESLint flat config）→ 前端测试（`npm test`）。本地 coverage 数据写入临时目录并在结束后清理；CI 通过 `PDF_READER_COVERAGE_ARTIFACT_DIR=coverage-artifacts` 输出 coverage JSON/XML 并上传 artifact（该目录已加入 .gitignore）。
+统一验证依次执行：密钥扫描（`scripts/secret_scan.py`，只扫描 Git 跟踪内容且不输出 secret 值）→ 上游升级治理门静态检查（`python scripts/upgrade_governance_gate.py --static-only`，见下）→ Ruff lint/format → coverage（`coverage run --branch -m pytest`，含全局与关键模块阈值策略）→ mypy（仅 `src/pdf_reader`）→ JS lint（`npm run lint:js`，ESLint flat config）→ 前端测试（`npm test`）。本地 coverage 数据写入临时目录并在结束后清理；CI 通过 `PDF_READER_COVERAGE_ARTIFACT_DIR=coverage-artifacts` 输出 coverage JSON/XML 并上传 artifact（该目录已加入 .gitignore）。
 
 升级 pdf2zh-next/BabelDOC 前，先运行上游契约测试（离线、确定性，不联网、不调用真实翻译、不需要 API Key）：
 
 ```powershell
 python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py
 ```
+
+推荐直接运行一键“上游升级术语治理门”（P2-04）：它在静态治理检查后自动运行上述契约
+测试，以及严格正文路径、候选隔离和合规提交门回归：
+
+```powershell
+python scripts/upgrade_governance_gate.py
+```
+
+治理门拒绝未锁定/VCS/editable/path 等依赖来源，扫描任意位置的
+`pdf2zh_next`/`babeldoc` 影子包、fork/vendor 目录变体、上游源码副本和生产
+Monkey-patch；不联网、不修改任何文件，范围与命令见
+[依赖升级流程](docs/governance/dependency-upgrade.md)。
 
 安装后的关键 Python 依赖可用以下命令快速检查：
 
