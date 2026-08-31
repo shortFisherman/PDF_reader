@@ -1,7 +1,7 @@
 """P4-01 配置示例与文档契约。
 
 锁定 config.example.toml 与当前代码支持面一致：可解析、活跃键在白名单内、
-全部 41 个支持键都有文档赋值行、无真实密钥；README 链接有效（含 URL 编码路径）。
+全部 48 个支持键都有文档赋值行、无真实密钥；README 链接有效（含 URL 编码路径）。
 roadmap 的链接可解析性由 test_documentation_governance 的常青文档链接检查覆盖。
 """
 
@@ -21,13 +21,14 @@ _COMMENT_ASSIGNMENT = re.compile(r"^\s*#\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
 _SECRET_LIKE = re.compile(r"sk-[A-Za-z0-9]{16,}")
 
 
-def test_supported_key_count_is_41():
+def test_supported_key_count_is_48():
     supported = config._KNOWN_SECTION_KEYS
-    assert sum(len(keys) for keys in supported.values()) == 41
+    assert sum(len(keys) for keys in supported.values()) == 48
     assert len(supported["pdf_reader"]) == 2
     assert len(supported["model"]) == 11
     assert len(supported["translation"]) == 10
     assert len(supported["server"]) == 3
+    assert len(supported["term_extraction"]) == 7
     assert len(supported["pdf2zh"]) == 15
 
 

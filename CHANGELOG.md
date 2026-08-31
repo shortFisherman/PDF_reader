@@ -1,5 +1,40 @@
 # 更新日志
 
+## 未发布 — P1-01 候选术语提取从正文翻译解耦
+
+- 新增 `src/pdf_reader/term_extraction.py`：项目自有 `TermExtractionClient`，
+  使用标准库 urllib 走 OpenAI-compatible `POST /chat/completions` 受控接口；
+  首版支持 `deepseek`/`openai`/`openai_compatible`，其余 Provider 稳定降级为
+  unsupported。端点按 base_url 安全拼接（避免重复 `/v1`），请求体最小 schema
+  （model/messages/stream=false），响应只解析受控 JSON
+  `{"terms":[{"source","target"}]}`：条数（≤50）、字段长度（≤200）、控制字符、
+  无效结构与响应正文（≤256 KiB）全部 fail-closed；重复项确定性去重。网络重试
+  只针对超时/429/5xx，连接类错误、4xx 与格式错误不重试；base_url 只接受
+  http/https 且必须带 host（拒绝 userinfo/query/fragment），/v1、/v1/ 与
+  已是 /chat/completions 的路径拼接唯一确定；独立 QPS 限速与严格 timeout；
+  客户端自身按 max_input_chars 前缀截断；成功与错误响应均显式 close；请求体、
+  响应正文、Prompt 与 API Key 永不进入日志或异常消息。
+- 新增 `src/pdf_reader/candidate_service.py`：`CandidateExtractionService` 在
+  正文翻译最终验证并提交成功后才运行（单页/批量同一规则）；用 PyMuPDF 读取已
+  抽取页源文本并统一 1-based 页码，输入为空跳过、超限按前缀确定性截断；候选
+  只通过 `CandidateStore.record_observations` 原子写入 `term_candidates.json`，
+  绝不进入 user/effective/global 权威词表或正文 SettingsModel；网络/解析/
+  存储/不支持 Provider 全部降级为安全日志，不阻止正文 finish，也不产生第二个
+  coordinator job 或悬挂线程。
+- `CandidateStore` 新增批量原子 `record_observations` API：一次响应整体校验
+  后单次 revision 原子合并，任一观察非法则整体不写；保留 accepted/rejected
+  状态与 `accepted_target`/`rejected_targets`，候选变化不触发有效词表 stale。
+- 新增冻结 `CandidateExtractionRuntimeConfig` 与独立 `[term_extraction]`
+  配置：`enabled`（默认 true；未配置该段时跟随旧 `translation.auto_extract_glossary`
+  显式值）、`timeout`（1-120s）、`qps`（1-100）、`max_workers`（1-8）、
+  `retry_count`（0-3）、`max_input_chars`（1000-1000000）、独立 `prompt`；
+  严格类型/范围/未知键校验接入 `AppSettings`、`validate_startup_requirements`
+  与配置中心 schema（41→48 字段），配置示例同步。
+- 文档同步：`README.md`、`config.example.toml`、`docs/architecture.md`、
+  `docs/governance/glossary-upstream-boundary.md` 更新候选解耦事实；新增
+  `docs/governance/term-extraction-client-boundary.md` 本地决策记录（上游无
+  稳定纯提取公开 API → 项目自有小接口，不依赖 BabelDOC 深层私有类）。
+
 ## 未发布 — P0-05 术语合规验证、重试与提交门
 
 - 新增 `src/pdf_reader/terminology_compliance.py`：独立验证模块，拆分为纯文本

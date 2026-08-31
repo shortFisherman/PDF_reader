@@ -27,7 +27,9 @@ BabelDOC 0.6.2 `SharedContextCrossSplitPart.get_glossaries_for_translation(auto_
 | false | true | false | 同上 |
 
 `translation.auto_extract_glossary` 不再反转正文开关；正文恒为严格路径。
-自动候选收集暂时停产，P1-01 候选服务落地前该配置不产生候选。
+P1-01 候选服务落地后，自动候选收集由项目侧旁路服务恢复：未配置
+`[term_extraction]` 段时 `enabled` 跟随本键显式值（旧默认 true），候选只进
+`term_candidates.json`，不经用户接受绝不进入正文。
 
 真实转换链还有一个已核验的上游缺口：pdf2zh-next 2.9.0 `create_babeldoc_config`
 只转发 `auto_extract_glossary`，不把 `save_auto_extracted_glossary` 传给 BabelDOC，
@@ -50,6 +52,10 @@ BabelDOC 0.6.2 `SharedContextCrossSplitPart.get_glossaries_for_translation(auto_
   UTF-8 上限且整行纳入。
 - 自动候选由项目侧独立候选服务产出，只写候选存储；用户确认前不得进入正文有效词表，
   也不改变正文翻译的词表选择。
+- P1-01 候选服务是正文成功提交后的旁路：`TermExtractionClient` 走项目自有
+  OpenAI-compatible `/chat/completions` 受控请求（支持 deepseek/openai/
+  openai_compatible，其余 Provider 稳定降级），响应只解析受控 JSON，失败只
+  降级日志；详见 [term-extraction-client-boundary.md](term-extraction-client-boundary.md)。
 - 提交门（P0-05）在项目边界验证最终候选译文：`replace_page`/`replace_pages`
   前用 PyMuPDF 提取译文文本，对当前页/批次活跃权威 source→target 做精确 target
   检查。源侧同样 fail-closed：rows 为空或源文本成功且无命中才视为

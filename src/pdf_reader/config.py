@@ -121,12 +121,26 @@ class Pdf2zhRuntimeConfig:
 
 
 @dataclass(frozen=True)
+class CandidateExtractionRuntimeConfig:
+    """P1-01 冻结的旁路候选术语提取配置（不影响正文翻译）。"""
+
+    enabled: bool = True
+    timeout: float = 30.0
+    qps: int = 2
+    max_workers: int = 1
+    retry_count: int = 1
+    max_input_chars: int = 80_000
+    prompt: str | None = None
+
+
+@dataclass(frozen=True)
 class UpstreamRuntimeConfig:
     """传递给 ``translation_settings.build_settings`` 的冻结上游配置。"""
 
     model: ModelRuntimeConfig
     translation: TranslationRuntimeConfig
     pdf: Pdf2zhRuntimeConfig
+    term_extraction: CandidateExtractionRuntimeConfig = field(default_factory=CandidateExtractionRuntimeConfig)
 
 
 @dataclass(frozen=True)
@@ -146,6 +160,7 @@ class AppSettings:
     lang_in: str
     lang_out: str
     upstream: UpstreamRuntimeConfig
+    term_extraction: CandidateExtractionRuntimeConfig = field(default_factory=CandidateExtractionRuntimeConfig)
 
 
 _DEBUG_TRUE_VALUES = frozenset({"true", "1", "on", "yes"})
@@ -441,6 +456,17 @@ _KNOWN_SECTION_KEYS: dict[str, frozenset[str]] = {
         }
     ),
     "server": frozenset({"host", "port", "debug"}),
+    "term_extraction": frozenset(
+        {
+            "enabled",
+            "timeout",
+            "qps",
+            "max_workers",
+            "retry_count",
+            "max_input_chars",
+            "prompt",
+        }
+    ),
     "pdf2zh": frozenset(
         {
             "split_short_lines",
@@ -732,6 +758,69 @@ def _parse_translation_runtime_config(translation_cfg: dict) -> TranslationRunti
     )
 
 
+def _parse_term_extraction_runtime_config(
+    term_cfg: dict,
+    *,
+    legacy_auto_extract: bool,
+    section_present: bool,
+) -> CandidateExtractionRuntimeConfig:
+    """严格解析 [term_extraction]：类型、范围全部在启动期校验。
+
+    兼容语义：未显式提供 ``[term_extraction]`` 段时，``enabled`` 跟随旧
+    ``translation.auto_extract_glossary`` 的显式值（旧默认 true）；显式提供
+    段但省略 ``enabled`` 时采用默认 true。候选提取失败/不支持永远只降级日志，
+    不影响正文翻译结果。
+    """
+    enabled = term_cfg.get("enabled")
+    if enabled is None:
+        enabled = legacy_auto_extract if not section_present else True
+    if not isinstance(enabled, bool):
+        raise ConfigError("[term_extraction].enabled 必须是布尔值 true 或 false")
+
+    timeout = term_cfg.get("timeout", 30.0)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+        raise ConfigError("[term_extraction].timeout 必须是非布尔数值")
+    timeout = float(timeout)
+    if not math.isfinite(timeout) or not 1.0 <= timeout <= 120.0:
+        raise ConfigError("[term_extraction].timeout 必须是 1 到 120 之间的有限数值")
+
+    qps = term_cfg.get("qps", 2)
+    if isinstance(qps, bool) or not isinstance(qps, int) or not 1 <= qps <= 100:
+        raise ConfigError("[term_extraction].qps 必须是 1 到 100 之间的整数（布尔值不算）")
+
+    max_workers = term_cfg.get("max_workers", 1)
+    if isinstance(max_workers, bool) or not isinstance(max_workers, int) or not 1 <= max_workers <= 8:
+        raise ConfigError("[term_extraction].max_workers 必须是 1 到 8 之间的整数（布尔值不算）")
+
+    retry_count = term_cfg.get("retry_count", 1)
+    if isinstance(retry_count, bool) or not isinstance(retry_count, int) or not 0 <= retry_count <= 3:
+        raise ConfigError("[term_extraction].retry_count 必须是 0 到 3 之间的整数（布尔值不算）")
+
+    max_input_chars = term_cfg.get("max_input_chars", 80_000)
+    if (
+        isinstance(max_input_chars, bool)
+        or not isinstance(max_input_chars, int)
+        or not 1000 <= max_input_chars <= 1_000_000
+    ):
+        raise ConfigError("[term_extraction].max_input_chars 必须是 1000 到 1000000 之间的整数（布尔值不算）")
+
+    prompt = term_cfg.get("prompt")
+    if prompt is not None:
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ConfigError("[term_extraction].prompt 若设置必须是非空字符串")
+        prompt = prompt.strip()
+
+    return CandidateExtractionRuntimeConfig(
+        enabled=enabled,
+        timeout=timeout,
+        qps=qps,
+        max_workers=max_workers,
+        retry_count=retry_count,
+        max_input_chars=max_input_chars,
+        prompt=prompt,
+    )
+
+
 def _pdf2zh_bool(pdf_cfg: dict, key: str, default: bool) -> bool:
     value = pdf_cfg.get(key, default)
     if not isinstance(value, bool):
@@ -986,6 +1075,48 @@ def _lenient_pdf2zh_runtime_config(pdf_cfg: dict) -> Pdf2zhRuntimeConfig:
     )
 
 
+def _lenient_term_extraction_runtime_config(
+    term_cfg: dict,
+    *,
+    legacy_auto_extract: bool,
+    section_present: bool,
+) -> CandidateExtractionRuntimeConfig:
+    """宽松解析 [term_extraction]：类型/范围错误回退安全默认值。"""
+
+    def opt_int(key: str, default: int, minimum: int, maximum: int) -> int:
+        value = term_cfg.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+            return default
+        return value
+
+    def opt_float(key: str, default: float, minimum: float, maximum: float) -> float:
+        value = term_cfg.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return default
+        number = float(value)
+        if not math.isfinite(number) or not minimum <= number <= maximum:
+            return default
+        return number
+
+    enabled = term_cfg.get("enabled")
+    if not isinstance(enabled, bool):
+        enabled = legacy_auto_extract if not section_present else True
+    prompt = term_cfg.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        prompt = None
+    else:
+        prompt = prompt.strip()
+    return CandidateExtractionRuntimeConfig(
+        enabled=enabled,
+        timeout=opt_float("timeout", 30.0, 1.0, 120.0),
+        qps=opt_int("qps", 2, 1, 100),
+        max_workers=opt_int("max_workers", 1, 1, 8),
+        retry_count=opt_int("retry_count", 1, 0, 3),
+        max_input_chars=opt_int("max_input_chars", 80_000, 1000, 1_000_000),
+        prompt=prompt,
+    )
+
+
 def build_upstream_runtime_config(
     config_data: dict | None = None,
     *,
@@ -1000,18 +1131,31 @@ def build_upstream_runtime_config(
     model_section = _require_table(data, "model")
     translation_section = _require_table(data, "translation")
     pdf_section = _require_table(data, "pdf2zh") if "pdf2zh" in data else {}
+    term_section = _require_table(data, "term_extraction") if "term_extraction" in data else {}
+    section_present = "term_extraction" in data
     if strict:
         model_cfg = _parse_model_runtime_config(model_section)
         translation_cfg = _parse_translation_runtime_config(translation_section)
         pdf_cfg = _parse_pdf2zh_runtime_config(pdf_section)
+        term_cfg = _parse_term_extraction_runtime_config(
+            term_section,
+            legacy_auto_extract=translation_cfg.auto_extract_glossary,
+            section_present=section_present,
+        )
     else:
         model_cfg = _lenient_model_runtime_config(model_section)
         translation_cfg = _lenient_translation_runtime_config(translation_section)
         pdf_cfg = _lenient_pdf2zh_runtime_config(pdf_section)
+        term_cfg = _lenient_term_extraction_runtime_config(
+            term_section,
+            legacy_auto_extract=translation_cfg.auto_extract_glossary,
+            section_present=section_present,
+        )
     return UpstreamRuntimeConfig(
         model=model_cfg,
         translation=translation_cfg,
         pdf=pdf_cfg,
+        term_extraction=term_cfg,
     )
 
 
@@ -1111,6 +1255,7 @@ def build_app_settings(
         lang_in=upstream.translation.lang_in,
         lang_out=upstream.translation.lang_out,
         upstream=upstream,
+        term_extraction=upstream.term_extraction,
     )
 
 

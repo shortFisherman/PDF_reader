@@ -71,13 +71,14 @@ def test_get_returns_schema_values_and_revision_without_api_key(editor_client):
     data = _get(client, cfg_path)
 
     assert isinstance(data["revision"], str) and len(data["revision"]) == 64
-    assert len(data["schema"]) == 41
+    assert len(data["schema"]) == 48
     assert {spec["group"] for spec in data["schema"]} == {"required", "optional", "advanced"}
     assert {spec["path"].split(".")[0] for spec in data["schema"]} == {
         "model",
         "pdf_reader",
         "translation",
         "server",
+        "term_extraction",
         "pdf2zh",
     }
     assert data["values"]["model"]["provider"] == "deepseek"
@@ -348,6 +349,24 @@ def test_provider_options_last_item_is_openai_compatible():
     specs = {spec.path: spec for spec in config_editor.FIELD_SPECS}
     provider_spec = specs["model.provider"]
     assert provider_spec.options[-1] == ("openai_compatible", "自定义 OpenAI 兼容接口")
+
+
+def test_term_extraction_schema_fields_are_well_formed():
+    paths = {spec.path for spec in config_editor.FIELD_SPECS}
+    assert {
+        "term_extraction.enabled",
+        "term_extraction.timeout",
+        "term_extraction.qps",
+        "term_extraction.max_workers",
+        "term_extraction.retry_count",
+        "term_extraction.max_input_chars",
+        "term_extraction.prompt",
+    } <= paths
+    timeout = config_editor.FIELDS_BY_PATH["term_extraction.timeout"]
+    retry = config_editor.FIELDS_BY_PATH["term_extraction.retry_count"]
+    assert timeout.minimum == 1.0 and timeout.maximum == 120.0
+    assert retry.minimum == 0 and retry.maximum == 3
+    assert "候选" in config_editor.FIELDS_BY_PATH["term_extraction.enabled"].description
 
 
 def test_schema_qps_and_pool_max_workers_allow_large_values():

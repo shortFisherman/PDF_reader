@@ -61,6 +61,11 @@ def _get_coordinator() -> TranslationCoordinator:
     return cast(TranslationCoordinator, current_app.config["translation_coordinator"])
 
 
+def _get_candidate_service():
+    """返回旁路候选提取服务；未注入（兼容 fallback）时为 None，正文不受影响。"""
+    return current_app.config.get("candidate_extraction_service")
+
+
 def _get_config_path():
     return current_app.config.get("config_path", config.CONFIG_PATH)
 
@@ -290,6 +295,7 @@ def translate_page(page: int):
         register_stream=coordinator.register_stream,
         unregister_stream=coordinator.unregister_stream,
         strict_context=strict_ctx,
+        candidate_service=_get_candidate_service(),
         task_ctx=task_context_from_indices(
             job.job_id,
             snapshot.document_id,
@@ -415,6 +421,7 @@ def translate_batch():
         register_stream=coordinator.register_stream,
         unregister_stream=coordinator.unregister_stream,
         strict_context=strict_ctx,
+        candidate_service=_get_candidate_service(),
         task_ctx=task_context_from_indices(
             job.job_id,
             snapshot.document_id,
@@ -588,4 +595,5 @@ def register_routes(app):
     if "app_settings" not in app.config:
         app.config["app_settings"] = config.build_app_settings()
     app.config.setdefault("translation_coordinator", TranslationCoordinator())
+    app.config.setdefault("candidate_extraction_service", None)
     app.register_blueprint(bp)

@@ -11,6 +11,7 @@ PDF 版面翻译由 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-
 - SSE 翻译阶段与进度显示。
 - 自定义翻译提示词。
 - 按 PDF 隔离的累积术语表。
+- 旁路候选术语提取：正文提交成功后自动收集模型候选，仅用户确认后才影响正文。
 - 译文和阅读位置持久化。
 - 大型 PDF 页面懒加载和卸载。
 - Ctrl + 鼠标滚轮缩放。
@@ -81,7 +82,7 @@ powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -PythonExecutable .\
 该设计文档已随收口移入 `docs/completed improvements/`（原路径 `docs/pdf2zh-configuration-expansion-design.md` 不再使用）。
 
 > **普通用户提示：只改你确定的字段。** 高级参数不了解就保持注释或删除，全部都有可直接使用的
-> 默认值；不要猜阈值或并发值。41 键的完整类型、默认值与副作用手册仍在
+> 默认值；不要猜阈值或并发值。48 键的完整类型、默认值与副作用手册仍在
 > [config.example.toml](config.example.toml)。
 
 ### DeepSeek 最小 config.toml
@@ -122,14 +123,17 @@ qps = 4
 | 429 / 限流 | 降 `qps`，同时降 `pool_max_workers`（8→4→1 逐级降） | 不要继续调大；等配额恢复再试 |
 | 超时频繁 | 先降 `qps`/`pool_max_workers`，或增大 `model.timeout` | `timeout` 仅 `aliyun`/`openai`/`openai_compatible` 支持，其它 provider 设置会被忽略 |
 | 速度慢但无 429 | 逐级 1→4→8 | 每级观察是否出现限流或超时 |
-| 费用增长过快 | 降 `qps` | 正文翻译已固定关闭上游自动术语提取；候选收集暂停期间 `auto_extract_glossary` 不额外调用模型 |
+| 费用增长过快 | 降 `qps`，或把 `[term_extraction].enabled` 设为 `false` | 正文固定关闭上游自动术语提取；候选提取默认开启但独立于正文，可随时关闭 |
 
 ### 其它常用参数怎么选
 
 | 参数 | 默认 | 怎么选 |
 |---|---|---|
 | `translation.min_text_length` | `5` | 短标题/图注被漏翻可尝试 `2`；噪声碎片太多可尝试 `10`；一次只小幅调整 |
-| `translation.auto_extract_glossary` | `true` | 当前对正文为惰性配置：正文恒走严格路径并关闭上游自动提取；自动候选收集在 P1-01 前暂停 |
+| `translation.auto_extract_glossary` | `true` | 兼容保留项：正文恒走严格路径；未配置 `[term_extraction]` 段时，候选提取的 `enabled` 跟随它的显式值 |
+| `term_extraction.enabled` | `true` | 候选旁路提取总开关；只写候选存储，未确认前不影响正文；失败也不影响正文 |
+| `term_extraction.timeout` | `30` | 候选请求超时；失败只降级日志，正文仍 finish |
+| `term_extraction.retry_count` | `1` | 只对超时/429/5xx 重试；4xx 与格式错误不重试 |
 | `translation.primary_font_family` | `auto` | 只有字体视觉明显不合适才改 `serif`/`sans-serif`/`script` |
 | `translation.default_system_prompt` | 省略 | 只有希望每次任务固定附加翻译指令时才设置；页面非空 Prompt 仍优先 |
 | `model.timeout` | provider 默认 | 仅 `aliyun`/`openai`/`openai_compatible` 生效；调大只允许更久等待，不会让模型变快；其它 provider 设置被忽略 |
@@ -137,10 +141,10 @@ qps = 4
 | `[pdf2zh]` 整段 | 省略 | 普通用户默认整段省略；遇到明确的排版/OCR/公式问题时一次只改一个字段，重启后先重译单页对比；已译的其它页不会失效 |
 
 更完整的字段类型/默认值/范围/副作用见 [config.example.toml](config.example.toml)；不要在
-README 里背 41 个键。
+README 里背 48 个键。
 
-当前支持 41 个键：`[pdf_reader]`（2）、`[model]`（11）、`[translation]`（10）、
-`[server]`（3）、`[pdf2zh]`（15）。启动时会严格校验类型、范围、组合与正则：
+当前支持 48 个键：`[pdf_reader]`（2）、`[model]`（11）、`[translation]`（10）、
+`[server]`（3）、`[term_extraction]`（7）、`[pdf2zh]`（15）。启动时会严格校验类型、范围、组合与正则：
 未知 section/key、未知 provider、非法数值（含 nan/inf）、`openai_compatible` 缺少
 `base_url` 都会在启动阶段直接报错，不再静默忽略或兜底。
 
@@ -158,7 +162,15 @@ $env:MODEL_API_KEY = 'your-api-key'
 - 页面 Prompt 优先级：非空页面 Prompt > `translation.default_system_prompt` > 上游默认提示词。
 - 正文翻译固定关闭上游自动术语提取（`no_auto_extract_glossary=true`、
   `save_auto_extracted_glossary=false`），`translation.auto_extract_glossary`
-  当前不改变正文行为；自动候选收集暂停，直到候选服务落地。
+  不再改变正文行为，仅作为未配置 `[term_extraction]` 段时 `enabled` 的兼容
+  默认来源。
+- 候选提取是独立的旁路服务：正文最终验证并提交成功后才运行，只把模型建议
+  原子写入 `term_candidates.json`（含 1-based 页码与策略版本，P1-02 前证据
+  为空、页码为粗粒度页范围）；未经用户接受绝不进入 `effective_glossary.csv`
+  或正文 `SettingsModel`。候选提取失败（网络/解析/存储/Provider 不支持）
+  只降级为安全日志，不阻止正文 `finish`；正文失败或术语合规失败不会触发
+  候选提取。支持 `deepseek`/`openai`/`openai_compatible`，其余 Provider
+  稳定降级为 unsupported。
 - 每次单页/批量翻译前先对当前文档执行旧累计术语幂等迁移（只合入候选）、编译并
   严格验证 `effective_glossary.csv`；正文 `glossaries` 只指向该有效词表。当前页/
   批次实际命中的权威词条会追加为不可被页面 Prompt 覆盖的强制约束块。

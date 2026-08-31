@@ -10,7 +10,7 @@
 #   然后编辑项目资源根目录下的 config.toml，并重启程序。
 #
 # 重要边界：
-#   - 本文件完整列出了当前代码会读取的 41 个支持键（TOML 字段）。
+#   - 本文件完整列出了当前代码会读取的 48 个支持键（TOML 字段）。
 #   - pdf2zh-next/BabelDOC 还有很多参数，但本前端没有全部接通；见文件末尾。
 #   - 本项目直接构造 PDF2ZH SettingsModel，不读取 PDF2ZH/BabelDOC 自己的 CLI
 #     配置文件或 PDF2ZH_* 环境变量；设置那些参数不会影响本前端。
@@ -22,7 +22,7 @@
 #   - 配置变化只影响之后执行的翻译或主动重译，不会追溯更新已写入文档缓存的
 #     旧 right.pdf 页面；缓存仍只按原 PDF 哈希保存，累计术语表跨配置复用。
 #
-# TOML 字段总表（共 41 个支持键）：
+# TOML 字段总表（共 48 个支持键）：
 #   [pdf_reader]  dpi, cache_dir
 #   [model]       provider, api_key, model, base_url, thinking_mode,
 #                 reasoning_effort, send_reasoning_effort, enable_json_mode,
@@ -31,6 +31,8 @@
 #                 term_qps, term_pool_max_workers, auto_extract_glossary,
 #                 primary_font_family, default_system_prompt
 #   [server]      host, port, debug
+#   [term_extraction] enabled, timeout, qps, max_workers, retry_count,
+#                     max_input_chars, prompt
 #   [pdf2zh]      split_short_lines, short_line_split_factor, skip_clean,
 #                 disable_rich_text_translate, enhance_compatibility,
 #                 translate_table_text, skip_scanned_detection, ocr_workaround,
@@ -417,8 +419,10 @@ lang_out = "zh"
 # 自动提取术语并保存/合并到当前文档累计术语表（兼容保留项）。
 # 类型：布尔值 true/false；默认 true。
 # P0-04 起正文翻译恒为严格路径：no_auto_extract_glossary=True +
-# save_auto_extracted_glossary=False，本键不再反转正文开关；自动候选收集在
-# P1-01 候选服务落地前暂停。保留此键仅为兼容旧配置，避免启动期删除报错。
+# save_auto_extracted_glossary=False，本键不再反转正文开关。P1-01 起自动候选
+# 收集由 [term_extraction] 独立接管；未配置 [term_extraction] 段时，
+# term_extraction.enabled 跟随本键的显式值（旧默认 true），以保持兼容语义。
+# 保留此键仅为兼容旧配置，避免启动期删除报错。
 # auto_extract_glossary = true
 
 # 译文主字体。
@@ -431,6 +435,53 @@ lang_out = "zh"
 # 优先级：页面任务 Prompt（非空）> 本字段 > 上游默认翻译提示词。
 # 注意：Prompt 原文不会写入日志或错误消息。
 # default_system_prompt = "/no_think You are a professional translation engine."
+
+
+# -----------------------------------------------------------------------------
+# 旁路候选术语提取（P1-01）
+# -----------------------------------------------------------------------------
+# 候选提取是正文翻译成功提交后的旁路服务：它只把模型建议写入
+# cache/<hash>/term_candidates.json，绝不写入 user_glossary.csv、
+# effective_glossary.csv 或 docs/glossary.csv；未确认前候选不影响正文。
+# 失败（网络/解析/存储）只降级为日志，不改变正文 finish 语义。
+[term_extraction]
+
+# 候选提取总开关。
+# 类型：布尔值 true/false；默认 true。
+# 兼容语义：未配置 [term_extraction] 段时，本键跟随旧
+# translation.auto_extract_glossary 的显式值（旧默认 true）；显式配置本段但
+# 省略本键时默认 true。候选只进候选存储，正文词表选择完全不受本键影响。
+enabled = true
+
+# 单次候选提取请求超时（秒）。
+# 类型/范围：非布尔数值；默认 30.0；必须为 1.0~120.0 的有限数。
+# 只约束旁路候选请求；正文翻译使用 model.timeout / 上游默认。
+# timeout = 30.0
+
+# 候选提取每秒最多启动的请求数。
+# 类型/范围：非布尔整数；默认 2；1~100。与 translation.qps 完全独立。
+# qps = 2
+
+# 候选提取并发上限。
+# 类型/范围：非布尔整数；默认 1；1~8。首版在单任务内同步执行，该值同时作为
+# 信号量上限，限制同时进入提取的调用数。
+# max_workers = 1
+
+# 候选提取网络重试次数。
+# 类型/范围：非布尔整数；默认 1；0~3。
+# 只对超时/429/5xx 重试；连接类错误、4xx 与响应格式错误/超限不重试。
+# retry_count = 1
+
+# 送入候选提取模型的源文本最大字符数。
+# 类型/范围：非布尔整数；默认 80000；1000~1000000。
+# 超出后按前缀确定性截断，不随机采样。
+# max_input_chars = 80000
+
+# 候选提取系统提示词。
+# 类型：可选非空字符串；留空使用内置默认。
+# 内置默认要求：领域术语、最小名词短语、排除普通词、只输出受控 JSON
+# {"terms":[{"source","target"}]}。Prompt 原文不进入日志或错误响应。
+# prompt = "你是 PDF 领域术语提取助手……"
 
 
 # -----------------------------------------------------------------------------
@@ -578,6 +629,14 @@ debug = false
 #   PDFSettings.watermark_output_mode = "no_watermark"
 #     固定输出无水印版本。
 #   PDFSettings.no_mono 保持 false（上游默认）——本前端优先消费 mono_pdf_path。
+# 旁路候选提取请求固定（P1-01）：
+#   POST {base_url}/chat/completions（base_url 只接受 http/https 且必须带
+#   host，拒绝 userinfo/query/fragment；/v1、/v1/ 自动拼成
+#   /v1/chat/completions，已是 /chat/completions 保持不变），请求体最小
+#   schema：model/messages/stream=false，源文本按 max_input_chars 前缀截断；
+#   响应只接受受控 JSON {"terms":[{"source","target"}]}，正文上限 256 KiB，
+#   条数与字段长度有界；单次超时、QPS、并发、重试与输入上限见
+#   [term_extraction]。
 #
 # 由运行时决定：
 #   pages、output、custom_system_prompt、glossaries。
@@ -588,13 +647,16 @@ debug = false
 #     default_system_prompt。
 #   [pdf2zh]：上方的全部 15 个 PDF 高级字段（短行、清理、富文本、兼容性、表格、
 #     扫描/OCR、行号、公式偏移、阈值与正则）。
+#   [term_extraction]：enabled、timeout、qps、max_workers、retry_count、
+#     max_input_chars、prompt（P1-01 旁路候选提取；只写 term_candidates.json）。
 #
 # 仍保持内部固定或暂缓（不会通过 config.toml 开放）：
 #   - 输出结构字段：no_mono、max_pages_per_part、use_alternating_pages_dual、
 #     dual_translate_first，以及双语/交替页/分卷/多文件输出。
 #   - 上游暂缓参数：rpc_doclayout、report_interval、no_remove_non_formula_lines、
 #     SiliconFlow 专有 thinking 参数。
-#   - 独立术语提取 Provider 与第二套凭据、任意 raw 参数透传。
+#   - 独立候选提取 Provider 与第二套凭据（候选提取复用正文 [model] 配置）、
+#     任意 raw 参数透传。
 #
 # 当前未注册的上游翻译器包括：Ollama、Azure OpenAI、DeepL、Google/Bing、Qwen-MT、
 # Dify、AnythingLLM、Tencent、Claude Code、CLI 等。把这些上游名字直接写进 provider

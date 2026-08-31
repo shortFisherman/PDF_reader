@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import shutil
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
@@ -46,6 +47,17 @@ logger = logging.getLogger("pdf_reader.glossary")
 CANDIDATE_FILENAME = "term_candidates.json"
 MAX_EVIDENCE_SNIPPETS = 5
 MAX_EVIDENCE_LENGTH = 200
+
+
+@dataclass(frozen=True)
+class CandidateObservation:
+    """P1-01 批量候选观察：一次响应整体校验后原子合入。"""
+
+    source: str
+    target: str
+    pages: tuple[int, ...] = ()
+    evidence: tuple[str, ...] = ()
+
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _VALID_STATUSES = ("candidate", "rejected", "accepted")
@@ -294,54 +306,82 @@ class CandidateStore:
         expected_revision: int | None = None,
     ) -> int:
         """自动流程观察入口：合并计数/页码/证据，绝不改变状态或用户决定。"""
+        return self.record_observations(
+            [CandidateObservation(source=source, target=target, pages=tuple(pages), evidence=tuple(evidence))],
+            strategy_version=strategy_version,
+            expected_revision=expected_revision,
+        )
+
+    def record_observations(
+        self,
+        observations: list[CandidateObservation] | tuple[CandidateObservation, ...],
+        *,
+        strategy_version: str = "auto/1",
+        expected_revision: int | None = None,
+    ) -> int:
+        """P1-01 批量原子观察入口。
+
+        一次响应内的全部观察先完成类型/文本/页码/证据校验，全部合法后才在
+        同一把路径锁内一次性合并并只写一次 revision；任一观察非法则不写任何
+        内容。自动观察只新增/追加 target 观察，永不改变 candidate/accepted/
+        rejected 状态，也不改写 ``accepted_target``。
+        """
         with self._lock:
             entries, revision, metadata = self._read_unlocked()
             _check_revision(revision, expected_revision)
-            clean_source = validate_term_text(source, "source")
-            clean_target = validate_term_text(target, "target")
             clean_strategy = validate_strategy_version(strategy_version)
-            clean_pages = _bounded_pages(list(pages))
-            clean_evidence = tuple(_bounded_evidence(list(evidence)))
+            prepared: list[tuple[str, str, tuple[int, ...], tuple[str, ...]]] = []
+            for observation in observations:
+                if not isinstance(observation, CandidateObservation):
+                    raise TermStoreError("invalid candidate observation")
+                clean_source = validate_term_text(observation.source, "source")
+                clean_target = validate_term_text(observation.target, "target")
+                clean_pages = _bounded_pages(list(observation.pages))
+                clean_evidence = tuple(_bounded_evidence(list(observation.evidence)))
+                prepared.append((clean_source, clean_target, clean_pages, clean_evidence))
+            if not prepared:
+                return revision
             now = datetime.now(UTC)
-            entry = _find_or_none(entries, clean_source)
-            if entry is None:
-                entries.append(
-                    CandidateEntry(
-                        source=clean_source,
-                        status="candidate",
-                        strategy_version=clean_strategy,
-                        first_seen_at=now,
-                        last_seen_at=now,
-                        targets=[
+            for clean_source, clean_target, clean_pages, clean_evidence in prepared:
+                entry = _find_or_none(entries, clean_source)
+                if entry is None:
+                    entries.append(
+                        CandidateEntry(
+                            source=clean_source,
+                            status="candidate",
+                            strategy_version=clean_strategy,
+                            first_seen_at=now,
+                            last_seen_at=now,
+                            targets=[
+                                TargetSuggestion(
+                                    target=clean_target,
+                                    observations=1,
+                                    pages=clean_pages,
+                                    evidence=clean_evidence,
+                                )
+                            ],
+                        )
+                    )
+                else:
+                    entry.last_seen_at = now
+                    for index, suggestion in enumerate(entry.targets):
+                        if suggestion.target == clean_target:
+                            entry.targets[index] = TargetSuggestion(
+                                target=clean_target,
+                                observations=suggestion.observations + 1,
+                                pages=tuple(sorted(set(suggestion.pages) | set(clean_pages))),
+                                evidence=tuple(_bounded_evidence([*suggestion.evidence, *clean_evidence])),
+                            )
+                            break
+                    else:
+                        entry.targets.append(
                             TargetSuggestion(
                                 target=clean_target,
                                 observations=1,
                                 pages=clean_pages,
                                 evidence=clean_evidence,
                             )
-                        ],
-                    )
-                )
-            else:
-                entry.last_seen_at = now
-                for index, suggestion in enumerate(entry.targets):
-                    if suggestion.target == clean_target:
-                        entry.targets[index] = TargetSuggestion(
-                            target=clean_target,
-                            observations=suggestion.observations + 1,
-                            pages=tuple(sorted(set(suggestion.pages) | set(clean_pages))),
-                            evidence=tuple(_bounded_evidence([*suggestion.evidence, *clean_evidence])),
                         )
-                        break
-                else:
-                    entry.targets.append(
-                        TargetSuggestion(
-                            target=clean_target,
-                            observations=1,
-                            pages=clean_pages,
-                            evidence=clean_evidence,
-                        )
-                    )
             return self._write_unlocked(entries, revision, metadata)
 
     def accept(

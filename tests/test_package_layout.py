@@ -19,6 +19,7 @@ SRC_PACKAGE = REPO_ROOT / "src" / "pdf_reader"
 PRODUCTION_MODULES = [
     "app",
     "cache_ops",
+    "candidate_service",
     "config",
     "config_editor",
     "debug_trace",
@@ -34,6 +35,7 @@ PRODUCTION_MODULES = [
     "sse_stream",
     "state",
     "task_logging",
+    "term_extraction",
     "translation_coordinator",
     "translation_lifecycle",
     "translation_orchestrator",

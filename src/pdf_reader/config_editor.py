@@ -349,6 +349,82 @@ FIELD_SPECS: list[FieldSpec] = [
         suggestions=("/no_think default",),
     ),
     FieldSpec(
+        path="term_extraction.enabled",
+        name="候选术语旁路提取",
+        group="optional",
+        control="bool",
+        description="开启后，正文翻译成功提交后会额外调用模型提取候选术语；候选只进入"
+        "term_candidates.json，未确认前绝不进入正文有效词表。兼容说明：未配置"
+        "[term_extraction] 段时跟随旧 translation.auto_extract_glossary 的显式值"
+        "（默认开启）。",
+        default=True,
+        options=_BOOL_OPTIONS,
+    ),
+    FieldSpec(
+        path="term_extraction.timeout",
+        name="候选提取超时（秒）",
+        group="optional",
+        control="float",
+        description="单次候选提取请求的超时上限（1-120 秒）；只影响旁路候选，不影响正文。",
+        default=30.0,
+        suggestions=("10", "30", "60"),
+        minimum=1.0,
+        maximum=120.0,
+    ),
+    FieldSpec(
+        path="term_extraction.qps",
+        name="候选提取每秒请求数",
+        group="optional",
+        control="int",
+        description="候选提取每秒最多启动的请求数（1-100），与正文 qps 完全独立。",
+        default=2,
+        suggestions=("1", "2", "4"),
+        minimum=1,
+        maximum=100,
+    ),
+    FieldSpec(
+        path="term_extraction.max_workers",
+        name="候选提取并发上限",
+        group="optional",
+        control="int",
+        description="候选提取同时进入提取的最大调用数（1-8）。首版同步执行，该值作为信号量上限。",
+        default=1,
+        suggestions=("1", "2", "4"),
+        minimum=1,
+        maximum=8,
+    ),
+    FieldSpec(
+        path="term_extraction.retry_count",
+        name="候选提取网络重试次数",
+        group="optional",
+        control="int",
+        description="网络可重试次数（0-3）。只对超时/429/5xx 重试；连接类错误、4xx、响应格式错误与超限不重试。",
+        default=1,
+        suggestions=("0", "1", "2"),
+        minimum=0,
+        maximum=3,
+    ),
+    FieldSpec(
+        path="term_extraction.max_input_chars",
+        name="候选提取源文本上限",
+        group="optional",
+        control="int",
+        description="送入候选提取模型的源文本最大字符数（1000-1000000）；超出后按前缀确定性截断。",
+        default=80000,
+        suggestions=("40000", "80000", "160000"),
+        minimum=1000,
+        maximum=1000000,
+    ),
+    FieldSpec(
+        path="term_extraction.prompt",
+        name="候选提取提示词",
+        group="optional",
+        control="string",
+        description="候选提取使用的系统提示词；留空使用内置默认（要求领域术语、最小名词"
+        "短语、排除普通词、JSON schema）。Prompt 原文不进入日志或错误响应。",
+        default="",
+    ),
+    FieldSpec(
         path="server.host",
         name="监听地址",
         group="optional",
@@ -518,7 +594,7 @@ FIELD_SPECS: list[FieldSpec] = [
 ]
 
 FIELDS_BY_PATH: dict[str, FieldSpec] = {spec.path: spec for spec in FIELD_SPECS}
-SECTIONS: tuple[str, ...] = ("model", "pdf_reader", "translation", "server", "pdf2zh")
+SECTIONS: tuple[str, ...] = ("model", "pdf_reader", "translation", "server", "term_extraction", "pdf2zh")
 
 
 class ConfigEditError(ValueError):

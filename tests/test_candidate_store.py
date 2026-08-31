@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from pdf_reader import candidate_store
-from pdf_reader.candidate_store import CANDIDATE_FILENAME, CandidateStore
+from pdf_reader.candidate_store import CANDIDATE_FILENAME, CandidateObservation, CandidateStore
 from pdf_reader.term_model import (
     CANDIDATE_SCHEMA_VERSION,
     GlossaryRevisionConflictError,
@@ -83,6 +83,77 @@ def test_record_observation_keeps_multiple_target_suggestions(tmp_path):
     entries, _, _ = store.load()
     targets = [s.target for s in entries[0].targets]
     assert targets == ["外用皮质类固醇", "外用糖皮质激素"]
+
+
+def test_record_observations_batch_merges_atomically(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    revision = store.record_observations(
+        [
+            CandidateObservation(source="AD", target="特应性皮炎", pages=(1, 2)),
+            CandidateObservation(source="TCS", target="外用糖皮质激素", pages=(2,)),
+            CandidateObservation(source="AD", target="特应性皮炎", pages=(3,)),
+        ],
+        strategy_version="term-extraction-client/1",
+    )
+    assert revision == 1
+    entries, loaded_revision, _ = store.load()
+    assert loaded_revision == 1
+    assert len(entries) == 2
+    ad = next(entry for entry in entries if entry.source_key == "ad")
+    assert ad.targets[0].observations == 2
+    assert ad.targets[0].pages == (1, 2, 3)
+    assert ad.strategy_version == "term-extraction-client/1"
+
+
+def test_record_observations_empty_is_noop(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    assert store.record_observations([]) == 0
+    assert not store.path.exists()
+
+
+def test_record_observations_invalid_observation_writes_nothing(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    store.record_observation("AD", "特应性皮炎")
+    old_bytes = store.path.read_bytes()
+    with pytest.raises(TermStoreError, match="invalid candidate observation"):
+        store.record_observations(
+            [
+                CandidateObservation(source="TCS", target="外用糖皮质激素"),
+                "not-an-observation",  # type: ignore[list-item]
+            ]
+        )
+    with pytest.raises(TermStoreError, match="control characters"):
+        store.record_observations(
+            [
+                CandidateObservation(source="TCS", target="外用糖皮质激素"),
+                CandidateObservation(source="bad\nterm", target="译法"),
+            ]
+        )
+    entries, revision, _ = store.load()
+    assert revision == 1
+    assert len(entries) == 1
+    assert store.path.read_bytes() == old_bytes
+
+
+def test_record_observations_never_changes_user_state(tmp_path):
+    store = CandidateStore(doc_dir(tmp_path))
+    store.record_observation("AD", "自动建议")
+    store.accept("AD", target="用户确认")
+    store.record_observation("TCS", "旧译法")
+    store.reject("TCS", target="旧译法")
+
+    store.record_observations(
+        [
+            CandidateObservation(source="AD", target="新建议"),
+            CandidateObservation(source="TCS", target="新建议"),
+        ]
+    )
+    entries, _, _ = store.load()
+    by_source = {entry.source_key: entry for entry in entries}
+    assert by_source["ad"].status == "accepted"
+    assert by_source["ad"].accepted_target == "用户确认"
+    assert by_source["tcs"].status == "rejected"
+    assert by_source["tcs"].rejected_targets == ["旧译法"]
 
 
 def test_accept_sets_status_and_keeps_it_under_auto_observations(tmp_path):

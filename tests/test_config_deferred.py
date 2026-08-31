@@ -13,6 +13,7 @@ def _cfg(
     translation: dict | None = None,
     pdf_reader: dict | None = None,
     pdf2zh: dict | None = None,
+    term_extraction: dict | None = None,
 ) -> dict:
     cfg = {
         "model": {"provider": "deepseek", "model": "deepseek-chat", "api_key": "sk-test"},
@@ -28,6 +29,8 @@ def _cfg(
         cfg["pdf_reader"].update(pdf_reader)
     if pdf2zh is not None:
         cfg["pdf2zh"].update(pdf2zh)
+    if term_extraction is not None:
+        cfg["term_extraction"] = term_extraction
     return cfg
 
 
@@ -86,6 +89,13 @@ def test_runtime_config_defaults(monkeypatch):
     assert upstream.translation.primary_font_family is None
     assert upstream.translation.default_system_prompt is None
     assert isinstance(upstream.pdf, config.Pdf2zhRuntimeConfig)
+    assert upstream.term_extraction.enabled is True
+    assert upstream.term_extraction.timeout == 30.0
+    assert upstream.term_extraction.qps == 2
+    assert upstream.term_extraction.max_workers == 1
+    assert upstream.term_extraction.retry_count == 1
+    assert upstream.term_extraction.max_input_chars == 80_000
+    assert upstream.term_extraction.prompt is None
 
 
 def test_runtime_config_parses_new_fields(monkeypatch):
@@ -114,6 +124,15 @@ def test_runtime_config_parses_new_fields(monkeypatch):
                 "primary_font_family": "serif",
                 "default_system_prompt": "/no_think default",
             },
+            term_extraction={
+                "enabled": False,
+                "timeout": 60.0,
+                "qps": 4,
+                "max_workers": 2,
+                "retry_count": 2,
+                "max_input_chars": 200_000,
+                "prompt": "custom prompt",
+            },
         )
     )
     assert upstream.model.temperature == "0.7"
@@ -129,6 +148,55 @@ def test_runtime_config_parses_new_fields(monkeypatch):
     assert upstream.translation.auto_extract_glossary is False
     assert upstream.translation.primary_font_family == "serif"
     assert upstream.translation.default_system_prompt == "/no_think default"
+    assert upstream.term_extraction.enabled is False
+    assert upstream.term_extraction.timeout == 60.0
+    assert upstream.term_extraction.qps == 4
+    assert upstream.term_extraction.max_workers == 2
+    assert upstream.term_extraction.retry_count == 2
+    assert upstream.term_extraction.max_input_chars == 200_000
+    assert upstream.term_extraction.prompt == "custom prompt"
+
+
+def test_term_extraction_enabled_follows_legacy_when_section_absent(monkeypatch):
+    from pdf_reader import config
+
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    upstream = config.build_upstream_runtime_config(_cfg(translation={"auto_extract_glossary": False}))
+    assert upstream.term_extraction.enabled is False
+
+    upstream = config.build_upstream_runtime_config(
+        _cfg(
+            translation={"auto_extract_glossary": False},
+            term_extraction={"enabled": True},
+        )
+    )
+    assert upstream.term_extraction.enabled is True
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "message"),
+    [
+        ("enabled", "yes", "布尔值"),
+        ("timeout", True, "非布尔数值"),
+        ("timeout", 0.5, "timeout"),
+        ("timeout", 121.0, "timeout"),
+        ("qps", 0, "qps"),
+        ("qps", 101, "qps"),
+        ("max_workers", 0, "max_workers"),
+        ("max_workers", 9, "max_workers"),
+        ("retry_count", -1, "retry_count"),
+        ("retry_count", 4, "retry_count"),
+        ("max_input_chars", 999, "max_input_chars"),
+        ("max_input_chars", 1_000_001, "max_input_chars"),
+        ("prompt", "   ", "prompt"),
+    ],
+)
+def test_term_extraction_invalid_values_rejected(monkeypatch, key, value, message):
+    from pdf_reader import config
+
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    with pytest.raises(config.ConfigError, match=message):
+        config.build_upstream_runtime_config(_cfg(term_extraction={key: value}))
 
 
 @pytest.mark.parametrize(

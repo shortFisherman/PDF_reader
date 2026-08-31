@@ -5,6 +5,7 @@ import sys
 from flask import Flask
 
 from pdf_reader import cache_ops, config, logging_config, paths
+from pdf_reader.candidate_service import CandidateExtractionService
 from pdf_reader.state import AppState
 from pdf_reader.translation_coordinator import TranslationCoordinator
 
@@ -62,6 +63,10 @@ def create_app(settings: config.AppSettings) -> Flask:
     app.config["app_settings"] = settings
     app.config["app_state"] = AppState(settings.cache_dir)
     app.config["translation_coordinator"] = TranslationCoordinator()
+    app.config["candidate_extraction_service"] = CandidateExtractionService(
+        settings.term_extraction,
+        settings.upstream.model,
+    )
     from pdf_reader.routes import register_routes
 
     register_routes(app)
