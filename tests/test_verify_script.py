@@ -357,7 +357,10 @@ def test_full_script_local_coverage_temp_cleaned(tmp_path):
     after = set(Path(temp_root).glob("pdf-reader-coverage-*"))
     assert after == before, "local coverage temp directory must be cleaned"
     assert not (REPO_ROOT / ".coverage").exists()
-    assert not (REPO_ROOT / "coverage-artifacts").exists()
+    if not os.environ.get("PDF_READER_COVERAGE_ARTIFACT_DIR"):
+        # CI 的 Verify repository 步骤设置了 artifact 目录 env，此时
+        # coverage-artifacts 按设计存在；本断言只适用于本地模式（无该 env）。
+        assert not (REPO_ROOT / "coverage-artifacts").exists()
 
 
 def test_full_script_coverage_policy_failure_cleans_temp_and_short_circuits(tmp_path):

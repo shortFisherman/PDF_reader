@@ -10,6 +10,11 @@ jobs:
   lint-and-test:
     runs-on: windows-latest
     name: Lint & Test
+    env:
+      # 英文 Windows 运行器控制台编码为 cp1252，直接输出中文会抛
+      # UnicodeEncodeError；UTF-8 模式同时让 pytest/subprocess 的文本
+      # 解码使用 utf-8，保证探测类子进程的预期文案可读。
+      PYTHONUTF8: '1'
 
     steps:
       - uses: actions/checkout@v4

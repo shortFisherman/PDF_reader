@@ -20,7 +20,7 @@ GLOSSARY_UPSTREAM_BOUNDARY = REPO_ROOT / "docs" / "governance" / "glossary-upstr
 DOCUMENTATION = REPO_ROOT / "docs" / "governance" / "documentation.md"
 LICENSE_DOC = REPO_ROOT / "docs" / "governance" / "license.md"
 TOOL_DIRS_DOC = REPO_ROOT / "docs" / "governance" / "tool-directories.md"
-GLOSSARY_IMPROVEMENT_PLAN = REPO_ROOT / "docs" / "improvement items" / "glossary-memory-improvement-plan-831.md"
+GLOSSARY_IMPROVEMENT_PLAN = REPO_ROOT / "docs" / "completed improvements" / "glossary-memory-improvement-plan-831.md"
 
 LINK_CHECKED_DOCS = (
     README,

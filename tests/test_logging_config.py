@@ -7,11 +7,27 @@ import threading
 import time
 from collections.abc import Iterator
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from pdf_reader import config, debug_trace, logging_config
+
+
+def _injected_config_snapshot(cache_dir: Path) -> dict:
+    """显式注入的配置快照：build_app_settings 消费的是模块 import 期从
+    config.toml 加载的 CONFIG 快照，而不是被 monkeypatch 的模块常量；
+    因此测试必须替换 config.CONFIG 才能不依赖本地 config.toml（CI 没有）。"""
+    return {
+        "model": {
+            "provider": "deepseek",
+            "model": "deepseek-v4-flash",
+            "api_key": "sk-secret-test-123",
+        },
+        "pdf_reader": {"dpi": 200, "cache_dir": str(cache_dir)},
+        "translation": {"lang_in": "en", "lang_out": "zh"},
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -713,6 +729,7 @@ class TestApiKeyNeverLogged:
         monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
         monkeypatch.setattr(config, "DPI", 200)
         monkeypatch.setattr(config, "DEBUG", False)
+        monkeypatch.setattr(config, "CONFIG", _injected_config_snapshot(tmp_path / "cache"))
 
         with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)
@@ -747,6 +764,7 @@ class TestApiKeyNeverLogged:
         monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
         monkeypatch.setattr(config, "DPI", 200)
         monkeypatch.setattr(config, "DEBUG", False)
+        monkeypatch.setattr(config, "CONFIG", _injected_config_snapshot(tmp_path / "cache"))
 
         with patch("pdf_reader.logging_config.LOG_DIR", tmp_path / "logs"):
             logging_config.setup_logging(False)

@@ -152,11 +152,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             write_baseline(report, target)
             baseline_path = target
             baseline = load_baseline(target)
-            deltas, drift_failures = compare_baseline(
+            deltas, drift_raw = compare_baseline(
                 report.metrics,
                 baseline["metrics"],
                 tolerance=args.tolerance,
             )
+            drift_failures = list(drift_raw)
             if baseline["fixture_sha256"] != report.fixture_sha256:
                 drift_failures.append("fixture_sha256 mismatch with baseline")
         elif not args.no_baseline:
@@ -167,11 +168,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise TermQualityError("baseline not found; use --update-baseline first")
             baseline_path = candidate
             baseline = load_baseline(candidate)
-            deltas, drift_failures = compare_baseline(
+            deltas, drift_raw = compare_baseline(
                 report.metrics,
                 baseline["metrics"],
                 tolerance=args.tolerance,
             )
+            drift_failures = list(drift_raw)
             if baseline["fixture_sha256"] != report.fixture_sha256:
                 drift_failures.append("fixture_sha256 mismatch with baseline")
     except TermQualityError as exc:

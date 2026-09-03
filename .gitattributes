@@ -1,0 +1,6 @@
+# 哈希契约文件强制 LF：Windows 检出若转成 CRLF，LICENSE、术语 fixture 与
+# 基线报告的 sha256 会随行尾变化，导致治理/质量门测试在英文 Windows CI
+# 上失败。最小规则集，不扩大影响面。
+LICENSE text eol=lf
+tests/fixtures/** text eol=lf
+docs/reports/*.json text eol=lf

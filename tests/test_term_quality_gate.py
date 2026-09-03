@@ -125,6 +125,25 @@ def test_gate_detects_baseline_drift_with_nonzero_exit(tmp_path):
     assert any("candidate_precision" in failure for failure in payload["failures"])
 
 
+def test_gate_reports_fixture_sha256_mismatch_without_crashing(tmp_path):
+    """基线 fixture_sha256 与当前 fixture 失配时：结构化 drift 失败 + 非零退出，
+    绝不抛 AttributeError（compare_baseline 返回 tuple，必须转 list 才能 append）。"""
+    baseline = term_quality.load_baseline(term_quality.BASELINE_PATH)
+    baseline = dict(baseline)
+    baseline["fixture_sha256"] = "0" * 64
+    mismatched = tmp_path / "mismatched-baseline.json"
+    mismatched.write_text(
+        json.dumps(baseline, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    result = _run_gate("--baseline", str(mismatched), "--json")
+    assert result.returncode != 0
+    assert "AttributeError" not in result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is False
+    assert any("fixture_sha256" in failure for failure in payload["failures"])
+
+
 def test_gate_missing_fixture_exits_usage_error(tmp_path):
     result = _run_gate("--fixture", str(tmp_path / "missing.json"), "--no-baseline")
     assert result.returncode == 2

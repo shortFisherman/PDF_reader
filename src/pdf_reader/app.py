@@ -1,4 +1,5 @@
 import argparse
+import io
 import logging
 import sys
 
@@ -12,6 +13,28 @@ from pdf_reader.translation_coordinator import TranslationCoordinator
 logger = logging.getLogger("pdf_reader.app")
 
 SHUTDOWN_JOIN_TIMEOUT = 10.0
+
+
+def _ensure_utf8_stdio() -> None:
+    """真实入口统一把 stdout/stderr 重配置为 UTF-8（仅当前编码不是 UTF-8 时生效）。
+
+    英文 Windows 的运行器控制台编码是 cp1252（charmap），向 stdout/stderr
+    写中文会抛 UnicodeEncodeError；本函数在 argparse 解析之前调用，确保
+    --help、错误消息与日志在任何控制台编码下都能输出。正常 UTF-8 环境
+    （含 PYTHONUTF8=1 / PYTHONIOENCODING=utf-8）行为不变。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if not isinstance(stream, io.TextIOWrapper):
+            # 非 TextIOWrapper（如测试注入的 StringIO）时静默降级
+            continue
+        encoding = stream.encoding or ""
+        if encoding.lower().replace("-", "").replace("_", "") == "utf8":
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (OSError, ValueError):
+            # 已关闭或不可重配置的流静默降级
+            continue
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -81,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     致命异常统一经 ``logger.exception`` 记录并返回非零；正常
     ``KeyboardInterrupt`` 只记录 INFO，不当成 ERROR。
     """
+    _ensure_utf8_stdio()
     args = _build_parser().parse_args(argv)
     try:
         run_cfg = config.resolve_server_config(cli_debug=args.debug)
