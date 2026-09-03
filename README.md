@@ -10,8 +10,8 @@ PDF 版面翻译由 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-
 - 当前页、页码范围和全文翻译。
 - SSE 翻译阶段与进度显示。
 - 自定义翻译提示词。
-- 按 PDF 隔离的累积术语表。
-- 旁路候选术语提取：正文提交成功后自动收集模型候选，仅用户确认后才影响正文。
+- 按 PDF 隔离、由用户控制的长期术语记忆。
+- 独立候选术语提取：翻译前发现候选，只有正文成功提交后才保存；仅用户确认后才影响后续正文。
 - 译文和阅读位置持久化。
 - 大型 PDF 页面懒加载和卸载。
 - Ctrl + 鼠标滚轮缩放。
@@ -29,6 +29,7 @@ PDF 版面翻译由 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-
 - [项目记忆](docs/project.md)：项目为什么存在、长期意图、常青原则和产品边界。
 - [当前架构](docs/architecture.md)：当前 HEAD 的模块、数据流、API、状态、依赖、测试和技术约束。
 - [路线图](docs/roadmap.md)：候选方向、开放问题、依赖和决策状态；不构成实施授权。
+- [术语提取与翻译控制指南](docs/terminology-system.md)：普通用户如何发现、审核、固定、修改、备份和恢复术语，以及候选冲突、Token 成本和模型上下文说明。
 - [工程与架构长期改进清单](docs/completed%20improvements/engineering-improvement-plan-829.md)：按优先级跟踪可靠性、任务生命周期、目录结构和工程卫生改进（P0–P3 已收口，文档保留在 `docs/completed improvements/`）。
 - [pdf2zh-next 开发参考](docs/pdf2zh-next-development-guide.md)：涉及上游接口、事件和配置时按版本范围阅读。
 - [工具与工作流目录治理](docs/governance/tool-directories.md)：`.agents/`、`.codex/`、`.comet/`、`.opencode/`、`openspec/` 等目录的职责、跟踪与重建边界。
@@ -170,13 +171,15 @@ $env:MODEL_API_KEY = 'your-api-key'
   不再改变正文行为，仅作为未配置 `[term_extraction]` 段时 `enabled` 的兼容
   默认来源；它与 `term_qps`/`term_pool_max_workers` 一起处于 1.x 兼容期
   （启动 WARNING、配置中心不展示/写入、计划 2.0.0 移除）。
-- 候选提取是独立的旁路服务：正文最终验证并提交成功后才运行，只把模型建议
-  原子写入 `term_candidates.json`（含 1-based 页码与策略版本，P1-02 前证据
-  为空、页码为粗粒度页范围）；未经用户接受绝不进入 `effective_glossary.csv`
-  或正文 `SettingsModel`。候选提取失败（网络/解析/存储/Provider 不支持）
-  只降级为安全日志，不阻止正文 `finish`；正文失败或术语合规失败不会触发
-  候选提取。支持 `deepseek`/`openai`/`openai_compatible`，其余 Provider
-  稳定降级为 unsupported。
+- 候选提取是独立的旁路服务：翻译前先读取本次源文并调用候选模型，结果只暂存
+  在内存；正文最终验证并提交成功后，才把模型建议原子写入
+  `term_candidates.json`（含 1-based 页码、真实证据、观察次数与策略版本）。
+  未经用户接受的候选绝不进入 `effective_glossary.csv` 或正文
+  `SettingsModel`，本次新候选也不会反过来影响同一次正文翻译。候选提取失败
+  （网络/解析/存储/Provider 不支持）只降级为安全日志，不阻止正文
+  `finish`；正文失败或术语合规失败时，已暂存候选不会落盘。支持
+  `deepseek`/`openai`/`openai_compatible`，其余 Provider 稳定降级为
+  unsupported。
 - 每次单页/批量翻译前先对当前文档执行旧累计术语幂等迁移（只合入候选）、编译并
   严格验证 `effective_glossary.csv`；正文 `glossaries` 只指向该有效词表。当前页/
   批次实际命中的权威词条会追加为不可被页面 Prompt 覆盖的强制约束块。
@@ -209,20 +212,42 @@ API Key 不应提交到 Git。
 - `DATA_ROOT`（运行数据根）默认等于 `PROJECT_ROOT`：日志仍在仓库 `logs/`，相对缓存仍在仓库根下。环境变量 `PDF_READER_DATA_ROOT` 可覆盖（测试隔离等场景）。
 - 安装本包后，从任意 CWD 运行 `python -m pdf_reader`（或 `start.bat`，其自身仍会切换到仓库根），配置、手动术语表、模板、静态文件、日志和缓存位置一致。
 
-## 术语管理与备份恢复
+## 术语管理：提取、翻译控制与备份恢复
 
-阅读页工具栏中的“术语”按钮打开当前文档的术语面板，用于管理权威术语和候选术语：
+这套系统把“模型建议”和“用户决定”分开：模型只负责发现候选，用户手工新建或
+明确接受的译法才是权威术语，才能约束正文翻译。最简单的使用方法是：
 
-- 权威术语：新建、编辑、锁定/解锁、删除；锁定术语只有解锁后才能修改或删除。
-- 候选术语：查看出现页码、有界证据与观察次数；接受（接受前可修改 target）或
-  拒绝；拒绝的候选不会反复提示，但不冻结后台统计。
-- 候选不会自动影响正文：只有权威术语（含接受后的候选）经确定性编译进入
-  `effective_glossary.csv`，每次正文翻译前会重新编译并验证；严格正文约束始终
-  开启，配置里没有关闭它的开关。
-- CSV 导入/导出：面板支持把当前文档权威术语导出为
-  `source,target,locked,note` 格式（UTF-8 带 BOM），也支持导入同格式（可只含
-  `source,target`）。这是备份与迁移用户决定的推荐方式：它直接读写权威存储，
-  写后自动重新编译有效词表，且不会触碰其他文档或全局词表。
+1. 打开 PDF，点击阅读页工具栏中的“术语”。
+2. 对必须从第一页就固定的译法，在“权威术语”中点击“新建术语”，填写
+   `Source` 和 `Target`；例如 `Agent` → `智能体`。重要词条可勾选“创建后锁定”。
+3. 正常翻译页面或范围。系统会独立提取候选；只有正文成功提交后，候选才会保存。
+4. 打开“候选术语”，查看译法建议、出现页码、证据和观察次数。选择建议或直接输入
+   自己的 target，然后点击“接受”；不需要的候选点击“拒绝”。
+5. 若某个词条已经接受，可在候选页输入新译法并点击“更新接受译法”。修改只影响
+   之后的翻译；已经写入 `right.pdf` 的页面需要主动重译才会改变。
+
+同一个 source 可以积累多个模型建议。例如先出现 `Agent` → `智能体`、后来又出现
+`Agent` → `代理`，两者会保存在同一个候选条目下供比较，不会互相覆盖。只要用户
+接受了“智能体”，后续自动观察到“代理”也不能改写这个决定；只有再次点击
+“更新接受译法”，权威结果才会改变。
+
+正文使用的确定性优先级是：
+
+1. 当前文档中手工新建或导入的用户术语；
+2. 当前文档中已接受的候选；
+3. 全局 `docs/glossary.csv`。
+
+“锁定”只防止误编辑、误拒绝或误删除，不会改变上述翻译优先级。全局词表会在面板
+中只读显示；需要修改全局默认时，请手工编辑 `docs/glossary.csv`。未接受候选不会
+自动影响正文；只有权威术语会编译进 `effective_glossary.csv`。严格术语约束没有
+关闭开关；关闭 `[term_extraction].enabled` 只会停止发现新候选，不会停用已经确认的
+权威术语。
+
+面板支持把当前文档手工新建或导入的用户术语导出为
+`source,target,locked,note` 格式（UTF-8 带 BOM），也支持导入同格式（可只含
+`source,target`）。这是迁移和备份用户决定的推荐方式。完整的工作流程、冲突规则、
+Token 成本、模型上下文、配置和故障处理见
+[术语提取与翻译控制指南](docs/terminology-system.md)。
 
 备份与恢复由用户决定，应用不会自动删除这些文件。推荐在停止服务后整文件复制：
 
@@ -240,7 +265,7 @@ API Key 不应提交到 Git。
   的 `.tmp` 文件；恢复前建议把当前文件移到一旁而不是直接覆盖，以便出错时回滚。
 - `effective_glossary.csv` 是可重建产物：由 `docs/glossary.csv`、
   `cache/<hash>/user_glossary.csv` 与已接受候选确定性编译，每次翻译前自动重建，
-  不需要备份或恢复它。
+  不需要备份或恢复它，也不要直接编辑它。
 - `cumulative_glossary.csv` 是历史输入而非权威：兼容期内保留原文件，并只读、
   幂等地迁移为未审核候选；迁移会生成 `cumulative_glossary.csv.bak` 恢复副本
   （已有副本绝不覆盖）。不要手工把它合并进 `user_glossary.csv` 或
