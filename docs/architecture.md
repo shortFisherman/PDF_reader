@@ -709,8 +709,9 @@ CI（`.github/workflows/ci.yml`）在 `windows-latest` 上安装 Python 3.12 依
 ## 上游与历史参考
 
 - 项目长期意图：[project.md](project.md)；未来方向与开放问题：[roadmap.md](roadmap.md)。
+- 文档总入口与归档规则：[README.md](README.md)。
 - 长期文档治理与事实冲突优先级：[governance/documentation.md](governance/documentation.md)；依赖升级流程：[governance/dependency-upgrade.md](governance/dependency-upgrade.md)。
 - 上游接口研究：[pdf2zh-next-development-guide.md](pdf2zh-next-development-guide.md) 与 `docs/reports/` 下两份报告，均按各自顶部标注的版本适用范围阅读。
-- 历史系统描述：`docs/archive/`、`docs/superpowers/`、`openspec/` 与 `CHANGELOG.md`，只用于追溯。
+- 历史系统描述：`docs/archive/` 与 `CHANGELOG.md` 只用于追溯；已移除的工具产物需要时从 Git 历史查询。
 
 归档与版本特定的上游资料是辅助上下文，不是当前实现的事实源；本文档与代码、测试冲突时，以代码和测试为准。

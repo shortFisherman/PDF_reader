@@ -1,7 +1,7 @@
 """P3-06 文档治理的可执行检查。
 
 只检查常青文档的职责边界、链接可解析性、上游契约命令一致性与易腐数字基线；
-不使用脆弱的全文关键词禁令，不触碰 docs/archive/ 与 openspec/ 历史内容。
+不使用脆弱的全文关键词禁令，不触碰 docs/archive/ 历史内容。
 """
 
 import re
@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 README = REPO_ROOT / "README.md"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
+DOCS_INDEX = REPO_ROOT / "docs" / "README.md"
 ARCHITECTURE = REPO_ROOT / "docs" / "architecture.md"
 PROJECT = REPO_ROOT / "docs" / "project.md"
 ROADMAP = REPO_ROOT / "docs" / "roadmap.md"
@@ -24,6 +25,7 @@ GLOSSARY_IMPROVEMENT_PLAN = REPO_ROOT / "docs" / "completed improvements" / "glo
 
 LINK_CHECKED_DOCS = (
     README,
+    DOCS_INDEX,
     CHANGELOG,
     ARCHITECTURE,
     PROJECT,
@@ -187,6 +189,21 @@ def test_documentation_governance_doc_covers_triggers_and_policy():
         "易腐数字",
         "冲突优先级",
         "tests/test_upstream_contract.py",
+    ):
+        assert fragment in text
+
+
+def test_docs_index_exposes_canonical_document_map():
+    text = DOCS_INDEX.read_text(encoding="utf-8")
+    for fragment in (
+        "project.md",
+        "architecture.md",
+        "roadmap.md",
+        "governance/",
+        "reports/",
+        "completed improvements/",
+        "archive/",
+        "Git 历史",
     ):
         assert fragment in text
 

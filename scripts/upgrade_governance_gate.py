@@ -65,7 +65,6 @@ EXCLUDED_DIR_NAMES = frozenset(
         ".mypy_cache",
         ".pytest_cache",
         ".ruff_cache",
-        ".superpowers",
         ".venv",
         ".worktrees",
         "__pycache__",

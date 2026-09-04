@@ -7,11 +7,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def test_tool_directory_governance_doc_covers_required_dirs():
     doc = (REPO_ROOT / "docs" / "governance" / "tool-directories.md").read_text(encoding="utf-8")
-    for name in (".agents", ".codex", ".comet", ".opencode", "openspec"):
+    for name in (".agents", ".codex", ".comet", ".opencode", ".codegraph"):
         assert name in doc, f"governance doc missing {name}"
     assert "重建" in doc
     assert "事实来源" in doc
     assert "独立变更" in doc
+    assert "退役工具" in doc
 
 
 def test_dependabot_covers_pip_and_npm():

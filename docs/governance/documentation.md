@@ -15,8 +15,10 @@
 
 - 架构行为变化时，文档修改与代码修改必须在同一提交中，禁止事后补写。
 - 移动、重命名或归档 `docs/` 文件时，必须在同一变更中更新 README、architecture、project、
-  roadmap 等常青文档里的相对链接与文档导航，避免留下失效链接；链接可解析性由
+  roadmap、`docs/README.md` 等常青文档里的相对链接与文档导航，避免留下失效链接；链接可解析性由
   `tests/test_documentation_governance.py` 回归。
+- 新文档必须能归入长期文档、使用/开发指南、治理规则、版本化报告、已完成改进或项目级
+  历史归档之一；一次性工具状态、重复规格、阶段计划和验证副本不进入 `docs/`。
 - `docs/project.md` 只承载长期意图；短期进度、测试数量与实施细节属于 `CHANGELOG.md`、工程清单或提交消息。
 - `docs/roadmap.md` 不构成实施授权；`已决定，尚未授权实施` 仍不能开工。
 
@@ -39,12 +41,13 @@
 - 代码行数、测试数、覆盖率、文件数等随时间变化的数字不是长期事实。作为长期事实保留时，
   必须注明核验日期 / commit / 本次报告基线；`docs/architecture.md` 的“核验基线”节是当前数字的基线。
 - `CHANGELOG.md` 按日期分节的条目视为历史基线；历史数字不需要回填当前值。
-- `docs/archive/`、`openspec/` 等历史内容只用于追溯，不因当前变化回填或伪装成现状。
+- `docs/archive/` 与 `CHANGELOG.md` 中的历史内容只用于追溯，不因当前变化回填或伪装成现状。
+- 已从工作树移除的工具产物只通过 Git 历史追溯，不为“方便查阅”重新复制进 `docs/`。
 
 ## 事实冲突优先级
 
 1. 当前代码、测试与可复现命令（`requirements.lock`、`package-lock.json`、`scripts/verify.ps1`）。
 2. `docs/architecture.md`（严格描述当前 HEAD）。
 3. `docs/project.md`（长期意图）与 `docs/roadmap.md`（未授权候选）。
-4. `CHANGELOG.md`、`docs/archive/`、`docs/superpowers/`、`openspec/` 等历史资料，只用于追溯。
+4. `CHANGELOG.md` 与 `docs/archive/` 等历史资料，只用于追溯。
 5. 工具目录与技能说明属于操作指令，不是项目事实源（见 `docs/governance/tool-directories.md`）。

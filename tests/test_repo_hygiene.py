@@ -53,10 +53,15 @@ def test_gitignore_covers_known_local_state():
         ".mypy_cache/",
         ".git-rewrite/",
         ".worktrees/",
-        ".superpowers/",
         ".firecrawl/",
     ):
         assert entry in ignore, f".gitignore missing {entry!r}"
+
+
+def test_retired_workflow_artifacts_are_absent():
+    """废弃工作流不得重新进入工作树；历史内容只通过 Git 查询。"""
+    for relative in (".superpowers", "openspec", "docs/superpowers", "skills-lock.json"):
+        assert not (REPO_ROOT / relative).exists(), f"retired workflow artifact returned: {relative}"
 
 
 def test_user_pdf_paths_are_outside_repo():

@@ -14,11 +14,9 @@ export default [
             '.codex/**',
             '.comet/**',
             '.opencode/**',
-            '.superpowers/**',
             '.worktrees/**',
             'cache/**',
             'docs/**',
-            'openspec/**',
             // 历史诊断 runner/fixture：P3-03 起归档在 tests/history/，不进入正式测试与 lint。
             'tests/history/**',
         ],

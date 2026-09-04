@@ -203,7 +203,7 @@ templates/            index.html
 config.example.toml   完整配置手册（含全部 provider 配方）
 scripts/              缓存管理、验证、密钥扫描等工具
 tests/                Python 与前端测试
-docs/                 架构、路线图、术语指南等长期文档
+docs/                 文档索引、长期事实、指南、治理、报告与归档
 ```
 
 ## 开发
@@ -213,7 +213,7 @@ docs/                 架构、路线图、术语指南等长期文档
 - 上游依赖升级前先跑治理门静态检查：`python scripts/upgrade_governance_gate.py --static-only`。
 - 升级任何 Python 依赖前先跑上游契约测试：`python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`。
 
-深入资料：[项目背景](docs/project.md) · [架构](docs/architecture.md) · [路线图](docs/roadmap.md) · [术语系统指南](docs/terminology-system.md) · [许可证说明](docs/governance/license.md) · [文档治理](docs/governance/documentation.md)
+深入资料：[文档索引](docs/README.md) · [项目背景](docs/project.md) · [架构](docs/architecture.md) · [路线图](docs/roadmap.md) · [术语系统指南](docs/terminology-system.md) · [许可证说明](docs/governance/license.md) · [文档治理](docs/governance/documentation.md)
 
 ## 许可与致谢
 

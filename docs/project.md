@@ -57,11 +57,12 @@ PDF Reader 为英文书籍、教材、论文和技术文献提供一个可控的
 ## 文档与历史地图
 
 - `README.md`：人和 AI 的项目入口、安装、启动、使用边界与文档导航。
+- `docs/README.md`：文档总索引与目录归档规则。
 - `docs/project.md`：本文件，记录长期意图与常青原则。
 - `docs/architecture.md`：严格记录当前 HEAD 的实现。
 - `docs/roadmap.md`：记录未来方向、依赖和决策状态，不构成实施授权。
 - `CHANGELOG.md`：按时间记录已经发生的项目变更。
 - `docs/governance/documentation.md`：三份长期文档的更新时机、上游升级步骤、易腐数字政策与事实冲突优先级。
 - `docs/archive/`：旧状态、旧架构、旧流程图和旧检查清单，只用于历史追溯。
-- `docs/superpowers/`、`openspec/`、`docs/comet/`：工具生成或工作流管理的设计、计划、验证和变更记录；其中内容不自动成为当前事实或新授权。
+- 旧开发工具生成的规格、计划和验证报告不保留在当前工作树；需要追溯时查询 Git 历史。
 - `docs/pdf2zh-next-development-guide.md` 与 `docs/reports/`：按标注版本阅读的上游研究资料。

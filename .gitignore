@@ -23,7 +23,6 @@ dist/
 .git-rewrite/
 .worktrees/
 worktrees/
-.superpowers/
 .firecrawl/
 # >>> Comet managed project state >>>
 !/.comet/
