@@ -64,7 +64,8 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/app.py` | 开发/服务共享的启动边界 `main(argv)`、`create_app(settings)` 装配 Flask 与全局 `AppState`、启动服务；便携服务只允许 loopback，并通过进程私有随机令牌提供 `/api/health` 就绪验证；`src/pdf_reader/__main__.py` 提供 `python -m pdf_reader` 开发入口（导入无副作用，仅 `python -m` 时调用 `main`） |
 | `src/pdf_reader/portable_launcher.py` | 顶层 `PDF Reader.exe` 的纯启动器逻辑：保持真实用户环境、从自身位置建立便携布局、只启动 `app/PDF Reader Service.exe`、以 data 内原子就绪描述符和令牌化 loopback 健康检查等待服务、由父进程打开默认浏览器，并在启动失败/中断时有界 terminate→kill 回收服务 |
 | `src/pdf_reader/portable_service.py` | `PDF Reader Service.exe` 的延迟导入引导入口：先验证受控子进程环境、准备并安装便携布局，再动态导入 `pdf_reader.app`；引导模块本身不导入 Flask、pdf2zh-next 或 BabelDOC |
-| `src/pdf_reader/portable_runtime.py` | 启动器/服务共享的纯标准库进程边界：构造不修改父进程的 child env，清除宿主 `PYTHONHOME`/`PYTHONPATH`/用户 site 覆盖，把 Home/Temp/Python pycache/Hugging Face/ModelScope/Torch 缓存映射到 data，并安全创建、验证和原子写入就绪描述符 |
+| `src/pdf_reader/portable_runtime.py` | 启动器/服务共享的纯标准库进程边界：构造不修改父进程的 child env，清除宿主 `PYTHONHOME`/`PYTHONPATH`/用户 site 覆盖，把虚拟 Home/Python pycache/固定 huggingface-hub 与 tiktoken 缓存映射到 data；每次启动创建带所有权标记的 `data/temp/pdf-reader-service-*` 作为服务进程树唯一系统 Temp，正常退出安全删除、下次启动只回收已标记且 PID 确认死亡的孤儿目录；并安全创建、验证和原子写入就绪描述符 |
+| `docs/governance/portable-upstream-write-contract.md` | P0-03 固定版本上游写入清单：BabelDOC 模型/字体/CMap/tiktoken/SQLite、pdf2zh-next 配置与 SQLite、huggingface-hub、Python Temp/pycache 的求值时机、控制方式、data 内目标和失败/取消/崩溃语义；依赖升级门必须同步验证 |
 | `src/pdf_reader/cache_ops.py` | 任务临时工作区所有权（每任务 cache 根 workspace：input/output+标记创建与失败清理）、缓存分类、只读统计与孤儿工作区清理：固定前缀/标记校验、Windows 安全 PID 存活探测、dry-run 清理边界与启动恢复 |
 | `pyproject.toml` | P2-01/P2-04 可安装包与依赖契约：setuptools src 布局、`project.dependencies` 唯一直接依赖声明、`project.optional-dependencies.dev`（pytest/Ruff/coverage/mypy/pip-tools）、PEP 639 许可证（AGPL-3.0-only + LICENSE） |
 | `LICENSE` | 本项目许可证：标准完整 GNU AGPL v3 官方文本（AGPL-3.0-only），与 `pyproject.toml`/`package.json`/`package-lock.json` 声明一致 |
@@ -491,6 +492,10 @@ job/document identity 下复用同一
 | `DATA_ROOT/logs/pdf_reader.log` | 永久常驻的统一主日志：`logging_config` 把同一对控制台 + 轮转文件 handler 挂到 `pdf_reader`/`werkzeug`/`pdf2zh_next`/`babeldoc`，行格式为 ISO 时间/level/run_id/pid/thread/logger，128 KiB × 5、UTF-8（常规上限约 768 KiB），超过 14 天的编号轮转备份在启动与轮转后自动清理，所有通道经同一 `SafeFormatter` 脱敏 |
 | `<CACHE_DIR>/<hash>/debug_trace.log` | 仅详细诊断日志模式产生：按文档缓存目录有界轮转（2MB × 3），会话内按 `job_id` 过滤捕获项目 + 第三方日志，记录 start/end/elapsed 与失败 traceback；debug 关闭时零 IO，不生成 timestamp 历史文件 |
 | `<CACHE_DIR>/pdf-reader-translation-*` | 翻译任务根工作区：名称带固定前缀，内含 `.pdf-reader-temp-workspace` 标记（`kind`/`job_id`/`pid`/`created_at`）与 `input/`（抽取输入）、`output/`（上游输出）；worker 确认退出后整体删除，超时/崩溃整体保留供启动恢复 |
+| `DATA_ROOT/temp/pdf-reader-service-*` | 便携服务单次启动的系统 Temp 根：`.pdf-reader-service-temp` 记录类型、启动器 PID 与创建时间，BabelDOC 的无前缀 `tempfile.mkdtemp()`、下载/SQLite 临时文件及其子进程临时文件均被包含；正常退出由启动器删除，崩溃后只在 PID 确认死亡且标记/路径/非链接条件全部满足时回收 |
+| `DATA_ROOT/home/.cache/babeldoc/` | BabelDOC 0.6.2 的硬编码虚拟 Home 缓存；`models/`、`fonts/`、`cmap/`、`tiktoken/` 与 `cache.v1.db` 均在此，不安装系统字体；`DATA_ROOT/models`/`fonts` 当前仅为未来 PDF Reader 自有资源保留，不通过链接或补丁冒充上游目录 |
+| `DATA_ROOT/home/.cache/pdf2zh_next/` | pdf2zh-next 2.9.0 导入期初始化的 `cache.v1.db`；项目正文虽固定 `ignore_cache=True`，导入写入仍受虚拟 Home 约束 |
+| `DATA_ROOT/upstream-cache/huggingface/` | 已锁定传递依赖 huggingface-hub 1.29.0 的 `HF_HOME`/hub/assets 缓存；当前锁文件不含 ModelScope、Torch、Transformers，便携环境不注入这些未使用变量 |
 | 当前布局的 `GLOSSARY_PATH` | 手动术语表；开发态为 `PROJECT_ROOT/docs/glossary.csv`，便携态为 `DATA_ROOT/glossary/glossary.csv`，非空时参与每次翻译 |
 
 开发布局的 `DATA_ROOT` 默认等于 `PROJECT_ROOT`（仓库根），因此正常本地运行的数据位置与既有约定一致：`cache/`、`logs/` 仍在仓库根下；`PDF_READER_DATA_ROOT` 继续用于测试隔离或显式分离开发数据。便携布局固定 `DATA_ROOT=PORTABLE_ROOT/data`，忽略这两个开发覆盖变量且不允许 cache 逃逸。

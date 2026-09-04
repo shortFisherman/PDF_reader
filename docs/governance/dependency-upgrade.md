@@ -28,7 +28,7 @@
      python scripts/upgrade_governance_gate.py
      ```
 
-   - 也可拆分运行：`python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`，
+   - 也可拆分运行：`python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py tests/release/test_portable_processes.py`，
      另运行 P0-01 上游边界守卫 `python -m pytest tests/test_upstream_boundary_governance.py`
      （拒绝影子包、上游源码副本与生产 Monkey-patch）。
    - 运行完整 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1`。
@@ -85,6 +85,8 @@
        `auto_extracted_glossary_path` 三个输出字段；升级 BabelDOC 时若该路径不可用，必须先核对
        mono/dual/glossary 适配与 `tests/test_upstream_contract.py` 的构造 helper，再更新契约。
    - 若契约变化，先更新适配代码与测试，再合并依赖升级，禁止“先升级再观察”。
+   - 模型、字体、缓存和 Temp 的固定版本写入契约见
+     [portable-upstream-write-contract.md](portable-upstream-write-contract.md)；路径常量、公开环境变量或下载清理语义变化时必须先更新该审计与离线契约测试。
    - 升级前后都运行 P2-04/P0-01 上游边界守卫：
      `python -m pytest tests/test_upstream_boundary_governance.py`；若新上游原生修复了
      词表选择或边界匹配，先验证，再决定是否简化本地适配，不要直接删除本地正确性门。
@@ -109,6 +111,7 @@ tests/test_strict_glossary.py              严格正文路径：自动提取恒�
 tests/test_glossary_compliance_flow.py     合规验证、有界重试与 right.pdf 提交门
 tests/test_terminology_compliance.py       纯文本合规判定与 PDF 提取验证核心
 tests/test_glossary_compiler.py            候选隔离：未接受候选绝不进入有效词表
+tests/release/test_portable_processes.py   便携导入前环境与模型/字体/缓存/Temp 写入契约
 ```
 
 静态治理范围：

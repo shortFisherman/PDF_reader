@@ -404,6 +404,7 @@ def test_contract_selection_covers_required_invariants():
         "tests/test_glossary_compliance_flow.py",
         "tests/test_terminology_compliance.py",
         "tests/test_glossary_compiler.py",
+        "tests/release/test_portable_processes.py",
     ]
     for rel in gate.CONTRACT_TEST_FILES:
         assert (REPO_ROOT / rel).is_file(), f"gate contract test missing: {rel}"

@@ -9,7 +9,10 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import shutil
+import tempfile
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pdf_reader import paths
@@ -17,6 +20,9 @@ from pdf_reader import paths
 PORTABLE_SERVICE_ENV = "PDF_READER_PORTABLE_SERVICE"
 READY_FILE_ENV = "PDF_READER_READY_FILE"
 HEALTH_TOKEN_ENV = "PDF_READER_HEALTH_TOKEN"
+SERVICE_TEMP_PREFIX = "pdf-reader-service-"
+SERVICE_TEMP_MARKER_NAME = ".pdf-reader-service-temp"
+SERVICE_TEMP_MARKER_KIND = "pdf-reader-service-temp"
 
 _HOST_PYTHON_ENV = frozenset(
     {
@@ -40,10 +46,9 @@ def service_directories(layout: paths.RuntimeLayout) -> tuple[Path, ...]:
         data / "temp",
         data / "pycache",
         data / "upstream-cache" / "huggingface",
-        data / "upstream-cache" / "modelscope",
-        data / "upstream-cache" / "torch",
-        data / "upstream-cache" / "babeldoc",
-        data / "upstream-cache" / "pdf2zh-next",
+        data / "upstream-cache" / "huggingface" / "hub",
+        data / "upstream-cache" / "huggingface" / "assets",
+        data / "home" / ".cache" / "babeldoc" / "tiktoken",
     )
 
 
@@ -52,6 +57,131 @@ def prepare_service_directories(layout: paths.RuntimeLayout) -> None:
         safe_directory = layout.require_data_path(directory, label="服务数据目录")
         safe_directory.mkdir(parents=True, exist_ok=True)
         layout.require_data_path(safe_directory, label="服务数据目录")
+
+
+def _is_linkish(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    if os.name == "nt":
+        try:
+            return path.is_junction()
+        except AttributeError:
+            return False
+    return False
+
+
+def _service_temp_marker(directory: Path) -> dict[str, object]:
+    try:
+        payload = json.loads((directory / SERVICE_TEMP_MARKER_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    pid = payload.get("pid")
+    if payload.get("kind") != SERVICE_TEMP_MARKER_KIND or not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return {}
+    return payload
+
+
+def _validate_service_temp_directory(layout: paths.RuntimeLayout, value: str | Path) -> Path:
+    directory = layout.require_data_path(value, label="服务临时目录")
+    if (
+        directory.parent != layout.temp_dir.resolve(strict=False)
+        or not directory.name.startswith(SERVICE_TEMP_PREFIX)
+        or _is_linkish(directory)
+        or not _service_temp_marker(directory)
+    ):
+        raise PortableEnvironmentError(
+            "便携服务临时目录缺少有效归属标记或不在 data/temp 直接子目录",
+            code="portable_service_temp_invalid",
+        )
+    return directory
+
+
+def recover_orphan_service_temp_directories(layout: paths.RuntimeLayout) -> tuple[Path, ...]:
+    """Remove only marked service sessions whose launcher process is confirmed dead."""
+
+    from pdf_reader import cache_ops
+
+    temp_root = layout.require_data_path(layout.temp_dir, label="服务临时目录根")
+    removed: list[Path] = []
+    try:
+        children = tuple(temp_root.iterdir())
+    except FileNotFoundError:
+        return ()
+    for child in children:
+        if not child.name.startswith(SERVICE_TEMP_PREFIX) or not child.is_dir() or _is_linkish(child):
+            continue
+        marker = _service_temp_marker(child)
+        pid = marker.get("pid")
+        if not marker or not isinstance(pid, int) or cache_ops.is_process_alive(pid):
+            continue
+        safe_child = layout.require_data_path(child, label="孤儿服务临时目录")
+        try:
+            shutil.rmtree(safe_child)
+        except OSError:
+            continue
+        if not safe_child.exists():
+            removed.append(safe_child)
+    return tuple(removed)
+
+
+def create_service_temp_directory(layout: paths.RuntimeLayout) -> Path:
+    """Create one marked TEMP root owned by the current top-level launcher."""
+
+    prepare_service_directories(layout)
+    recover_orphan_service_temp_directories(layout)
+    directory = Path(tempfile.mkdtemp(prefix=SERVICE_TEMP_PREFIX, dir=str(layout.temp_dir)))
+    directory = layout.require_data_path(directory, label="服务临时目录")
+    marker = directory / SERVICE_TEMP_MARKER_NAME
+    try:
+        marker.write_text(
+            json.dumps(
+                {
+                    "kind": SERVICE_TEMP_MARKER_KIND,
+                    "pid": os.getpid(),
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        return _validate_service_temp_directory(layout, directory)
+    except Exception:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise
+
+
+def remove_service_temp_directory(layout: paths.RuntimeLayout, value: str | Path) -> None:
+    """Remove the current service TEMP only when its path and marker are valid."""
+
+    directory = _validate_service_temp_directory(layout, value)
+    shutil.rmtree(directory)
+
+
+def _service_environment_values(layout: paths.RuntimeLayout, service_temp: Path) -> dict[str, str]:
+    data = layout.data_root
+    home = data / "home"
+    cache = data / "upstream-cache"
+    huggingface = cache / "huggingface"
+    return {
+        PORTABLE_SERVICE_ENV: "1",
+        "HOME": str(home),
+        "USERPROFILE": str(home),
+        "TEMP": str(service_temp),
+        "TMP": str(service_temp),
+        "TMPDIR": str(service_temp),
+        "XDG_CACHE_HOME": str(home / ".cache"),
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPYCACHEPREFIX": str(data / "pycache"),
+        "HF_HOME": str(huggingface),
+        "HUGGINGFACE_HUB_CACHE": str(huggingface / "hub"),
+        "HF_HUB_CACHE": str(huggingface / "hub"),
+        "HF_ASSETS_CACHE": str(huggingface / "assets"),
+        "TIKTOKEN_CACHE_DIR": str(home / ".cache" / "babeldoc" / "tiktoken"),
+    }
 
 
 def build_service_environment(
@@ -66,32 +196,13 @@ def build_service_environment(
             code="portable_service_layout_required",
         )
     prepare_service_directories(layout)
+    service_temp = create_service_temp_directory(layout)
     environment = dict(os.environ if base_environment is None else base_environment)
     for name in _HOST_PYTHON_ENV:
         environment.pop(name, None)
-
-    data = layout.data_root
-    home = data / "home"
-    cache = data / "upstream-cache"
-    environment.update(
-        {
-            PORTABLE_SERVICE_ENV: "1",
-            "HOME": str(home),
-            "USERPROFILE": str(home),
-            "TEMP": str(layout.temp_dir),
-            "TMP": str(layout.temp_dir),
-            "TMPDIR": str(layout.temp_dir),
-            "XDG_CACHE_HOME": str(home / ".cache"),
-            "PYTHONNOUSERSITE": "1",
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "PYTHONPYCACHEPREFIX": str(data / "pycache"),
-            "HF_HOME": str(cache / "huggingface"),
-            "HUGGINGFACE_HUB_CACHE": str(cache / "huggingface" / "hub"),
-            "TRANSFORMERS_CACHE": str(cache / "huggingface" / "transformers"),
-            "MODELSCOPE_CACHE": str(cache / "modelscope"),
-            "TORCH_HOME": str(cache / "torch"),
-        }
-    )
+    for name in ("TRANSFORMERS_CACHE", "MODELSCOPE_CACHE", "TORCH_HOME"):
+        environment.pop(name, None)
+    environment.update(_service_environment_values(layout, service_temp))
     return environment
 
 
@@ -102,26 +213,18 @@ def validate_service_environment(
     """Fail before application/upstream import unless the child boundary is complete."""
 
     current = os.environ if environment is None else environment
-    expected = build_service_environment(layout, current)
-    required_names = (
-        PORTABLE_SERVICE_ENV,
-        "HOME",
-        "USERPROFILE",
-        "TEMP",
-        "TMP",
-        "TMPDIR",
-        "XDG_CACHE_HOME",
-        "PYTHONNOUSERSITE",
-        "PYTHONDONTWRITEBYTECODE",
-        "PYTHONPYCACHEPREFIX",
-        "HF_HOME",
-        "HUGGINGFACE_HUB_CACHE",
-        "TRANSFORMERS_CACHE",
-        "MODELSCOPE_CACHE",
-        "TORCH_HOME",
-    )
+    raw_temp = current.get("TEMP", "")
+    try:
+        service_temp = _validate_service_temp_directory(layout, raw_temp)
+    except (paths.PathStrategyError, PortableEnvironmentError):
+        service_temp = layout.temp_dir / "invalid"
+    expected = _service_environment_values(layout, service_temp)
+    required_names = tuple(expected)
     invalid = [name for name in required_names if current.get(name) != expected[name]]
     invalid.extend(name for name in _HOST_PYTHON_ENV if name in current)
+    invalid.extend(name for name in ("TRANSFORMERS_CACHE", "MODELSCOPE_CACHE", "TORCH_HOME") if name in current)
+    if service_temp.name == "invalid":
+        invalid.append("TEMP")
     if invalid:
         names = ", ".join(sorted(set(invalid)))
         raise PortableEnvironmentError(

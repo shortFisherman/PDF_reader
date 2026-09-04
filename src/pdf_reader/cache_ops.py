@@ -171,6 +171,12 @@ def _is_live_pid(pid: int | None) -> bool:
     return True
 
 
+def is_process_alive(pid: int | None) -> bool:
+    """Conservative cross-platform process liveness check for managed temp owners."""
+
+    return _is_live_pid(pid)
+
+
 def _load_windows_api() -> _WindowsApi | None:
     """按需加载只读 Windows 进程查询 API；非 Windows 返回 None。"""
     if os.name != "nt":

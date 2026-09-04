@@ -12,8 +12,8 @@
    目录变体、上游源码副本与生产（src/pdf_reader）Monkey-patch 都能被发现；
    排除 venv/node_modules/缓存/构建目录，不扫描 tests 中的合法 mock patch。
 3. 契约测试：术语选择（auto-on/off）、严格正文 Settings 路径（自动提取恒关闭、
-   只传有效词表）、候选隔离（未接受候选不进入有效词表/正文权威）、合规验证/重试
-   与 right.pdf 提交门回归。
+   只传有效词表）、候选隔离（未接受候选不进入有效词表/正文权威）、合规验证/重试、
+   right.pdf 提交门与便携模型/字体/缓存/Temp 写入路径回归。
 
 ``--static-only`` 只执行静态治理检查，不重复运行契约 pytest；
 scripts/verify.ps1 使用该模式，CI 通过同一 verify.ps1 持续执行。完整模式（默认）
@@ -43,7 +43,7 @@ LOCK_HEADER_COMMAND = (
 UPSTREAM_PINS = {"pdf2zh-next": "2.9.0", "babeldoc": "0.6.2"}
 
 # 契约测试选择：覆盖依赖契约、上游术语选择、仓库守卫、严格正文路径、候选隔离、
-# 合规验证/重试/提交门。删除或改名任何文件都必须先同步本清单与文档。
+# 合规验证/重试/提交门，以及便携上游写入路径。删除或改名任何文件都必须先同步本清单与文档。
 CONTRACT_TEST_FILES = [
     "tests/test_dependency_contract.py",
     "tests/test_upstream_contract.py",
@@ -52,6 +52,7 @@ CONTRACT_TEST_FILES = [
     "tests/test_glossary_compliance_flow.py",
     "tests/test_terminology_compliance.py",
     "tests/test_glossary_compiler.py",
+    "tests/release/test_portable_processes.py",
 ]
 
 # 本地状态/工具/构建目录，永不扫描：venv 与 node_modules 中安装的是真实上游包，

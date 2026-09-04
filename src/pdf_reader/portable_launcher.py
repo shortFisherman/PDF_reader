@@ -18,9 +18,11 @@ from pdf_reader import paths
 from pdf_reader.portable_runtime import (
     HEALTH_TOKEN_ENV,
     READY_FILE_ENV,
+    PortableEnvironmentError,
     build_service_environment,
     new_health_token,
     new_readiness_file,
+    remove_service_temp_directory,
 )
 
 EXIT_LAUNCHER_ERROR = 2
@@ -119,6 +121,7 @@ def run_portable_launcher(
 
     process: subprocess.Popen[Any] | None = None
     readiness_file: Path | None = None
+    service_temp_directory: Path | None = None
     startup_complete = False
     try:
         layout = paths.RuntimeLayout.portable_from_executable(launcher_executable)
@@ -131,6 +134,7 @@ def run_portable_launcher(
             )
         readiness_file = new_readiness_file(layout)
         child_environment = build_service_environment(layout)
+        service_temp_directory = Path(child_environment["TEMP"])
         child_environment[READY_FILE_ENV] = str(readiness_file)
         child_environment[HEALTH_TOKEN_ENV] = new_health_token()
         command = [str(service_executable), "--launcher-executable", str(Path(launcher_executable).resolve())]
@@ -155,6 +159,11 @@ def run_portable_launcher(
             try:
                 readiness_file.unlink()
             except FileNotFoundError:
+                pass
+        if service_temp_directory is not None:
+            try:
+                remove_service_temp_directory(layout, service_temp_directory)
+            except (FileNotFoundError, OSError, paths.PathStrategyError, PortableEnvironmentError):
                 pass
 
 
