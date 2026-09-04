@@ -10,6 +10,7 @@ import json
 import os
 import secrets
 import shutil
+import sys
 import tempfile
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -32,6 +33,8 @@ _HOST_PYTHON_ENV = frozenset(
         "PYTHONSTARTUP",
         "PYTHONBREAKPOINT",
         "PYTHONINSPECT",
+        "PYTHONEXECUTABLE",
+        "PYTHONPLATLIBDIR",
     }
 )
 
@@ -174,6 +177,7 @@ def _service_environment_values(layout: paths.RuntimeLayout, service_temp: Path)
         "TMPDIR": str(service_temp),
         "XDG_CACHE_HOME": str(home / ".cache"),
         "PYTHONNOUSERSITE": "1",
+        "PYTHONSAFEPATH": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONPYCACHEPREFIX": str(data / "pycache"),
         "HF_HOME": str(huggingface),
@@ -230,6 +234,68 @@ def validate_service_environment(
         raise PortableEnvironmentError(
             f"便携服务缺少或包含不安全的进程环境变量：{names}",
             code="portable_service_environment_missing",
+        )
+
+
+def validate_private_frozen_runtime(
+    layout: paths.RuntimeLayout,
+    *,
+    frozen: bool | None = None,
+    executable: str | Path | None = None,
+    no_user_site: bool | None = None,
+    safe_path: bool | None = None,
+    module_search_paths: tuple[str, ...] | None = None,
+) -> None:
+    """Reject a frozen service that can escape to a host Python installation.
+
+    Source-mode calls are intentionally a no-op so unit tests and the existing
+    developer entry remain usable.  The PyInstaller service always has
+    ``sys.frozen`` and is checked before importing the application or upstream.
+    """
+
+    is_frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    if not is_frozen:
+        return
+    if layout.mode is not paths.RuntimeMode.PORTABLE:
+        raise PortableEnvironmentError(
+            "冻结服务必须使用便携运行布局",
+            code="private_runtime_layout_required",
+        )
+    actual_executable = Path(sys.executable if executable is None else executable).resolve(strict=False)
+    expected_executable = (layout.resource_root / "PDF Reader Service.exe").resolve(strict=False)
+    if actual_executable != expected_executable:
+        raise PortableEnvironmentError(
+            "便携服务没有从 app 内的私有可执行文件启动",
+            code="private_runtime_executable_invalid",
+        )
+    user_site_disabled = bool(sys.flags.no_user_site) if no_user_site is None else no_user_site
+    if not user_site_disabled:
+        raise PortableEnvironmentError(
+            "便携服务未禁用用户 site-packages",
+            code="private_runtime_user_site_enabled",
+        )
+    isolated_search_path = bool(sys.flags.safe_path) if safe_path is None else safe_path
+    if not isolated_search_path:
+        raise PortableEnvironmentError(
+            "便携服务未禁用当前目录导入注入",
+            code="private_runtime_safe_path_disabled",
+        )
+    search_paths = tuple(getattr(sys, "path")) if module_search_paths is None else module_search_paths
+    resource_root = layout.resource_root.resolve(strict=False)
+    escaped: list[str] = []
+    for value in search_paths:
+        if not value:
+            escaped.append("<empty>")
+            continue
+        candidate = Path(value).resolve(strict=False)
+        try:
+            candidate.relative_to(resource_root)
+        except ValueError:
+            escaped.append(str(candidate))
+    if escaped:
+        raise PortableEnvironmentError(
+            "便携服务模块搜索路径逃逸 app 私有运行时",
+            code="private_runtime_search_path_invalid",
         )
 
 

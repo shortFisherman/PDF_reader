@@ -62,6 +62,7 @@ def test_service_environment_is_child_only_and_scrubs_python_overrides(monkeypat
     assert "PYTHONPATH" not in child
     assert "PYTHONUSERBASE" not in child
     assert child["PYTHONNOUSERSITE"] == "1"
+    assert child["PYTHONSAFEPATH"] == "1"
     assert child["PYTHONDONTWRITEBYTECODE"] == "1"
     assert child["HOME"] == str(layout.data_root / "home")
     assert child["USERPROFILE"] == str(layout.data_root / "home")
@@ -332,6 +333,43 @@ def test_service_rejects_direct_start_without_controlled_environment(tmp_path):
         portable_service.bootstrap_portable_service(launcher, environment={})
 
     assert exc_info.value.code == "portable_service_environment_missing"
+
+
+def test_frozen_service_rejects_host_interpreter_user_site_and_search_paths(tmp_path):
+    from pdf_reader.portable_runtime import PortableEnvironmentError, validate_private_frozen_runtime
+
+    layout = _layout(tmp_path)
+    private_service = layout.resource_root / "PDF Reader Service.exe"
+    private_paths = (str(layout.resource_root / "_internal"),)
+
+    validate_private_frozen_runtime(
+        layout,
+        frozen=True,
+        executable=private_service,
+        no_user_site=True,
+        safe_path=True,
+        module_search_paths=private_paths,
+    )
+
+    cases = (
+        ({"executable": tmp_path / "host" / "python.exe"}, "private_runtime_executable_invalid"),
+        ({"no_user_site": False}, "private_runtime_user_site_enabled"),
+        ({"safe_path": False}, "private_runtime_safe_path_disabled"),
+        ({"module_search_paths": (str(tmp_path / "host-site-packages"),)}, "private_runtime_search_path_invalid"),
+        ({"module_search_paths": ("",)}, "private_runtime_search_path_invalid"),
+    )
+    for overrides, expected_code in cases:
+        arguments = {
+            "frozen": True,
+            "executable": private_service,
+            "no_user_site": True,
+            "safe_path": True,
+            "module_search_paths": private_paths,
+        }
+        arguments.update(overrides)
+        with pytest.raises(PortableEnvironmentError) as exc_info:
+            validate_private_frozen_runtime(layout, **arguments)
+        assert exc_info.value.code == expected_code
 
 
 def test_launcher_uses_private_service_executable_and_real_browser_environment(monkeypatch, tmp_path):

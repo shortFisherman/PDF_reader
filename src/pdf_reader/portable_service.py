@@ -10,7 +10,11 @@ from pathlib import Path
 from typing import cast
 
 from pdf_reader import paths
-from pdf_reader.portable_runtime import PortableEnvironmentError, validate_service_environment
+from pdf_reader.portable_runtime import (
+    PortableEnvironmentError,
+    validate_private_frozen_runtime,
+    validate_service_environment,
+)
 
 
 class PortableServiceError(RuntimeError):
@@ -29,6 +33,7 @@ def bootstrap_portable_service(
     layout = paths.RuntimeLayout.portable_from_executable(launcher_executable)
     try:
         validate_service_environment(layout, environment)
+        validate_private_frozen_runtime(layout)
         paths.prepare_runtime_layout(layout)
         paths.install_runtime_layout(layout)
     except PortableEnvironmentError as exc:
