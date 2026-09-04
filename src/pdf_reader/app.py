@@ -1,9 +1,11 @@
 import argparse
+import hmac
 import io
 import logging
+import os
 import sys
 
-from flask import Flask
+from flask import Flask, Response, jsonify, request
 
 from pdf_reader import cache_ops, config, logging_config, paths
 from pdf_reader.candidate_service import CandidateExtractionService
@@ -90,6 +92,16 @@ def create_app(settings: config.AppSettings) -> Flask:
         settings.term_extraction,
         settings.upstream.model,
     )
+    if os.environ.get("PDF_READER_PORTABLE_SERVICE") == "1":
+        health_token = os.environ.get("PDF_READER_HEALTH_TOKEN", "")
+
+        @app.get("/api/health")
+        def portable_health() -> Response | tuple[Response, int]:
+            supplied = request.headers.get("X-PDF-Reader-Health-Token", "")
+            if len(health_token) < 32 or not hmac.compare_digest(supplied, health_token):
+                return jsonify({"status": "not_found"}), 404
+            return jsonify({"status": "ok"})
+
     from pdf_reader.routes import register_routes
 
     register_routes(app)
@@ -108,6 +120,8 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
         run_cfg = config.resolve_server_config(cli_debug=args.debug)
+        if os.environ.get("PDF_READER_PORTABLE_SERVICE") == "1" and not config.is_loopback_host(run_cfg.host):
+            raise config.ConfigError("便携发行服务只允许绑定 loopback 地址")
         upstream = config.validate_startup_requirements()
     except config.ConfigError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -146,7 +160,25 @@ def main(argv: list[str] | None = None) -> int:
                 "请确认仅限可信内网使用",
                 run_cfg.host,
             )
+        readiness_file = None
         try:
+            if os.environ.get("PDF_READER_PORTABLE_SERVICE") == "1":
+                from pdf_reader.portable_runtime import (
+                    readiness_file_from_environment,
+                    write_readiness_descriptor,
+                )
+
+                layout = paths.get_runtime_layout()
+                readiness_file = readiness_file_from_environment(layout)
+                if readiness_file is not None:
+                    health_token = os.environ.get("PDF_READER_HEALTH_TOKEN", "")
+                    write_readiness_descriptor(
+                        layout,
+                        readiness_file,
+                        host=run_cfg.host,
+                        port=run_cfg.port,
+                        health_token=health_token,
+                    )
             app.run(
                 host=run_cfg.host,
                 port=run_cfg.port,
@@ -159,6 +191,12 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             logger.exception("fatal error while running server")
             return 1
+        finally:
+            if readiness_file is not None:
+                try:
+                    readiness_file.unlink()
+                except FileNotFoundError:
+                    pass
         return 0
     except KeyboardInterrupt:
         logger.info("startup interrupted by KeyboardInterrupt")

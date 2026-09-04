@@ -61,7 +61,10 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 
 | 路径 | 职责 |
 |---|---|
-| `src/pdf_reader/app.py` | 启动边界 `main(argv)`、`create_app(settings)` 装配 Flask 与全局 `AppState`、启动服务；`src/pdf_reader/__main__.py` 提供 `python -m pdf_reader` 入口（导入无副作用，仅 `python -m` 时调用 `main`） |
+| `src/pdf_reader/app.py` | 开发/服务共享的启动边界 `main(argv)`、`create_app(settings)` 装配 Flask 与全局 `AppState`、启动服务；便携服务只允许 loopback，并通过进程私有随机令牌提供 `/api/health` 就绪验证；`src/pdf_reader/__main__.py` 提供 `python -m pdf_reader` 开发入口（导入无副作用，仅 `python -m` 时调用 `main`） |
+| `src/pdf_reader/portable_launcher.py` | 顶层 `PDF Reader.exe` 的纯启动器逻辑：保持真实用户环境、从自身位置建立便携布局、只启动 `app/PDF Reader Service.exe`、以 data 内原子就绪描述符和令牌化 loopback 健康检查等待服务、由父进程打开默认浏览器，并在启动失败/中断时有界 terminate→kill 回收服务 |
+| `src/pdf_reader/portable_service.py` | `PDF Reader Service.exe` 的延迟导入引导入口：先验证受控子进程环境、准备并安装便携布局，再动态导入 `pdf_reader.app`；引导模块本身不导入 Flask、pdf2zh-next 或 BabelDOC |
+| `src/pdf_reader/portable_runtime.py` | 启动器/服务共享的纯标准库进程边界：构造不修改父进程的 child env，清除宿主 `PYTHONHOME`/`PYTHONPATH`/用户 site 覆盖，把 Home/Temp/Python pycache/Hugging Face/ModelScope/Torch 缓存映射到 data，并安全创建、验证和原子写入就绪描述符 |
 | `src/pdf_reader/cache_ops.py` | 任务临时工作区所有权（每任务 cache 根 workspace：input/output+标记创建与失败清理）、缓存分类、只读统计与孤儿工作区清理：固定前缀/标记校验、Windows 安全 PID 存活探测、dry-run 清理边界与启动恢复 |
 | `pyproject.toml` | P2-01/P2-04 可安装包与依赖契约：setuptools src 布局、`project.dependencies` 唯一直接依赖声明、`project.optional-dependencies.dev`（pytest/Ruff/coverage/mypy/pip-tools）、PEP 639 许可证（AGPL-3.0-only + LICENSE） |
 | `LICENSE` | 本项目许可证：标准完整 GNU AGPL v3 官方文本（AGPL-3.0-only），与 `pyproject.toml`/`package.json`/`package-lock.json` 声明一致 |
@@ -378,8 +381,7 @@ job/document identity 下复用同一
   `install_runtime_layout()` 和 `prepare_runtime_layout()`。便携根固定为顶层 EXE
   的父目录，资源根固定为 `PORTABLE_ROOT/app`，数据根固定为
   `PORTABLE_ROOT/data`；CWD、`PDF_READER_ROOT` 与 `PDF_READER_DATA_ROOT` 均不能
-  改写已安装的便携布局。同一进程不能切换到另一个布局。当前 HEAD 已提供并测试
-  这套入口契约，但真正的启动器/服务入口属于后续 P0-02，尚未实现。
+  改写已安装的便携布局。同一进程不能切换到另一个布局。
 - 便携准备只在 `data/` 下创建 `config/`、`documents/`、`glossary/`、`models/`、
   `fonts/`、`upstream-cache/`、`temp/`、`pycache/`、`logs/` 与 `home/.cache/`，
   进行创建后物理路径复核和可写探针；失败返回稳定 `PathStrategyError.code`，不回退
@@ -388,6 +390,35 @@ job/document identity 下复用同一
   工作区创建和清理在真正写入或删除前调用统一 data 边界守卫。守卫使用解析后的
   物理路径比较，因而拒绝绝对目录外路径、`..`、已存在 symlink/junction 及其后面
   尚不存在的尾部路径；开发布局仍允许现有测试、工具和绝对 cache 用法。
+
+### 便携启动器—服务进程边界
+
+- 顶层 `PDF Reader.exe` 对应 `portable_launcher.main()`，进程自身从不改写
+  `os.environ`。它从真实入口 EXE 解析布局、确认固定的
+  `app/PDF Reader Service.exe` 存在，为服务构造独立环境映射并只通过
+  `subprocess.Popen(env=...)` 传给子进程；默认浏览器仍由父启动器调用
+  `webbrowser.open()`，因此浏览器继承真实 `HOME`/`USERPROFILE`/代理/证书环境，
+  不会继承服务的虚拟 Home。
+- 服务环境删除宿主 `PYTHONHOME`、`PYTHONPATH`、`PYTHONUSERBASE`、
+  `PYTHONSTARTUP`、`PYTHONBREAKPOINT` 与 `PYTHONINSPECT`，固定
+  `PYTHONNOUSERSITE=1`，并把 `HOME`/`USERPROFILE`、`TEMP`/`TMP`/`TMPDIR`、
+  `PYTHONPYCACHEPREFIX`、`XDG_CACHE_HOME`、`HF_HOME`、
+  `HUGGINGFACE_HUB_CACHE`、`TRANSFORMERS_CACHE`、`MODELSCOPE_CACHE` 和
+  `TORCH_HOME` 映射到 `DATA_ROOT`。网络代理和证书等无关宿主变量保留。
+  这些改动只存在于服务进程树，不调用 `setx`、注册表或系统环境 API。
+- `portable_service` 的模块级依赖只有标准库、`paths` 与同样不导入上游的
+  `portable_runtime`。服务先按顶层启动器路径重建布局，逐项验证受控环境，执行
+  `prepare_runtime_layout()`/`install_runtime_layout()`，之后才动态导入
+  `pdf_reader.app`；因此 `config.py` 顶层对 pdf2zh-next 的导入以及 BabelDOC 的
+  `Path.home()` 常量求值均发生在虚拟 Home/便携 Temp 已生效之后。
+- 启动器为每次运行生成 data/temp 内的随机就绪文件和随机健康令牌。服务完成配置
+  校验、应用装配与孤儿工作区恢复后原子发布 loopback host/port/令牌；启动器只在
+  带令牌请求 `/api/health` 得到精确 `{status: ok}` 后才打开根页面。描述符拒绝
+  data 外路径，便携服务拒绝非 loopback 配置。启动超时、服务就绪前异常退出或
+  启动器中断都会执行有界 `terminate`，超时后 `kill`，并删除就绪文件。
+- 当前源码已经固定双进程协议与 PyInstaller 入口职责；真正生成两个 EXE、证明
+  私有解释器/依赖的最终二进制来源以及最终 ZIP/干净机验证仍分别属于 P2-01、
+  P2-02。开发入口 `start.bat` 和 `python -m pdf_reader` 不进入此双进程路径。
 
 1. `python -m pdf_reader` 进入 `app.main(argv=None)`：模块导入不解析 CLI、不修改 `config.DEBUG`；CLI 解析只发生在该启动边界内，`__main__.py` 的 `main()` 调用受 `if __name__ == "__main__"` 守卫保护，`import pdf_reader.__main__` 同样无副作用。`--debug` 与 `--no-debug` 互斥。
 2. `config.resolve_server_config(cli_debug=...)` 按优先级 CLI `--debug`/`--no-debug` > 环境变量 `PDF_READER_DEBUG` > `[server].debug` > 默认 `false` 解析一次，返回 frozen `ServerConfig(host, port, debug)`；`use_reloader` 恒为 `False`——`debug` 只表示“详细诊断日志模式”（日志 DEBUG + debug_trace），不再控制 Flask debugger/reloader。
