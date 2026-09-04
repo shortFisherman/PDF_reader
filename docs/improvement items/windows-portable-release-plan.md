@@ -4,7 +4,7 @@
 >
 > 建立日期：2026-09-04  
 > 审计基线：`35dfc97`  
-> 当前状态：P0-03 已完成；下一项为 P0-04，尚未开始。
+> 当前状态：P0-04 已改进：源码层私有运行时与禁安装策略已落地；最终 ZIP/干净机验收待 P2-01/P2-02 产生真实发行物后完成。
 > 首个目标产物：`PDF-Reader-<version>-windows-x64-portable.zip`（PyInstaller `onedir`，不是单文件 EXE，也不是系统安装器）。
 
 ## 1. 如何使用这份清单
@@ -193,7 +193,7 @@ Windows 和用户主动使用的默认浏览器仍可能在便携目录之外产
 | P0-01 | P0 | 固化便携根、目录布局与写入边界 | `已完成` | 无 |
 | P0-02 | P0 | 建立启动器—服务双进程与导入前受控环境 | `已完成` | P0-01 |
 | P0-03 | P0 | 收拢第三方模型、字体、缓存与临时文件 | `已完成` | P0-01、P0-02 |
-| P0-04 | P0 | 固化私有 Python 运行时并禁止运行时安装包 | `待处理` | P0-01 |
+| P0-04 | P0 | 固化私有 Python 运行时并禁止运行时安装包 | `已改进` | P0-01；发行态尾项依赖 P2-01/P2-02 真实产物 |
 | P1-01 | P1 | 建立首次启动配置模式 | `待处理` | P0-01、P0-02 |
 | P1-02 | P1 | 完成单实例、就绪探测、自动开页与可靠退出 | `待处理` | P0-02、P1-01 |
 | P1-03 | P1 | 明确便携数据升级、备份、清理与故障恢复 | `待处理` | P0-01、P0-03 |
@@ -346,11 +346,11 @@ BabelDOC 与 pdf2zh-next 当前版本存在导入或初始化时按 `Path.home()
 
 ### P0-04 固化私有 Python 运行时并禁止运行时安装包
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：待实施
+- 状态：`已改进`
+- 完成日期：—（2026-09-04 完成源码层改进）
+- 完成提交：—（源码层改进提交 `000f144`）
+- 验证证据：`tests/release` 21 passed；依赖/上游/发行定向回归 58 passed；最终 `scripts/verify.ps1` 1529 passed、1 conditional skip，coverage policy（line 91.6%、branch 85.3%）、便携运行时策略门、术语质量门、mypy、Ruff、ESLint 与全部前端测试通过；`packaging/windows/runtime-requirements.lock` 固定 136 个仅运行时版本并与 149 项总锁逐项一致；本机已安装 PyMuPDF/BabelDOC/pdf2zh-next/ONNX Runtime/OpenCV/Hyperscan/Rtree/uharfbuzz 原生或动态依赖导入通过
+- 剩余问题：尚无 P2-01 PyInstaller onedir/ZIP，故不能执行隐藏系统 Python/Node 后的真实启动与受控翻译、Process Monitor 进程/网络/用户 site 审计、最终 DLL/包数据/动态导入收集验证，也没有可生成并核验真实 wheel SHA-256 与服务 EXE SHA-256 的 `app/runtime-manifest.json`；P2-01 必须生成并通过既有 `runtime_policy.py --artifact` 门，P2-02 必须完成干净机与目录外写入审计后才能把本项改为 `已完成`
 
 #### 当前问题
 
@@ -377,8 +377,8 @@ BabelDOC 与 pdf2zh-next 当前版本存在导入或初始化时按 `Path.home()
 
 - [ ] 删除或隐藏系统 Python 后最终 ZIP 仍可启动并翻译受控样例。
 - [ ] Process Monitor/进程审计中不出现系统 `python.exe`、`py.exe` 或 `pip.exe`。
-- [ ] 翻译过程不访问 PyPI，不下载 wheel，不创建用户 `site-packages`。
-- [ ] 用户已有 `PYTHONPATH`、用户 site-packages 和不同 Python 版本不影响发行行为。
+- [x] 源码生产入口和翻译路径不包含 pip/ensurepip/venv/setuptools/wheel 导入或系统 Python/pip 进程启动路径；运行时安装路径已由完整验证中的静态策略门阻断。最终进程网络审计仍随 P2-02 复验。
+- [x] 便携 child env 清除 `PYTHONHOME`/`PYTHONPATH`/`PYTHONUSERBASE`，设置 `PYTHONNOUSERSITE=1`/`PYTHONSAFEPATH=1`；冻结服务在第三方导入前验证私有服务 EXE、用户 site 禁用状态和 app 内模块搜索路径。最终 ZIP 隔离仍随 P2-02 复验。
 - [ ] 发行依赖版本与锁定清单、manifest 和许可证清单一致。
 - [ ] 开发依赖不进入最终发行目录，除非有明确运行时理由和测试。
 
@@ -623,3 +623,4 @@ BabelDOC 与 pdf2zh-next 当前版本存在导入或初始化时按 `Path.home()
 | 2026-09-04 | P0-01 | 已完成 | `3cb07cb` | 新增显式开发/便携 `RuntimeLayout`、顶层 EXE 根解析、固定 `data/` 布局、可写探针与稳定错误码；生产写入/清理点接入物理路径边界守卫，拒绝目录外绝对路径、穿越、symlink/junction；开发启动和路径语义保持兼容，完整验证通过。 |
 | 2026-09-04 | P0-02 | 已完成 | `1d65f0b` | 建立保持真实用户环境的顶层启动器与延迟导入服务入口；服务 child env 清除宿主 Python 覆盖并把 Home/Temp/pycache/主要模型缓存定向到 data，父进程以随机令牌健康检查确认 loopback 服务后打开浏览器；启动失败有界回收服务且就绪文件不逃逸 data，完整验证通过。 |
 | 2026-09-04 | P0-03 | 已完成 | `d505fc0` | 建立固定版本上游“写入来源—控制方式—目标目录”契约；BabelDOC 模型/字体/CMap/tiktoken/翻译缓存与 pdf2zh-next 配置/缓存通过导入前虚拟 Home 收口，huggingface-hub 使用实际公开缓存变量；服务进程树改用带标记的单次会话 Temp，正常退出清理、崩溃后只回收 PID 确认死亡的已标记目录；下载成功重建、失败、取消、字体不安装系统和升级治理门均有离线回归，完整验证通过。 |
+| 2026-09-04 | P0-04 | 已改进 | `000f144` | 固定 Python 3.12 的 136 项仅运行时依赖锁并与总锁约束一致；冻结服务强制 app 内私有 EXE、禁用户 site/safe-path 和 app 内模块搜索路径；新增生产源码禁 pip/系统解释器启动门及最终 onedir manifest/哈希/开发包扫描契约。源码层与本机原生依赖导入回归、完整验证通过；真实 PyInstaller ZIP、干净机/Process Monitor 与真实构建 manifest 待 P2-01/P2-02。 |
