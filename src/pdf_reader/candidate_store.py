@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
 
+from pdf_reader import paths
 from pdf_reader.path_locks import lock_for_path
 from pdf_reader.term_model import (
     CANDIDATE_SCHEMA_VERSION,
@@ -309,6 +310,7 @@ def _entry_to_dict(entry: CandidateEntry) -> dict[str, object]:
 
 def _create_backup_if_missing(source: Path, backup: Path) -> None:
     """原子创建恢复副本；已有副本绝不覆盖，失败不留下半备份。"""
+    backup = paths.require_data_path(backup, label="候选术语迁移备份")
     if backup.exists():
         if not backup.is_file():
             raise TermStoreError(f"backup path is not a regular file: {backup}")
@@ -657,14 +659,18 @@ class CandidateStore:
                 entry.source_key: _entry_to_dict(entry) for entry in sorted(entries, key=lambda item: item.source_key)
             },
         }
-        tmp_path = self.path.with_name(self.path.name + ".tmp")
+        target_path = paths.require_data_path(self.path, label="候选术语文件")
+        tmp_path = paths.require_data_path(
+            target_path.with_name(target_path.name + ".tmp"),
+            label="候选术语临时文件",
+        )
         try:
             with tmp_path.open("w", encoding="utf-8", newline="\n") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2, sort_keys=True)
                 f.write("\n")
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(tmp_path, self.path)
+            os.replace(tmp_path, target_path)
         except Exception:
             try:
                 tmp_path.unlink()

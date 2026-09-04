@@ -11,6 +11,7 @@ from pdf2zh_next import SettingsModel
 from pdf_reader import (
     cache_ops,
     debug_trace,
+    paths,
     pdf_extraction,
     strict_glossary,
     term_diagnostics,
@@ -72,7 +73,8 @@ def _safe_rmtree(path: Path | None) -> bool:
     if path is None or not path.exists():
         return True
     try:
-        shutil.rmtree(path)
+        safe_path = paths.require_data_path(path, label="翻译临时工作区")
+        shutil.rmtree(safe_path)
     except Exception:
         logger.warning("failed to remove temp workspace %s", path, exc_info=True)
         return False

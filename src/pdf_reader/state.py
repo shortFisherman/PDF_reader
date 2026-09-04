@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import pymupdf
 
+from pdf_reader import paths
 from pdf_reader.task_logging import (
     STATUS_DISCARDED,
     get_current_task,
@@ -39,7 +40,7 @@ class DocumentSnapshot:
 class AppState:
     def __init__(self, cache_dir: Path) -> None:
         self._lock = threading.Lock()
-        self._cache_dir = cache_dir
+        self._cache_dir = paths.require_data_path(cache_dir, label="文档缓存目录")
         self._closed = False
         self._left_doc: pymupdf.Document | None = None
         self._right_doc: pymupdf.Document | None = None
@@ -135,6 +136,7 @@ class AppState:
             path = self._reading_progress_path()
             if path is None:
                 raise ValueError("no document opened")
+            path = paths.require_data_path(path, label="阅读进度文件")
             tmp = path.with_suffix(path.suffix + ".tmp")
             try:
                 tmp.write_text(json.dumps({"page": page}), encoding="utf-8")
@@ -184,9 +186,9 @@ class AppState:
                 raise RuntimeError("AppState closed")
             self._close_docs()
             pdf_hash = sha256_func(pdf_path)
-            cache_subdir = self._cache_dir / pdf_hash
+            cache_subdir = paths.require_data_path(self._cache_dir / pdf_hash, label="文档缓存目录")
             cache_subdir.mkdir(parents=True, exist_ok=True)
-            right_pdf_path = cache_subdir / "right.pdf"
+            right_pdf_path = paths.require_data_path(cache_subdir / "right.pdf", label="译文缓存")
             cache_status = "reused" if right_pdf_path.exists() else "new"
             if cache_status == "new":
                 shutil.copy2(pdf_path, right_pdf_path)
@@ -307,6 +309,8 @@ class AppState:
         work_doc: pymupdf.Document | None = None
         old_doc: pymupdf.Document | None = None
         tmp_save = right_pdf_path + ".tmp"
+        paths.require_data_path(right_pdf_path, label="译文缓存")
+        paths.require_data_path(tmp_save, label="译文缓存临时文件")
         committed = False
         try:
             src_doc = pymupdf.open(translated_pdf_path)

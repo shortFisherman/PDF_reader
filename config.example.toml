@@ -50,8 +50,8 @@
 #   [term_extraction].qps / [term_extraction].max_workers。
 #
 # 配置来源不只 TOML：
-#   - 环境变量：MODEL_API_KEY、PDF_READER_DEBUG、PDF_READER_ROOT、
-#               PDF_READER_DATA_ROOT
+#   - 环境变量：MODEL_API_KEY、PDF_READER_DEBUG；开发运行还支持
+#               PDF_READER_ROOT、PDF_READER_DATA_ROOT
 #   - 命令行：  --debug、--no-debug
 #   - 页面操作：待打开的 PDF、翻译页码/范围、自定义 Prompt
 #   - 固定文件：PROJECT_ROOT/docs/glossary.csv
@@ -84,13 +84,19 @@
 # 写入 cache/<hash>/debug_trace.log（2MB × 3 备份，按 job 过滤）。它不会启用
 # Flask debugger 或 reloader——两者始终关闭。
 #
-# 高级路径环境变量（通常无需设置；值必须是绝对路径）：
+# 高级开发路径环境变量（通常无需设置；值必须是绝对路径）：
 #   PDF_READER_ROOT
 #     项目资源根。config.toml、config.example.toml、templates/、static/ 和
 #     docs/glossary.csv 都从这里读取。仅适用于特殊部署/打包场景。
 #   PDF_READER_DATA_ROOT
 #     运行数据根。logs/ 和相对 cache_dir 以这里为基准；适合把运行数据放到
 #     仓库之外。默认等于项目资源根。
+#
+# Windows 便携发行模式不读取以上两个开发路径覆盖。便携根只由顶层
+# PDF Reader.exe 的真实位置决定；配置固定为 data/config/config.toml，手动术语
+# 固定为 data/glossary/glossary.csv，日志和文档缓存等程序写入必须留在 data/。
+# 便携态未设置 cache_dir 时默认使用 data/documents；即使配置绝对 cache_dir，
+# 也必须位于 data/ 内，否则启动失败。当前开发启动的默认值仍为 "cache"。
 # =============================================================================
 
 

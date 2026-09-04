@@ -15,6 +15,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pdf_reader import paths
 from pdf_reader.path_locks import lock_for_path
 from pdf_reader.term_model import (
     USER_GLOSSARY_SCHEMA_VERSION,
@@ -287,7 +288,11 @@ class UserGlossaryStore:
 
     def _write(self, terms: list[AuthoritativeTerm], revision: int) -> int:
         new_revision = revision + 1
-        tmp_path = self.path.with_name(self.path.name + ".tmp")
+        target_path = paths.require_data_path(self.path, label="文档权威术语文件")
+        tmp_path = paths.require_data_path(
+            target_path.with_name(target_path.name + ".tmp"),
+            label="文档权威术语临时文件",
+        )
         try:
             with tmp_path.open("w", newline="", encoding="utf-8") as f:
                 f.write(f"# schema_version={USER_GLOSSARY_SCHEMA_VERSION}; revision={new_revision}\n")
@@ -306,7 +311,7 @@ class UserGlossaryStore:
                     )
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(tmp_path, self.path)
+            os.replace(tmp_path, target_path)
         except Exception:
             try:
                 tmp_path.unlink()

@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Never
 
 import pytest
 
@@ -64,6 +65,40 @@ else:
 """
 
 
+_PORTABLE_PROBE = """
+import json
+import logging
+import sys
+
+from pdf_reader import paths
+
+layout = paths.RuntimeLayout.portable_from_executable(sys.argv[1])
+paths.install_runtime_layout(layout)
+paths.prepare_runtime_layout()
+
+# 这些模块故意放在显式布局安装之后导入，镜像未来便携服务入口的顺序。
+from pdf_reader import config, logging_config
+from pdf_reader.app import create_app
+
+logging.disable(logging.CRITICAL)
+app = create_app(config.build_app_settings())
+print(json.dumps({
+    "mode": layout.mode,
+    "portable_root": str(paths.get_portable_root()),
+    "resource_root": str(paths.get_resource_root()),
+    "data_root": str(paths.get_data_root()),
+    "config_path": str(config.CONFIG_PATH),
+    "glossary_path": str(config.GLOSSARY_PATH),
+    "log_dir": str(paths.get_log_dir()),
+    "cache_dir": str(config.CACHE_DIR),
+    "settings_cache_dir": str(app.config["app_settings"].cache_dir),
+    "templates": str(app.template_folder),
+    "static": str(app.static_folder),
+}))
+logging_config.reset_logging()
+"""
+
+
 def _probe_env(data_root: Path) -> dict:
     # 说明：P2-01 包化后子进程直接导入已安装的 pdf_reader 包，不再设置
     # PYTHONPATH；PROJECT_ROOT/DATA_ROOT 由 paths.py 的 marker/环境变量契约决定。
@@ -98,6 +133,21 @@ def _run_env_probe(cwd: Path, env: dict, which: str) -> str:
     )
     assert result.returncode == 0, f"env probe failed from {cwd}:\n{result.stderr}"
     return result.stdout.strip()
+
+
+def _run_portable_probe(cwd: Path, executable: Path, hostile_data_root: Path) -> dict:
+    env = _probe_env(hostile_data_root)
+    env["PDF_READER_ROOT"] = str(hostile_data_root / "resource-override")
+    result = subprocess.run(
+        [sys.executable, "-c", _PORTABLE_PROBE, str(executable)],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    assert result.returncode == 0, f"portable probe failed from {cwd}:\n{result.stderr}"
+    return json.loads(result.stdout.strip())
 
 
 def _app_location(app) -> dict:
@@ -301,3 +351,197 @@ def test_logging_dir_uses_unified_strategy_and_reset(monkeypatch, tmp_path):
     monkeypatch.setattr(logging_config, "LOG_DIR", log_dir_b)
     logging_config.setup_logging(False)
     assert (log_dir_b / "pdf_reader.log").is_file()
+
+
+def _make_portable_layout(tmp_path: Path) -> paths.RuntimeLayout:
+    portable_root = tmp_path / "PDF 阅读器 portable path with spaces"
+    (portable_root / "app").mkdir(parents=True)
+    executable = portable_root / "PDF Reader.exe"
+    executable.write_bytes(b"")
+    return paths.RuntimeLayout.portable_from_executable(executable)
+
+
+def test_portable_layout_is_derived_from_executable_and_ignores_cwd_and_dev_env(monkeypatch, tmp_path):
+    """便携根只来自顶层 EXE；CWD 与开发态覆盖均不能改变发行边界。"""
+    layout = _make_portable_layout(tmp_path)
+    expected_root = layout.portable_root
+    assert expected_root is not None
+
+    monkeypatch.setenv("PDF_READER_ROOT", str(tmp_path / "host-resource-override"))
+    monkeypatch.setenv("PDF_READER_DATA_ROOT", str(tmp_path / "host-data-override"))
+    elsewhere = tmp_path / "另一个 current directory"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    assert layout.mode is paths.RuntimeMode.PORTABLE
+    assert layout.portable_root == expected_root
+    assert layout.resource_root == expected_root / "app"
+    assert layout.data_root == expected_root / "data"
+    assert layout.config_path == expected_root / "data" / "config" / "config.toml"
+    assert layout.glossary_path == expected_root / "data" / "glossary" / "glossary.csv"
+    assert layout.log_dir == expected_root / "data" / "logs"
+    assert layout.temp_dir == expected_root / "data" / "temp"
+    assert layout.resolve_cache_dir("documents") == expected_root / "data" / "documents"
+
+
+def test_prepare_portable_layout_supports_long_unicode_path(tmp_path):
+    portable_root = tmp_path / "中文 path with spaces" / ("long-segment-" + "a" * 70) / ("nested-segment-" + "b" * 70)
+    (portable_root / "app").mkdir(parents=True)
+    executable = portable_root / "PDF Reader.exe"
+    executable.write_bytes(b"")
+
+    layout = paths.RuntimeLayout.portable_from_executable(executable)
+    paths.prepare_runtime_layout(layout)
+
+    assert layout.portable_root == portable_root.resolve()
+    assert layout.data_root == portable_root.resolve() / "data"
+    assert all(directory.is_dir() for directory in layout.managed_directories)
+
+
+def test_two_cwds_import_real_app_with_identical_portable_paths(tmp_path):
+    """显式安装布局后再导入真实配置/应用，所有可变路径仍只落在 data。"""
+    layout = _make_portable_layout(tmp_path)
+    assert layout.portable_root is not None
+    executable = layout.portable_root / "PDF Reader.exe"
+    elsewhere = tmp_path / "portable-probe-cwd"
+    elsewhere.mkdir()
+    hostile_data_root = tmp_path / "must-not-be-used"
+
+    first = _run_portable_probe(REPO_ROOT, executable, hostile_data_root)
+    second = _run_portable_probe(elsewhere, executable, hostile_data_root)
+
+    expected_root = layout.portable_root
+    expected_data = expected_root / "data"
+    assert first == second
+    assert first == {
+        "mode": "portable",
+        "portable_root": str(expected_root),
+        "resource_root": str(expected_root / "app"),
+        "data_root": str(expected_data),
+        "config_path": str(expected_data / "config" / "config.toml"),
+        "glossary_path": str(expected_data / "glossary" / "glossary.csv"),
+        "log_dir": str(expected_data / "logs"),
+        "cache_dir": str(expected_data / "documents"),
+        "settings_cache_dir": str(expected_data / "documents"),
+        "templates": str(expected_root / "app" / "templates"),
+        "static": str(expected_root / "app" / "static"),
+    }
+    assert (expected_data / "logs" / "pdf_reader.log").is_file()
+    assert not hostile_data_root.exists()
+
+
+def test_portable_layout_install_is_explicit_and_cannot_switch(monkeypatch, tmp_path):
+    """便携模式由入口显式注入，同一进程不能悄悄换到另一个数据根。"""
+    monkeypatch.setattr(paths, "_configured_layout", None)
+    layout = _make_portable_layout(tmp_path)
+    paths.install_runtime_layout(layout)
+
+    assert paths.get_runtime_layout() is layout
+    assert paths.get_portable_root() == layout.portable_root
+    assert paths.get_data_root() == layout.data_root
+    assert paths.get_config_path() == layout.config_path
+    assert paths.get_glossary_path() == layout.glossary_path
+    assert paths.get_log_dir() == layout.log_dir
+    assert paths.get_temp_dir() == layout.temp_dir
+    assert paths.get_default_cache_dirname() == "documents"
+
+    other = paths.RuntimeLayout.portable_from_executable(tmp_path / "other" / "PDF Reader.exe")
+    with pytest.raises(paths.PathStrategyError) as exc_info:
+        paths.install_runtime_layout(other)
+    assert exc_info.value.code == "runtime_layout_already_installed"
+
+
+@pytest.mark.parametrize(
+    "unsafe_value",
+    [
+        "../outside",
+        "documents/../../outside",
+    ],
+)
+def test_portable_cache_rejects_relative_path_traversal(tmp_path, unsafe_value):
+    layout = _make_portable_layout(tmp_path)
+    with pytest.raises(paths.PathStrategyError) as exc_info:
+        layout.resolve_cache_dir(unsafe_value)
+    assert exc_info.value.code == "path_outside_data_root"
+
+
+def test_portable_cache_rejects_absolute_outside_path_but_development_keeps_compatibility(tmp_path):
+    outside = (tmp_path / "outside-cache").resolve()
+    portable = _make_portable_layout(tmp_path)
+    development = paths.RuntimeLayout.development(
+        resource_root=REPO_ROOT,
+        data_root=tmp_path / "development-data",
+    )
+
+    with pytest.raises(paths.PathStrategyError) as exc_info:
+        portable.resolve_cache_dir(str(outside))
+    assert exc_info.value.code == "path_outside_data_root"
+    assert development.resolve_cache_dir(str(outside)) == outside
+
+
+def test_portable_data_path_rejects_existing_symlink_with_nonexistent_tail(tmp_path):
+    """即使目标尾部尚不存在，已有链接也不能把随后写入导向 data 外。"""
+    layout = _make_portable_layout(tmp_path)
+    layout.data_root.mkdir()
+    outside = tmp_path / "outside-symlink-target"
+    outside.mkdir()
+    link = layout.data_root / "linked"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"当前环境不允许创建目录符号链接：{exc}")
+
+    with pytest.raises(paths.PathStrategyError) as exc_info:
+        layout.require_data_path(link / "not-created-yet" / "output.pdf")
+    assert exc_info.value.code == "path_outside_data_root"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction contract")
+def test_portable_layout_rejects_data_root_junction(tmp_path):
+    """Windows junction 不能把整个 data 根重定向到便携目录之外。"""
+    portable_root = tmp_path / "portable-junction-check"
+    (portable_root / "app").mkdir(parents=True)
+    executable = portable_root / "PDF Reader.exe"
+    executable.write_bytes(b"")
+    outside = tmp_path / "junction-target"
+    outside.mkdir()
+    junction = portable_root / "data"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        pytest.skip(f"当前环境不允许创建 junction：{result.stderr or result.stdout}")
+    try:
+        with pytest.raises(paths.PathStrategyError) as exc_info:
+            paths.RuntimeLayout.portable_from_executable(executable)
+        assert exc_info.value.code == "portable_data_outside_root"
+    finally:
+        os.rmdir(junction)
+
+
+def test_prepare_portable_layout_creates_only_contract_directories_and_removes_probe(tmp_path):
+    layout = _make_portable_layout(tmp_path)
+    result = paths.prepare_runtime_layout(layout)
+
+    assert result is layout
+    assert all(directory.is_dir() for directory in layout.managed_directories)
+    assert list(layout.data_root.glob(".pdf-reader-write-test-*.tmp")) == []
+    assert not layout.config_path.exists()
+    assert not layout.glossary_path.exists()
+
+
+def test_prepare_portable_layout_fails_with_stable_code_instead_of_fallback(monkeypatch, tmp_path):
+    layout = _make_portable_layout(tmp_path)
+
+    def deny_write(_path: object, _flags: int, _mode: int = 0o777) -> Never:
+        raise PermissionError("simulated read-only portable directory")
+
+    monkeypatch.setattr(paths.os, "open", deny_write)
+    with pytest.raises(paths.PathStrategyError) as exc_info:
+        paths.prepare_runtime_layout(layout)
+    assert exc_info.value.code == "portable_data_not_writable"
+    assert str(layout.portable_root) in str(exc_info.value)
+    assert not (tmp_path / "host-fallback").exists()

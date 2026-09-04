@@ -5,6 +5,7 @@ import threading
 from collections import defaultdict
 from pathlib import Path
 
+from pdf_reader import paths
 from pdf_reader.path_locks import lock_for_path
 from pdf_reader.task_logging import task_log
 from pdf_reader.term_model import PROTECTED_AUTHORITATIVE_FILENAMES, TermStoreError
@@ -52,6 +53,7 @@ def merge_glossary_csvs(cumulative_path: Path, auto_extracted_path: Path) -> Non
     os.replace commits it. On any read/write/replace failure the previous
     cumulative file stays in place and the temp file is removed.
     """
+    cumulative_path = paths.require_data_path(cumulative_path, label="累计术语文件")
     with _merge_lock:
         if cumulative_path.name in PROTECTED_AUTHORITATIVE_FILENAMES:
             raise TermStoreError(f"auto glossary merge must not write protected file: {cumulative_path.name}")
@@ -84,7 +86,10 @@ def merge_glossary_csvs(cumulative_path: Path, auto_extracted_path: Path) -> Non
             if not counts:
                 return
 
-            tmp_path = cumulative_path.with_name(cumulative_path.name + ".tmp")
+            tmp_path = paths.require_data_path(
+                cumulative_path.with_name(cumulative_path.name + ".tmp"),
+                label="累计术语临时文件",
+            )
             try:
                 with open(tmp_path, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)

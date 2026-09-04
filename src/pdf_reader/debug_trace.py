@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from pdf_reader import logging_config
+from pdf_reader import logging_config, paths
 from pdf_reader.task_logging import STATUS_STARTED, TaskContext, get_current_task, task_log, task_log_context
 
 logger = logging.getLogger("pdf_reader.debug_trace")
@@ -76,7 +76,7 @@ def debug_session(
         yield
         return
 
-    log_path = Path(glossary_path) / "debug_trace.log"
+    log_path = paths.require_data_path(Path(glossary_path) / "debug_trace.log", label="调试日志")
     handler: RotatingFileHandler | None = None
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)

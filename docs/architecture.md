@@ -73,7 +73,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/candidate_filter.py` | P1-02 候选后置过滤：确定性前后标点清理/异常空白折叠、英文单词/缩写边界感知匹配、小型普通词/功能词/通用学术词精确拒绝、完整句/超词数/超字符/纯数字/公式/变量/页码/占位符结构拒绝、target 必须含 Han 字符、幻觉 source 拒绝、逐页命中页码与有界证据窗口；每条被过滤候选带稳定原因，规则版本 `candidate-filter/1` 组合进候选 `strategy_version`；导出 `FILTER_REASONS` 稳定 reason 白名单供 P2-02 诊断复用；只作用于模型自动候选，绝不删除/降级/重写用户权威决定 |
 | `src/pdf_reader/candidate_service.py` | P1-01/P1-02/P1-03/P1-05/P2-02 两阶段候选服务：`prepare` 在严格翻译前读取输入 PDF、模型提取/过滤，返回不可变 `PreparedCandidates`（observations + report + 冻结 identity；带身份时 document_dir 必须等于 identity.document_dir），绝不写 `CandidateStore`；`commit` 只在正文 PDF 成功提交后执行，以 prepared 冻结身份为权威重验 job_id/document_id/pdf_hash/document_dir（目录名必须等于 pdf_hash；另传 identity 必须完全相等、写目录必须等于冻结 identity.document_dir、无身份 prepared 不得升级）再原子写 `CandidateStore`；report 含 proposed/kept(candidates)/filtered(+by_reason)/elapsed_ms/usage 稳定口径（failed 由受控 status 集合计算，不存报告字段），prepare 发 `candidate_prepare` 摘要、commit 的所有返回路径（无 observations/成功/store_failed/identity_rejected）都发 `candidate_commit` 摘要并追加 best-effort 持久状态计数 pending/accepted/rejected（统计失败三者均 unavailable）；单页/批量同规则，任何失败降级安全日志且不阻正文 finish；候选只写 `term_candidates.json`，与 P1-03 `CandidateTermService` 确定性摘要边界同模块，P1-04 管理服务沿用同一推荐排序 |
 | `src/pdf_reader/term_diagnostics.py` | P2-02 术语诊断安全摘要与故障隔离：`candidate summary`/`glossary_active_terms`/`compliance_*` 稳定事件文本、event/status/reason 显式常量白名单（未知 → unknown，原始字符串不落日志；过滤 reason 复用 `FILTER_REASONS`）、`candidate_failed_count` 唯一 failed 事实源、usage unavailable 语义、`safe_task_log` 与逐层 fallback——诊断构造/格式化/发射/可选统计异常只降级，绝不影响正文、终态或术语数据；日志字段不含 source/target/evidence/Prompt/凭据 |
-| `src/pdf_reader/paths.py` | 统一路径策略：`PROJECT_ROOT`/`DATA_ROOT` 解析、config/glossary/templates/static/logs/cache 位置、相对缓存与绝对缓存语义 |
+| `src/pdf_reader/paths.py` | 开发/便携共享的不可变 `RuntimeLayout`：显式区分 `RESOURCE_ROOT`/`PORTABLE_ROOT`/`DATA_ROOT`，从顶层 EXE 而非 CWD 解析便携根，集中提供 config/glossary/templates/static/logs/cache/temp 位置、便携目录准备与可写探针、稳定路径错误码，以及解析物理路径后的 data 边界守卫；开发态保持原环境变量与绝对 cache 兼容，便携态拒绝任意目录外 cache、`..`、symlink 和 junction 逃逸 |
 | `src/pdf_reader/task_logging.py` | 集中任务日志上下文：不可变 `TaskContext`、`contextvars` 传播、统一前缀/截断（doc 8/hash 12/可选 glossary revision 12）/1-based 页码、生命周期状态、`SafeFormatter` 脱敏（API Key、sk-/Bearer、api_key、prompt 类字段） |
 | `src/pdf_reader/routes.py` | Blueprint HTTP/SSE 端点（含配置中心、术语管理与前端错误上报）；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器，术语/配置/错误上报 loopback-only 守卫，以及翻译与术语写入共享的 active-job 互斥边界 |
 | `src/pdf_reader/state.py` | `AppState`：不可变文档会话身份、锁内翻译快照、左右文档、缓存路径、哈希、页数/尺寸、翻译页集合、阅读进度、非重入锁 |
@@ -367,6 +367,28 @@ job/document identity 下复用同一
 
 ## 启动与 Flask 应用装配
 
+### 运行布局与写入边界
+
+- 未显式安装布局时，`paths.get_runtime_layout()` 即时返回开发布局：资源根仍由仓库
+  `config.example.toml` 标记或绝对 `PDF_READER_ROOT` 解析，数据根仍由绝对
+  `PDF_READER_DATA_ROOT` 覆盖或默认等于资源根。因此现有 `start.bat`、
+  `python -m pdf_reader`、仓库 `config.toml`、`cache/` 与 `logs/` 的位置不变。
+- 便携入口使用 `RuntimeLayout.portable_from_executable(<顶层 PDF Reader.exe>)`
+  构造布局，并必须在导入 `config`、`logging_config` 与翻译依赖前调用
+  `install_runtime_layout()` 和 `prepare_runtime_layout()`。便携根固定为顶层 EXE
+  的父目录，资源根固定为 `PORTABLE_ROOT/app`，数据根固定为
+  `PORTABLE_ROOT/data`；CWD、`PDF_READER_ROOT` 与 `PDF_READER_DATA_ROOT` 均不能
+  改写已安装的便携布局。同一进程不能切换到另一个布局。当前 HEAD 已提供并测试
+  这套入口契约，但真正的启动器/服务入口属于后续 P0-02，尚未实现。
+- 便携准备只在 `data/` 下创建 `config/`、`documents/`、`glossary/`、`models/`、
+  `fonts/`、`upstream-cache/`、`temp/`、`pycache/`、`logs/` 与 `home/.cache/`，
+  进行创建后物理路径复核和可写探针；失败返回稳定 `PathStrategyError.code`，不回退
+  到 Home、AppData 或系统临时目录，也不生成真实 `config.toml`/`glossary.csv`。
+- 配置原子保存、主/调试日志、文档副本/阅读进度、候选/权威/累计/有效术语、翻译
+  工作区创建和清理在真正写入或删除前调用统一 data 边界守卫。守卫使用解析后的
+  物理路径比较，因而拒绝绝对目录外路径、`..`、已存在 symlink/junction 及其后面
+  尚不存在的尾部路径；开发布局仍允许现有测试、工具和绝对 cache 用法。
+
 1. `python -m pdf_reader` 进入 `app.main(argv=None)`：模块导入不解析 CLI、不修改 `config.DEBUG`；CLI 解析只发生在该启动边界内，`__main__.py` 的 `main()` 调用受 `if __name__ == "__main__"` 守卫保护，`import pdf_reader.__main__` 同样无副作用。`--debug` 与 `--no-debug` 互斥。
 2. `config.resolve_server_config(cli_debug=...)` 按优先级 CLI `--debug`/`--no-debug` > 环境变量 `PDF_READER_DEBUG` > `[server].debug` > 默认 `false` 解析一次，返回 frozen `ServerConfig(host, port, debug)`；`use_reloader` 恒为 `False`——`debug` 只表示“详细诊断日志模式”（日志 DEBUG + debug_trace），不再控制 Flask debugger/reloader。
 3. `main` 调用 `config.validate_startup_requirements()` 统一严格校验 `[model]`/`[pdf_reader]`/`[translation]`/`[pdf2zh]`：未知 section/key/provider、类型/范围/组合/正则错误、`openai_compatible` 缺 `base_url` 均抛 `ConfigError`；缺少 `model.model`、API Key 或 API Key 为示例值时同样失败。main 打印 `ERROR:` 并以退出码 2 结束，不启动服务器。该函数返回严格解析出的同一个 `UpstreamRuntimeConfig`。
@@ -379,15 +401,15 @@ job/document identity 下复用同一
 
 ## 配置加载与 Provider 映射
 
-- `config.py` 经 `src/pdf_reader/paths.py` 读取 `PROJECT_ROOT/config.toml`（`CONFIG_PATH`）。`PROJECT_ROOT` 默认由 `paths.py` 从 `src/pdf_reader/` 的模块位置向上查找 `config.example.toml` 标记得到（自动回到仓库根），也可用环境变量 `PDF_READER_ROOT` 显式覆盖；文件不存在时配置回退为空字典，不在导入期抛错。
+- `config.py` 经 `src/pdf_reader/paths.py` 读取当前布局的 `CONFIG_PATH`。开发态仍为 `PROJECT_ROOT/config.toml`；显式便携布局为 `PORTABLE_ROOT/data/config/config.toml`。开发资源根默认从 `src/pdf_reader/` 向上查找 `config.example.toml` 标记，也可用绝对 `PDF_READER_ROOT` 覆盖；便携布局不读取该覆盖。文件不存在时配置回退为空字典，不在导入期抛错。
 - 导入安全：`_section`/`_string` 安全提取，非 table section 与非字符串字段在导入期使用安全默认值（不会因 `AttributeError`/`TypeError` 崩溃）；原始 `CONFIG` 保留供启动校验。
 - 环境变量覆盖：`MODEL_API_KEY`（优先级高于 `model.api_key`）；`PDF_READER_DEBUG` 是 debug 优先级中间层，只接受 `true/false/1/0/on/off/yes/no`（不区分大小写、忽略首尾空白），非法值启动时报错（即使 CLI 显式覆盖也会 fail-fast）。
 - `[server]` 严格校验：必须是 table；`host` 非空字符串；`port` 是 1–65535 的 int（布尔值不算）；`debug` 必须为真布尔值。旧的 `[debug].enabled` 键已停止使用。
 - 冻结运行时配置：`build_upstream_runtime_config()` 把解析结果冻结为 `ModelRuntimeConfig`（`api_key` 为 `repr=False`）/`TranslationRuntimeConfig`/`Pdf2zhRuntimeConfig`/`UpstreamRuntimeConfig`；`AppSettings.upstream` 持有该对象，`model_provider`/`model`/`lang_in`/`lang_out` 从它派生，不再从 raw section 单独取值。
-- 默认值：provider=`openai_compatible`、model=`""`、dpi=200、cache_dir=`cache`、lang_in=`en`、lang_out=`zh`、`min_text_length=5`、`qps=4`、worker 相关为 `None`（上游跟随）、`auto_extract_glossary=True`（1.x 兼容别名：只在未配置 `[term_extraction]` 段时作为 `enabled` 的兼容来源；已配置本段时以规范段为准）、`term_qps=None`、`term_pool_max_workers=None`（1.x 兼容别名，仅兼容读取并转发旧上游 SettingsModel，严格正文路径与项目候选提取不使用）、`primary_font_family=None`（auto）、PDF 高级字段采用上游 2.9.0 默认（`translate_table_text=True`、其余 false/0.8/0.9）；`[term_extraction]` 默认 `enabled=True`（未配置该段时跟随旧 `auto_extract_glossary` 显式值）、`timeout=30.0`、`qps=2`、`max_workers=1`、`retry_count=1`、`max_input_chars=80000`、`prompt=None`。三个 1.x 兼容键在启动验证时输出不含敏感值的 WARNING 迁移提示，计划 2.0.0 移除，兼容只限这三键（未知键仍严格拒绝）。相对 `cache_dir` 以 `DATA_ROOT`（默认等于 `PROJECT_ROOT`）为基准解析并 `resolve()`；绝对 `cache_dir` 保持绝对，不被重写。`DATA_ROOT` 可用环境变量 `PDF_READER_DATA_ROOT` 覆盖。
+- 默认值：provider=`openai_compatible`、model=`""`、dpi=200；开发态 cache_dir=`cache`，便携态 cache_dir=`documents`；lang_in=`en`、lang_out=`zh`、`min_text_length=5`、`qps=4`、worker 相关为 `None`（上游跟随）、`auto_extract_glossary=True`（1.x 兼容别名：只在未配置 `[term_extraction]` 段时作为 `enabled` 的兼容来源；已配置本段时以规范段为准）、`term_qps=None`、`term_pool_max_workers=None`（1.x 兼容别名，仅兼容读取并转发旧上游 SettingsModel，严格正文路径与项目候选提取不使用）、`primary_font_family=None`（auto）、PDF 高级字段采用上游 2.9.0 默认（`translate_table_text=True`、其余 false/0.8/0.9）；`[term_extraction]` 默认 `enabled=True`（未配置该段时跟随旧 `auto_extract_glossary` 显式值）、`timeout=30.0`、`qps=2`、`max_workers=1`、`retry_count=1`、`max_input_chars=80000`、`prompt=None`。三个 1.x 兼容键在启动验证时输出不含敏感值的 WARNING 迁移提示，计划 2.0.0 移除，兼容只限这三键（未知键仍严格拒绝）。开发态相对 `cache_dir` 以 `DATA_ROOT` 解析、绝对值保持兼容；便携态相对值固定在 `PORTABLE_ROOT/data` 下，绝对值也必须位于该数据根内，否则启动失败。
 - 统一严格校验 `validate_startup_requirements()`（`app.main` 启动前调用，返回严格 `UpstreamRuntimeConfig`）：`[model]`/`[pdf_reader]`/`[translation]`/`[pdf2zh]`/`[term_extraction]` 存在则必须为 table；未知 section/key 与未知 provider 直接报错；`openai_compatible` 缺 `base_url` 启动失败；bool 不得冒充 int/float；数值必须有限（nan/inf/-inf 拒绝）；`temperature` 只要求可解析且有限，`timeout` 要求有限正数；`reasoning_effort` 按 Provider 枚举校验；正则字段启动期预编译；`[term_extraction]` 的 timeout/qps/max_workers/retry_count/max_input_chars/prompt 按类型与范围校验；API Key 只出现在 `ModelRuntimeConfig.api_key`（`repr=False`），错误与日志不泄漏 Key/Prompt 原文。
 - `MODEL_API_KEY` 环境值合法（非空且非示例占位值）时覆盖文件中无效的 `api_key`，但 `[model]` 段本身仍必须是 table。`build_app_settings()` 未传入 `upstream` 时用宽松解析装配（无 config.toml 的测试/兼容 fallback）；`main` 必须传回严格实例，禁止宽松重解析。
-- `GLOSSARY_PATH = PROJECT_ROOT/docs/glossary.csv`（由 `src/pdf_reader/paths.py` 派生），必须保持该路径；模块位于 `src/pdf_reader/` 时不因 `__file__` 变化而改变。
+- `GLOSSARY_PATH` 由当前布局派生：开发态保持 `PROJECT_ROOT/docs/glossary.csv`，便携态为 `PORTABLE_ROOT/data/glossary/glossary.csv`；二者都不受 CWD 影响。
 - `ENGINE_REGISTRY` 用声明式 `EngineSpec` 注册 10 个 Provider，顺序为：`deepseek`、`zhipu`、`siliconflow`、`aliyun`、`gemini`、`groq`、`grok`、`modelscope`、`openai`、`openai_compatible`。
 - `resolve_engine()` 对未知 Provider 抛 `ConfigError`（不再回退 `openai_compatible`）；`build_engine_kwargs(spec, model_cfg)` 显式接收 `ModelRuntimeConfig`，按 `ENGINE_REGISTRY.field_map` 映射（含发送开关：OpenAI → 历史拼写 `openai_send_temprature`，Compatible/Aliyun → 各自 `send_temperature`；发送开关为 `False` 时省略以保持旧请求行为，`enable_json_mode=False` 等普通字段仍显式透传）。
 - `translation_settings.build_settings(upstream, input_pdf, ...)`：设置 `lang_in`/`lang_out`/`min_text_length`/`qps`/worker 与 term 字段（`term_qps`/`term_pool_max_workers` 作为 1.x 兼容别名按旧规则转发到上游 SettingsModel；正文固定 `no_auto_extract_glossary=True`，上游自动提取已关闭，因此它们不改变正文与项目候选）；正文固定 `save_auto_extracted_glossary=False`（P0-04，不再由 `auto_extract_glossary` 反转）；Prompt 优先级为页面非空 Prompt > `default_system_prompt` > 上游默认；`ignore_cache=True`；`glossaries` 只由调用方传入（严格正文路径只传 `effective_glossary.csv`，不再自动附加全局/累计 CSV）；`output` 由生成器设置；PDF 参数为 `pages`、固定 `no_dual=True`/`only_include_translated_page=True`/`watermark_output_mode="no_watermark"`，并把 `[pdf2zh]` 的 15 个字段显式传入（`formula_*` → 上游 `formular_*`）。
@@ -432,15 +454,15 @@ job/document identity 下复用同一
 
 | 路径/数据 | 说明 |
 |---|---|
-| `DATA_ROOT/cache/<hash>/right.pdf` | 每文档持久化的译文工作副本，首次打开复制源文件，翻译后原子替换 |
-| `DATA_ROOT/cache/<hash>/cumulative_glossary.csv` | 旧累计术语表（历史输入，非权威）：兼容期内保留，只读、幂等迁移为未审核候选并生成 `cumulative_glossary.csv.bak`（已有副本绝不覆盖），不进入 `user_glossary.csv`/`effective_glossary.csv`；读—合并—写仍受模块级互斥锁保护，同目录 `.tmp` 写入并 flush/fsync/close 后 `os.replace` 原子提交；读取失败或表头缺少 source/target 时中止合并保留旧文件，写入/replace 失败保留旧文件并清理临时文件 |
-| `DATA_ROOT/cache/<hash>/reading_progress.json` | 零基阅读页码，`.tmp` + `os.replace` 原子写；损坏/越界时安全降级 |
+| `<CACHE_DIR>/<hash>/right.pdf` | 每文档持久化的译文工作副本，首次打开复制源文件，翻译后原子替换；开发默认 `<DATA_ROOT>/cache`，便携默认 `<DATA_ROOT>/documents` |
+| `<CACHE_DIR>/<hash>/cumulative_glossary.csv` | 旧累计术语表（历史输入，非权威）：兼容期内保留，只读、幂等迁移为未审核候选并生成 `cumulative_glossary.csv.bak`（已有副本绝不覆盖），不进入 `user_glossary.csv`/`effective_glossary.csv`；读—合并—写仍受模块级互斥锁保护，同目录 `.tmp` 写入并 flush/fsync/close 后 `os.replace` 原子提交；读取失败或表头缺少 source/target 时中止合并保留旧文件，写入/replace 失败保留旧文件并清理临时文件 |
+| `<CACHE_DIR>/<hash>/reading_progress.json` | 零基阅读页码，`.tmp` + `os.replace` 原子写；损坏/越界时安全降级 |
 | `DATA_ROOT/logs/pdf_reader.log` | 永久常驻的统一主日志：`logging_config` 把同一对控制台 + 轮转文件 handler 挂到 `pdf_reader`/`werkzeug`/`pdf2zh_next`/`babeldoc`，行格式为 ISO 时间/level/run_id/pid/thread/logger，128 KiB × 5、UTF-8（常规上限约 768 KiB），超过 14 天的编号轮转备份在启动与轮转后自动清理，所有通道经同一 `SafeFormatter` 脱敏 |
-| `DATA_ROOT/cache/<hash>/debug_trace.log` | 仅详细诊断日志模式产生：按文档缓存目录有界轮转（2MB × 3），会话内按 `job_id` 过滤捕获项目 + 第三方日志，记录 start/end/elapsed 与失败 traceback；debug 关闭时零 IO，不生成 timestamp 历史文件 |
-| `DATA_ROOT/cache/pdf-reader-translation-*` | 翻译任务根工作区：名称带固定前缀，内含 `.pdf-reader-temp-workspace` 标记（`kind`/`job_id`/`pid`/`created_at`）与 `input/`（抽取输入）、`output/`（上游输出）；worker 确认退出后整体删除，超时/崩溃整体保留供启动恢复 |
-| `PROJECT_ROOT/docs/glossary.csv` | 仓库级手动术语表，由 `src/pdf_reader/paths.py` 解析，非空时参与每次翻译 |
+| `<CACHE_DIR>/<hash>/debug_trace.log` | 仅详细诊断日志模式产生：按文档缓存目录有界轮转（2MB × 3），会话内按 `job_id` 过滤捕获项目 + 第三方日志，记录 start/end/elapsed 与失败 traceback；debug 关闭时零 IO，不生成 timestamp 历史文件 |
+| `<CACHE_DIR>/pdf-reader-translation-*` | 翻译任务根工作区：名称带固定前缀，内含 `.pdf-reader-temp-workspace` 标记（`kind`/`job_id`/`pid`/`created_at`）与 `input/`（抽取输入）、`output/`（上游输出）；worker 确认退出后整体删除，超时/崩溃整体保留供启动恢复 |
+| 当前布局的 `GLOSSARY_PATH` | 手动术语表；开发态为 `PROJECT_ROOT/docs/glossary.csv`，便携态为 `DATA_ROOT/glossary/glossary.csv`，非空时参与每次翻译 |
 
-`DATA_ROOT` 默认等于 `PROJECT_ROOT`（仓库根），因此正常本地运行的数据位置与既有约定一致：`cache/`、`logs/` 仍在仓库根下；`PDF_READER_DATA_ROOT` 只用于测试隔离或未来显式分离运行数据。
+开发布局的 `DATA_ROOT` 默认等于 `PROJECT_ROOT`（仓库根），因此正常本地运行的数据位置与既有约定一致：`cache/`、`logs/` 仍在仓库根下；`PDF_READER_DATA_ROOT` 继续用于测试隔离或显式分离开发数据。便携布局固定 `DATA_ROOT=PORTABLE_ROOT/data`，忽略这两个开发覆盖变量且不允许 cache 逃逸。
 
 配置扩展不改变缓存身份与复用语义：文档缓存仍只按原 PDF 哈希保存（`right.pdf`、`cumulative_glossary.csv`、`reading_progress.json`；debug 会话的 `debug_trace.log` 也按同一哈希目录保存），不产生配置指纹、缓存分支或自动失效；修改模型、Prompt、字体或 PDF 高级参数只影响之后执行的翻译或主动重译，已有 `right.pdf` 页面继续复用，旧累计术语表作为历史输入继续保留并跨配置复用；上游请求缓存仍固定 `TranslationSettings.ignore_cache=True`。
 
@@ -560,7 +582,7 @@ prepare 与 commit 各发一条 `candidate summary`：prepare（`event=candidate
 
 覆盖率策略（P2-03）：全局 line ≥90%、branch ≥80%；关键模块独立 floor——`state.py` line 80/branch 75、`translation_coordinator.py` 95/95、`translation_lifecycle.py` 95/95、`sse_stream.py` 85/75、`routes.py` 85/70。实测基线（2026-09-01 P2-04 最终核验值）：全局 line 92.8%、branch 86.6%，关键模块均高于 floor。pytest 声明 `unit`/`integration`/`system` 标记；系统红线（`tests/test_system_concurrency_failure.py`）标记为 `system`，`integration` 标记用于真实路由/磁盘事务测试，但 verify 默认全量收集、不做 marker 排除。
 
-测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程真实构造 `create_app()`，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析，并覆盖绝对 `cache_dir` 不被重写与 `reset_logging()` 可重建 handler。
+测试隔离：`tests/conftest.py` 在任何应用模块导入前把 `PDF_READER_DATA_ROOT` 指向 pytest 专用临时目录，并在每个测试后调用 `logging_config.reset_logging()` 关闭/移除 handler（会话结束再清理临时目录），因此完整测试不会写入或增长仓库 `logs/`、`cache/`。`tests/test_paths.py` 用两个不同 CWD 的子进程分别穿过真实开发布局与“安装便携布局 → 准备目录 → 再导入 config/app”的入口顺序，固定 config/glossary/templates/static/logs/cache 的 CWD 无关解析；同时覆盖中文/空格路径、开发环境覆盖无效、绝对/相对 cache 逃逸拒绝、symlink/Windows junction、不可写探针稳定错误码、开发绝对 cache 兼容与 `reset_logging()` 重建 handler。
 
 上游契约与文档治理回归（P3-06）：`tests/test_upstream_contract.py` 用确定性 fake 验证固定版本、SettingsModel 消费字段与 ENGINE_REGISTRY 字段映射、承诺事件映射与未知事件忽略/心跳、workspace/output 注入与 mono/dual/glossary 路径、协作式取消/迟到丢弃/join 所有权，全部离线且不运行真实翻译；`tests/test_documentation_governance.py` 验证 architecture/project/roadmap 职责边界、常青文档链接可解析、README/architecture/dependency-upgrade 的契约命令一致与易腐数字基线。升级命令 `python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`、P2-04 一键治理门 `python scripts/upgrade_governance_gate.py` 与范围记录在 [依赖升级流程](governance/dependency-upgrade.md) 和 [长期文档治理](governance/documentation.md)。
 

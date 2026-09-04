@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pdf_reader import paths
+
 TEMP_WORKSPACE_PREFIX = "pdf-reader-translation-"
 TEMP_MARKER_NAME = ".pdf-reader-temp-workspace"
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -115,13 +117,14 @@ def _read_marker(dir_path: Path) -> dict:
 
 def write_temp_marker(dir_path: Path, *, job_id: str, pid: int | None = None) -> None:
     """写入翻译临时工作区标记（由 create_temp_workspace 在创建子目录后调用）。"""
+    marker_path = paths.require_data_path(dir_path / TEMP_MARKER_NAME, label="翻译临时工作区标记")
     marker = {
         "kind": "pdf-reader-translation-temp",
         "job_id": job_id,
         "pid": pid if pid is not None else os.getpid(),
         "created_at": datetime.now(UTC).isoformat(),
     }
-    (dir_path / TEMP_MARKER_NAME).write_text(
+    marker_path.write_text(
         json.dumps(marker, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
@@ -136,15 +139,18 @@ def create_temp_workspace(cache_dir: Path, *, job_id: str) -> Path:
     本次新建的工作区；清理失败时保留未标记目录供保守处理，绝不删除或修改 cache
     中其他内容。
     """
-    workspace = Path(tempfile.mkdtemp(prefix=TEMP_WORKSPACE_PREFIX, dir=str(cache_dir)))
+    safe_cache_dir = paths.require_data_path(cache_dir, label="翻译缓存目录")
+    workspace = Path(tempfile.mkdtemp(prefix=TEMP_WORKSPACE_PREFIX, dir=str(safe_cache_dir)))
+    workspace = paths.require_data_path(workspace, label="翻译临时工作区")
     try:
-        (workspace / "input").mkdir()
-        (workspace / "output").mkdir()
+        paths.require_data_path(workspace / "input", label="翻译输入临时目录").mkdir()
+        paths.require_data_path(workspace / "output", label="翻译输出临时目录").mkdir()
         write_temp_marker(workspace, job_id=job_id)
     except Exception:
         if workspace.is_dir() and workspace.name.startswith(TEMP_WORKSPACE_PREFIX):
             try:
-                shutil.rmtree(workspace, ignore_errors=True)
+                safe_workspace = paths.require_data_path(workspace, label="失败的翻译临时工作区")
+                shutil.rmtree(safe_workspace, ignore_errors=True)
             except Exception:
                 pass
         raise
@@ -333,8 +339,9 @@ def cleanup_orphan_temp_workspaces(
             removed.append(item.path)
             continue
         try:
-            shutil.rmtree(item.path)
-        except OSError as exc:
+            safe_path = paths.require_data_path(item.path, label="待清理翻译临时工作区")
+            shutil.rmtree(safe_path)
+        except (OSError, paths.PathStrategyError) as exc:
             errors.append(f"{item.path}: {exc}")
             continue
         if item.path.exists():

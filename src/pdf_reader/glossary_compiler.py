@@ -46,7 +46,7 @@ from pathlib import Path
 
 from pdf_reader.candidate_store import CANDIDATE_FILENAME, CandidateEntry, CandidateStore
 from pdf_reader.path_locks import lock_for_path
-from pdf_reader.paths import get_glossary_path
+from pdf_reader.paths import get_glossary_path, require_data_path
 from pdf_reader.term_model import (
     AuthoritativeTerm,
     TermStoreError,
@@ -134,6 +134,7 @@ class _Sidecar:
 def compile_effective_glossary(document_dir: Path, global_glossary: Path | None = None) -> CompileResult:
     """确定性编译文档有效词表；失败保留最后有效的 CSV/sidecar 对。"""
     validate_document_dir(document_dir)
+    document_dir = require_data_path(document_dir, label="有效术语文档目录")
     global_path = Path(global_glossary) if global_glossary is not None else get_glossary_path()
     csv_path = document_dir / EFFECTIVE_GLOSSARY_FILENAME
     meta_path = document_dir / EFFECTIVE_GLOSSARY_META_FILENAME
@@ -349,6 +350,7 @@ def _render_meta(payload: dict[str, object]) -> str:
 
 
 def _stage_text(path: Path, text: str) -> None:
+    path = require_data_path(path, label="有效术语暂存文件")
     with path.open("w", encoding="utf-8", newline="") as f:
         f.write(text)
         f.flush()
@@ -556,6 +558,11 @@ def _commit_pair(
     backup_tmp: Path,
 ) -> tuple[str, str]:
     """先替换 CSV、再替换 sidecar；sidecar 失败时回滚 CSV，保持旧产物对。"""
+    csv_path = require_data_path(csv_path, label="有效术语 CSV")
+    meta_path = require_data_path(meta_path, label="有效术语 sidecar")
+    csv_tmp = require_data_path(csv_tmp, label="有效术语 CSV 临时文件")
+    meta_tmp = require_data_path(meta_tmp, label="有效术语 sidecar 临时文件")
+    backup_tmp = require_data_path(backup_tmp, label="有效术语回滚备份")
     had_old_csv = csv_path.exists()
     if had_old_csv:
         shutil.copy2(csv_path, backup_tmp)
@@ -588,7 +595,8 @@ def _commit_pair(
 def _cleanup_temps(*paths: Path) -> None:
     for path in paths:
         try:
-            path.unlink()
+            safe_path = require_data_path(path, label="有效术语待清理临时文件")
+            safe_path.unlink()
         except FileNotFoundError:
             pass
         except OSError:

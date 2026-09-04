@@ -29,7 +29,7 @@ from typing import Any
 import tomlkit
 from tomlkit.exceptions import ParseError
 
-from pdf_reader import config
+from pdf_reader import config, paths
 
 logger = logging.getLogger("pdf_reader.config_editor")
 
@@ -241,8 +241,8 @@ FIELD_SPECS: list[FieldSpec] = [
         group="optional",
         control="string",
         description="渲染缓存与临时文件目录；相对路径以运行数据根为基准。",
-        default="cache",
-        suggestions=("cache",),
+        default=paths.get_default_cache_dirname(),
+        suggestions=(paths.get_default_cache_dirname(),),
     ),
     FieldSpec(
         path="translation.lang_in",
@@ -763,6 +763,7 @@ def _validate_merged(doc: tomlkit.TOMLDocument) -> None:
 
 
 def _atomic_write(config_path: Path, content: bytes) -> None:
+    config_path = paths.require_data_path(config_path, label="配置文件")
     mode = None
     try:
         mode = stat.S_IMODE(config_path.stat().st_mode)

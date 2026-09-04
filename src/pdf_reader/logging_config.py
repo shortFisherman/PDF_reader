@@ -245,7 +245,10 @@ def setup_logging(debug: bool = False) -> None:
                     _close_handler(handler)
         _managed_handlers.clear()
 
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        safe_log_dir = paths.require_data_path(LOG_DIR, label="日志目录")
+        safe_log_dir.mkdir(parents=True, exist_ok=True)
+        if safe_log_dir != LOG_DIR:
+            raise paths.PathStrategyError("日志目录解析结果不稳定", code="log_directory_changed")
         init_cleanup_errors = _cleanup_expired_backups(LOG_DIR / "pdf_reader.log", MAIN_LOG_BACKUP_MAX_AGE_SECONDS)
 
         formatter = make_safe_formatter()

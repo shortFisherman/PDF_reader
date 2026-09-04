@@ -367,7 +367,7 @@ PROVIDER_INDEX: dict[str, EngineSpec] = {spec.provider: spec for spec in ENGINE_
 
 pdf_reader_cfg = _section(CONFIG, "pdf_reader")
 DPI = pdf_reader_cfg.get("dpi", 200)
-CACHE_DIR = paths.resolve_cache_dir(_string(pdf_reader_cfg.get("cache_dir"), "cache"))
+CACHE_DIR = paths.resolve_cache_dir(_string(pdf_reader_cfg.get("cache_dir"), paths.get_default_cache_dirname()))
 GLOSSARY_PATH = paths.get_glossary_path()
 translation_cfg = _section(CONFIG, "translation")
 TRANSLATION_LANG_IN = _string(translation_cfg.get("lang_in"), "en")
@@ -417,7 +417,7 @@ def _validate_pdf_reader_section(section: dict) -> None:
     dpi = section.get("dpi", 200)
     if isinstance(dpi, bool) or not isinstance(dpi, int) or dpi <= 0:
         raise ConfigError("[pdf_reader].dpi 必须是正整数（布尔值不算）")
-    cache_dir = section.get("cache_dir", "cache")
+    cache_dir = section.get("cache_dir", paths.get_default_cache_dirname())
     if not isinstance(cache_dir, str) or not cache_dir.strip():
         raise ConfigError("[pdf_reader].cache_dir 必须是非空字符串")
 
@@ -1289,7 +1289,7 @@ def build_app_settings(
     dpi = pdf_reader.get("dpi", 200)
     return AppSettings(
         debug=run_cfg.debug,
-        cache_dir=paths.resolve_cache_dir(_string(pdf_reader.get("cache_dir"), "cache")),
+        cache_dir=paths.resolve_cache_dir(_string(pdf_reader.get("cache_dir"), paths.get_default_cache_dirname())),
         dpi=dpi if isinstance(dpi, int) and not isinstance(dpi, bool) else 200,
         glossary_path=paths.get_glossary_path(),
         model_provider=upstream.model.provider,
