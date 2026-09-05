@@ -621,5 +621,51 @@ const tick = () => new Promise(r => setTimeout(r, 0));
     panel.dispose();
 }
 
+// 10. 首次配置模式：明确标题/便携写入位置、损坏恢复提示和重启操作。
+{
+    let putCalls = 0;
+    const panel = createConfigPanel({
+        setupMode: true,
+        fetchImpl: makeFetch((url, options) => {
+            if (url === '/api/config' && options && options.method === 'PUT') {
+                putCalls++;
+                return {
+                    ok: true,
+                    json: async () => ({
+                        ok: true,
+                        setup_complete: true,
+                        restart_required: true,
+                        revision: 'repaired-revision',
+                    }),
+                };
+            }
+            const response = configResponse(false, { source: 'missing', configured: false });
+            return {
+                ok: true,
+                json: async () => ({
+                    ...(await response.json()),
+                    repair_required: true,
+                    repair_message: '现有配置文件已损坏；保存将原子替换该文件',
+                }),
+            };
+        }),
+        documentObj: jsdomWindow.document,
+        windowObj: jsdomWindow,
+    });
+    await panel.open();
+    const dialog = jsdomWindow.document.querySelector('.config-dialog');
+    check(dialog.querySelector('#config-dialog-title').textContent === '首次配置', 'setup mode uses first-run title');
+    check(dialog.querySelector('#config-dialog-desc').textContent.includes('data/config/config.toml'), 'setup mode shows portable config target');
+    check(dialog.querySelector('.config-error').textContent.includes('配置文件已损坏'), 'setup mode shows recoverable corrupt-file message');
+
+    jsdomWindow.document.querySelector('#cfg-model-api_key').value = 'sk-first-run-key';
+    await panel.save();
+    check(putCalls === 1, 'setup mode submits valid form once');
+    const status = dialog.querySelector('.config-status').textContent;
+    check(status.includes('再次双击 PDF Reader'), 'setup success gives explicit safe restart instruction');
+    check(status.includes('sk-first-run-key') === false, 'setup success never echoes api key');
+    panel.dispose();
+}
+
 console.log(`config-panel tests: ${passCount} passed, ${failCount} failed`);
 if (failCount > 0) process.exit(1);

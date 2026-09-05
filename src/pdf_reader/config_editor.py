@@ -639,11 +639,26 @@ def _api_key_status(data: dict) -> dict:
     return {"source": "missing", "configured": False}
 
 
-def load_config_state(config_path: Path | None = None) -> dict:
+def load_config_state(config_path: Path | None = None, *, allow_repair: bool = False) -> dict:
     """返回 schema + 脱敏当前值 + revision + 环境变量覆盖状态。"""
     path = Path(config_path) if config_path is not None else config.CONFIG_PATH
     raw = _read_raw(path)
-    doc = _parse_document(raw, path)
+    repair_required = False
+    repair_message = None
+    try:
+        doc = _parse_document(raw, path)
+    except ConfigEditError:
+        if not allow_repair:
+            raise
+        doc = tomlkit.document()
+        repair_required = True
+        repair_message = "现有配置文件已损坏；保存将以当前表单内容原子替换该文件"
+    if allow_repair and raw and not repair_required:
+        try:
+            _validate_merged(doc)
+        except ConfigEditError:
+            repair_required = True
+            repair_message = "现有配置内容无效；保存有效表单后将原子修复该文件"
     data = tomllib.loads(tomlkit.dumps(doc))
     values: dict[str, dict] = {}
     for spec in FIELD_SPECS:
@@ -659,6 +674,8 @@ def load_config_state(config_path: Path | None = None) -> dict:
         "values": values,
         "revision": _bytes_revision(raw),
         "env_overrides": {"MODEL_API_KEY": os.environ.get("MODEL_API_KEY") is not None},
+        "repair_required": repair_required,
+        "repair_message": repair_message,
     }
 
 
@@ -752,12 +769,14 @@ def _known_subset(data: dict) -> dict:
     return subset
 
 
-def _validate_merged(doc: tomlkit.TOMLDocument) -> None:
+def _validate_merged(doc: tomlkit.TOMLDocument, *, require_loopback: bool = False) -> None:
     plain = tomllib.loads(tomlkit.dumps(doc))
     subset = _known_subset(plain)
     try:
         config.validate_startup_requirements(subset)
-        config.resolve_server_config(subset)
+        run_cfg = config.resolve_server_config(subset)
+        if require_loopback and not config.is_loopback_host(run_cfg.host):
+            raise config.ConfigError("便携发行服务只允许配置 loopback 地址")
     except config.ConfigError as exc:
         raise ConfigEditError("invalid_config", str(exc)) from exc
 
@@ -792,7 +811,13 @@ def _atomic_write(config_path: Path, content: bytes) -> None:
         raise
 
 
-def save_config(payload: dict, config_path: Path | None = None) -> dict:
+def save_config(
+    payload: dict,
+    config_path: Path | None = None,
+    *,
+    allow_repair: bool = False,
+    require_loopback: bool = False,
+) -> dict:
     """校验并原子保存白名单配置；成功返回 restart_required=true 与新 revision。"""
     if not isinstance(payload, dict):
         raise ConfigEditError("invalid_payload", "请求体必须是 JSON 对象")
@@ -811,9 +836,32 @@ def save_config(payload: dict, config_path: Path | None = None) -> dict:
         raw = _read_raw(path)
         if revision != _bytes_revision(raw):
             raise RevisionConflictError()
-        doc = _parse_document(raw, path)
-        _apply_values(doc, values, api_key)
-        _validate_merged(doc)
+        existing_requires_repair = False
+        try:
+            doc = _parse_document(raw, path)
+        except ConfigEditError:
+            if not allow_repair:
+                raise
+            doc = tomlkit.document()
+            existing_requires_repair = True
+        if allow_repair and raw and not existing_requires_repair:
+            try:
+                _validate_merged(doc)
+            except ConfigEditError:
+                existing_requires_repair = True
+        try:
+            _apply_values(doc, values, api_key)
+            _validate_merged(doc, require_loopback=require_loopback)
+        except ConfigEditError:
+            if not allow_repair or not existing_requires_repair:
+                raise
+            # setup 模式可能面对可解析但结构/类型损坏的旧文件。用同一 payload
+            # 在空文档上重放：若请求本身无效，第二次校验仍会失败且绝不写盘；
+            # 只有完整有效的表单才能原子替换损坏文件。
+            repaired_doc = tomlkit.document()
+            _apply_values(repaired_doc, values, api_key)
+            _validate_merged(repaired_doc, require_loopback=require_loopback)
+            doc = repaired_doc
         content = tomlkit.dumps(doc).encode("utf-8")
         try:
             _atomic_write(path, content)

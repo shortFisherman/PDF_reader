@@ -4,6 +4,7 @@ import io
 import logging
 import os
 import sys
+from dataclasses import replace
 
 from flask import Flask, Response, jsonify, request
 
@@ -86,13 +87,20 @@ def create_app(settings: config.AppSettings) -> Flask:
         static_folder=str(paths.get_resource_root() / "static"),
     )
     app.config["app_settings"] = settings
+    app.config["setup_mode"] = settings.setup_mode
+    app.config["setup_reason"] = settings.setup_reason
+    app.config["portable_service"] = os.environ.get("PDF_READER_PORTABLE_SERVICE") == "1"
     app.config["app_state"] = AppState(settings.cache_dir)
     app.config["translation_coordinator"] = TranslationCoordinator()
-    app.config["candidate_extraction_service"] = CandidateExtractionService(
-        settings.term_extraction,
-        settings.upstream.model,
+    app.config["candidate_extraction_service"] = (
+        None
+        if settings.setup_mode
+        else CandidateExtractionService(
+            settings.term_extraction,
+            settings.upstream.model,
+        )
     )
-    if os.environ.get("PDF_READER_PORTABLE_SERVICE") == "1":
+    if app.config["portable_service"]:
         health_token = os.environ.get("PDF_READER_HEALTH_TOKEN", "")
 
         @app.get("/api/health")
@@ -118,18 +126,49 @@ def main(argv: list[str] | None = None) -> int:
     """
     _ensure_utf8_stdio()
     args = _build_parser().parse_args(argv)
+    portable_service = os.environ.get("PDF_READER_PORTABLE_SERVICE") == "1"
+    setup_reason: str | None = None
     try:
         run_cfg = config.resolve_server_config(cli_debug=args.debug)
-        if os.environ.get("PDF_READER_PORTABLE_SERVICE") == "1" and not config.is_loopback_host(run_cfg.host):
-            raise config.ConfigError("便携发行服务只允许绑定 loopback 地址")
+    except config.ConfigError as exc:
+        if not portable_service:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        setup_reason = str(exc)
+        run_cfg = config.ServerConfig(
+            host=config.DEFAULT_HOST,
+            port=config.DEFAULT_PORT,
+            debug=bool(args.debug),
+        )
+
+    if portable_service and not config.is_loopback_host(run_cfg.host):
+        setup_reason = "便携发行服务只允许绑定 loopback 地址"
+        run_cfg = config.ServerConfig(
+            host=config.DEFAULT_HOST,
+            port=run_cfg.port,
+            debug=run_cfg.debug,
+        )
+
+    try:
         upstream = config.validate_startup_requirements()
     except config.ConfigError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
+        if not portable_service:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        setup_reason = str(exc)
+        upstream = config.build_upstream_runtime_config({}, strict=False)
 
     app = None
     try:
-        settings = config.build_app_settings(cli_debug=args.debug, run_cfg=run_cfg, upstream=upstream)
+        settings_data: dict | None = {} if setup_reason is not None else None
+        settings = config.build_app_settings(
+            settings_data,
+            cli_debug=args.debug,
+            run_cfg=run_cfg,
+            upstream=upstream,
+        )
+        if setup_reason is not None:
+            settings = replace(settings, setup_mode=True, setup_reason=setup_reason)
         app = create_app(settings)
         recovered = cache_ops.recover_orphan_temp_workspaces(settings.cache_dir)
         if recovered.removed:
@@ -162,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         readiness_file = None
         try:
-            if os.environ.get("PDF_READER_PORTABLE_SERVICE") == "1":
+            if portable_service:
                 from pdf_reader.portable_runtime import (
                     readiness_file_from_environment,
                     write_readiness_descriptor,

@@ -316,6 +316,28 @@ body {
     display: none !important;
 }
 
+.setup-welcome {
+    width: min(680px, calc(100% - 40px));
+    margin: 72px auto 0;
+    padding: 28px 32px;
+    border: 1px solid #555;
+    border-radius: 12px;
+    background: #333;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+.setup-welcome h1 {
+    margin-bottom: 14px;
+    color: #fff;
+    font-size: 24px;
+}
+
+.setup-welcome p {
+    margin-top: 8px;
+    color: #bbb;
+    line-height: 1.6;
+}
+
 /* ---- 配置中心 ---- */
 
 .config-open-btn {

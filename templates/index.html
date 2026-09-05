@@ -6,12 +6,20 @@
 <title>PDF 双语阅读器</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body data-setup-mode="{{ 'true' if setup_mode else 'false' }}">
 
-<button id="config-btn" type="button" class="config-open-btn" aria-haspopup="dialog">配置</button>
+{% if setup_mode %}
+<main class="setup-welcome" role="main">
+    <h1>首次配置 PDF Reader</h1>
+    <p>请完成模型服务配置。保存成功后关闭程序，再次双击 PDF Reader 即可进入阅读器。</p>
+    <p>首次配置期间不会开放 PDF、翻译或术语操作。</p>
+</main>
+{% endif %}
+
+<button id="config-btn" type="button" class="config-open-btn" aria-haspopup="dialog">{{ '首次配置' if setup_mode else '配置' }}</button>
 <button id="glossary-btn" type="button" class="glossary-open-btn" aria-haspopup="dialog" disabled>术语</button>
 
-<div id="file-input-area">
+<div id="file-input-area"{% if setup_mode %} class="hidden"{% endif %}>
     <h2>打开 PDF 文档</h2>
     <input type="text" id="pdf-path" placeholder="C:\path\to\document.pdf">
     <button id="open-btn">Open</button>

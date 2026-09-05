@@ -24,6 +24,7 @@ export function createConfigPanel({
     documentObj = document,
     windowObj = window,
     api = '/api',
+    setupMode = false,
 } = {}) {
     let overlay = null;
     let dialog = null;
@@ -58,9 +59,15 @@ export function createConfigPanel({
 
         const header = createElement('div', 'config-dialog-header');
         const titleWrap = createElement('div', 'config-dialog-titles');
-        const title = createElement('h2', '', '配置中心');
+        const title = createElement('h2', '', setupMode ? '首次配置' : '配置中心');
         title.id = 'config-dialog-title';
-        const subtitle = createElement('p', '', '修改会写入 config.toml，服务重启后生效');
+        const subtitle = createElement(
+            'p',
+            '',
+            setupMode
+                ? '填写必需信息并保存；配置会写入便携 data/config/config.toml'
+                : '修改会写入 config.toml，服务重启后生效',
+        );
         subtitle.id = 'config-dialog-desc';
         titleWrap.append(title, subtitle);
 
@@ -379,7 +386,10 @@ export function createConfigPanel({
     }
 
     function showRestartHint() {
-        setStatus('保存成功：配置已写入 config.toml，服务重启后生效（当前会话仍使用旧配置）。', 'success');
+        const message = setupMode
+            ? '保存成功：配置已原子写入。请关闭程序并再次双击 PDF Reader，届时将进入正式模式。'
+            : '保存成功：配置已写入 config.toml，服务重启后生效（当前会话仍使用旧配置）。';
+        setStatus(message, 'success');
     }
 
     async function load() {
@@ -405,10 +415,18 @@ export function createConfigPanel({
             values: data.values || {},
             revision: data.revision || null,
             envOverrides: data.env_overrides || {},
+            repairRequired: data.repair_required === true,
+            repairMessage: data.repair_message || '',
         };
         renderForm();
-        setStatus('', null);
-        statusEl.classList.add('hidden');
+        if (state.repairRequired) {
+            setStatus(state.repairMessage || '现有配置文件已损坏，保存后可修复。', 'error');
+        } else if (setupMode) {
+            setStatus('请填写必填项；校验错误不会写入配置文件。', 'loading');
+        } else {
+            setStatus('', null);
+            statusEl.classList.add('hidden');
+        }
     }
 
     async function submit() {

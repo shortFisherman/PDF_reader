@@ -61,7 +61,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 
 | 路径 | 职责 |
 |---|---|
-| `src/pdf_reader/app.py` | 开发/服务共享的启动边界 `main(argv)`、`create_app(settings)` 装配 Flask 与全局 `AppState`、启动服务；便携服务只允许 loopback，并通过进程私有随机令牌提供 `/api/health` 就绪验证；`src/pdf_reader/__main__.py` 提供 `python -m pdf_reader` 开发入口（导入无副作用，仅 `python -m` 时调用 `main`） |
+| `src/pdf_reader/app.py` | 开发/服务共享的启动边界 `main(argv)`、`create_app(settings)` 装配 Flask 与全局 `AppState`、启动服务；开发入口继续对无效配置快速失败，便携服务则以安全默认 loopback 进入受限首次配置模式；便携服务通过进程私有随机令牌提供 `/api/health` 就绪验证；`src/pdf_reader/__main__.py` 提供 `python -m pdf_reader` 开发入口（导入无副作用，仅 `python -m` 时调用 `main`） |
 | `src/pdf_reader/portable_launcher.py` | 顶层 `PDF Reader.exe` 的纯启动器逻辑：保持真实用户环境、从自身位置建立便携布局、只启动 `app/PDF Reader Service.exe`、以 data 内原子就绪描述符和令牌化 loopback 健康检查等待服务、由父进程打开默认浏览器，并在启动失败/中断时有界 terminate→kill 回收服务 |
 | `src/pdf_reader/portable_service.py` | `PDF Reader Service.exe` 的延迟导入引导入口：先验证受控子进程环境与冻结私有运行时、准备并安装便携布局，再动态导入 `pdf_reader.app`；引导模块本身不导入 Flask、pdf2zh-next 或 BabelDOC |
 | `src/pdf_reader/portable_runtime.py` | 启动器/服务共享的纯标准库进程边界：构造不修改父进程的 child env，清除宿主 `PYTHONHOME`/`PYTHONPATH`/用户 site 覆盖，设置 `PYTHONNOUSERSITE=1`/`PYTHONSAFEPATH=1`，把虚拟 Home/Python pycache/固定 huggingface-hub 与 tiktoken 缓存映射到 data；冻结服务在第三方导入前强制自身可执行文件等于 `app/PDF Reader Service.exe`、用户 site 已禁用且全部模块搜索路径位于 `app/` 私有运行时；每次启动创建带所有权标记的 `data/temp/pdf-reader-service-*` 作为服务进程树唯一系统 Temp，正常退出安全删除、下次启动只回收已标记且 PID 确认死亡的孤儿目录；并安全创建、验证和原子写入就绪描述符 |
@@ -74,14 +74,14 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `docs/governance/license.md` | 本项目与固定上游依赖（pdf2zh-next/BabelDOC）的许可证核验基线、四种使用/分发场景与发布前核验清单（非法律意见） |
 | `start.bat` | Windows 启动入口：检查并激活 `.\venv`、检测 5000 端口占用（只报告不杀进程）、运行 `python -m pdf_reader` |
 | `src/pdf_reader/config.py` | 读取 `config.toml`、定义冻结运行时配置（`ModelRuntimeConfig`/`TranslationRuntimeConfig`/`Pdf2zhRuntimeConfig`/`CandidateExtractionRuntimeConfig`/`UpstreamRuntimeConfig`）、严格/宽松解析、`EngineSpec`/`ENGINE_REGISTRY`、环境变量与默认值、`GLOSSARY_PATH`；对 1.x 兼容 translation 三键（`auto_extract_glossary`/`term_qps`/`term_pool_max_workers`）输出不含敏感值的启动 WARNING 迁移提示（计划 2.0.0 移除，兼容只限这三键，未知键仍严格拒绝） |
-| `src/pdf_reader/config_editor.py` | 配置中心后端：45 字段 schema（分组/控件/说明/默认与常用值/Provider 适用性；三个 1.x 兼容 translation 键不展示、PUT 拒绝写入，磁盘旧键保存时原样保留）、GET 密钥脱敏（只返回 configured/source）、已知字段白名单、复用 `validate_startup_requirements`/`resolve_server_config` 严格校验、revision 乐观冲突、模块级 RLock、同目录临时文件 fsync + `os.replace` 原子写并保留权限/未知字段/注释与顺序（tomlkit）；只写 `config.toml`，不热改冻结 `AppSettings`，保存返回 `restart_required=true` |
+| `src/pdf_reader/config_editor.py` | 配置中心后端：45 字段 schema（分组/控件/说明/默认与常用值/Provider 适用性；三个 1.x 兼容 translation 键不展示、PUT 拒绝写入，磁盘旧键保存时原样保留）、GET 密钥脱敏（只返回 configured/source）、已知字段白名单、复用 `validate_startup_requirements`/`resolve_server_config` 严格校验、便携配置强制 loopback、revision 乐观冲突、模块级 RLock、同目录临时文件 fsync + `os.replace` 原子写并保留权限/未知字段/注释与顺序（tomlkit）；首次配置可用同一 revision 和完整有效表单原子修复 TOML 语法或结构损坏，只写 `config.toml`，不热改冻结 `AppSettings`，保存返回 `restart_required=true` |
 | `src/pdf_reader/term_extraction.py` | P1-01/P2-02 项目自有 `TermExtractionClient`：标准库 urllib 走 OpenAI-compatible `/chat/completions`（支持 deepseek/openai/openai_compatible，其余 Provider 稳定 unsupported）、严格受控 JSON 解析（条数/长度/控制字符/正文大小有界）、独立 QPS/timeout/有界重试（只重试超时/429/5xx）、可选 token usage 解析（三字段全部非负 int 才构造 `TokenUsage` 且 `available` 三者全真；缺失/部分/布尔/负值 → unavailable，不伪造），请求/响应/Prompt/Key 不入日志 |
 | `src/pdf_reader/candidate_filter.py` | P1-02 候选后置过滤：确定性前后标点清理/异常空白折叠、英文单词/缩写边界感知匹配、小型普通词/功能词/通用学术词精确拒绝、完整句/超词数/超字符/纯数字/公式/变量/页码/占位符结构拒绝、target 必须含 Han 字符、幻觉 source 拒绝、逐页命中页码与有界证据窗口；每条被过滤候选带稳定原因，规则版本 `candidate-filter/1` 组合进候选 `strategy_version`；导出 `FILTER_REASONS` 稳定 reason 白名单供 P2-02 诊断复用；只作用于模型自动候选，绝不删除/降级/重写用户权威决定 |
 | `src/pdf_reader/candidate_service.py` | P1-01/P1-02/P1-03/P1-05/P2-02 两阶段候选服务：`prepare` 在严格翻译前读取输入 PDF、模型提取/过滤，返回不可变 `PreparedCandidates`（observations + report + 冻结 identity；带身份时 document_dir 必须等于 identity.document_dir），绝不写 `CandidateStore`；`commit` 只在正文 PDF 成功提交后执行，以 prepared 冻结身份为权威重验 job_id/document_id/pdf_hash/document_dir（目录名必须等于 pdf_hash；另传 identity 必须完全相等、写目录必须等于冻结 identity.document_dir、无身份 prepared 不得升级）再原子写 `CandidateStore`；report 含 proposed/kept(candidates)/filtered(+by_reason)/elapsed_ms/usage 稳定口径（failed 由受控 status 集合计算，不存报告字段），prepare 发 `candidate_prepare` 摘要、commit 的所有返回路径（无 observations/成功/store_failed/identity_rejected）都发 `candidate_commit` 摘要并追加 best-effort 持久状态计数 pending/accepted/rejected（统计失败三者均 unavailable）；单页/批量同规则，任何失败降级安全日志且不阻正文 finish；候选只写 `term_candidates.json`，与 P1-03 `CandidateTermService` 确定性摘要边界同模块，P1-04 管理服务沿用同一推荐排序 |
 | `src/pdf_reader/term_diagnostics.py` | P2-02 术语诊断安全摘要与故障隔离：`candidate summary`/`glossary_active_terms`/`compliance_*` 稳定事件文本、event/status/reason 显式常量白名单（未知 → unknown，原始字符串不落日志；过滤 reason 复用 `FILTER_REASONS`）、`candidate_failed_count` 唯一 failed 事实源、usage unavailable 语义、`safe_task_log` 与逐层 fallback——诊断构造/格式化/发射/可选统计异常只降级，绝不影响正文、终态或术语数据；日志字段不含 source/target/evidence/Prompt/凭据 |
 | `src/pdf_reader/paths.py` | 开发/便携共享的不可变 `RuntimeLayout`：显式区分 `RESOURCE_ROOT`/`PORTABLE_ROOT`/`DATA_ROOT`，从顶层 EXE 而非 CWD 解析便携根，集中提供 config/glossary/templates/static/logs/cache/temp 位置、便携目录准备与可写探针、稳定路径错误码，以及解析物理路径后的 data 边界守卫；开发态保持原环境变量与绝对 cache 兼容，便携态拒绝任意目录外 cache、`..`、symlink 和 junction 逃逸 |
 | `src/pdf_reader/task_logging.py` | 集中任务日志上下文：不可变 `TaskContext`、`contextvars` 传播、统一前缀/截断（doc 8/hash 12/可选 glossary revision 12）/1-based 页码、生命周期状态、`SafeFormatter` 脱敏（API Key、sk-/Bearer、api_key、prompt 类字段） |
-| `src/pdf_reader/routes.py` | Blueprint HTTP/SSE 端点（含配置中心、术语管理与前端错误上报）；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器，术语/配置/错误上报 loopback-only 守卫，以及翻译与术语写入共享的 active-job 互斥边界 |
+| `src/pdf_reader/routes.py` | Blueprint HTTP/SSE 端点（含配置中心、首次配置状态、术语管理与前端错误上报）；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器，术语/配置/错误上报 loopback-only 守卫，以及翻译与术语写入共享的 active-job 互斥边界；首次配置时全局 guard 只允许根页面、静态资源、`/api/config`、`/api/setup/status` 和令牌化健康接口，其余 API 固定返回 503 `setup_required` |
 | `src/pdf_reader/state.py` | `AppState`：不可变文档会话身份、锁内翻译快照、左右文档、缓存路径、哈希、页数/尺寸、翻译页集合、阅读进度、非重入锁 |
 | `scripts/cache_manage.py` | 缓存只读统计与孤儿临时工作区清理 CLI：`stats`（只读/可 `--json`）、`orphans`、`clean`（默认 dry-run，`--yes` 才删除） |
 | `src/pdf_reader/file_hash.py` | `sha256()` 流式文件哈希 |
@@ -414,8 +414,9 @@ job/document identity 下复用同一
   `prepare_runtime_layout()`/`install_runtime_layout()`，之后才动态导入
   `pdf_reader.app`；因此 `config.py` 顶层对 pdf2zh-next 的导入以及 BabelDOC 的
   `Path.home()` 常量求值均发生在虚拟 Home/便携 Temp 已生效之后。
-- 启动器为每次运行生成 data/temp 内的随机就绪文件和随机健康令牌。服务完成配置
-  校验、应用装配与孤儿工作区恢复后原子发布 loopback host/port/令牌；启动器只在
+- 启动器为每次运行生成 data/temp 内的随机就绪文件和随机健康令牌。服务完成严格
+  配置校验，或在配置缺失/损坏时完成受限 setup 应用装配，并恢复孤儿工作区后，
+  原子发布 loopback host/port/令牌；启动器只在
   带令牌请求 `/api/health` 得到精确 `{status: ok}` 后才打开根页面。描述符拒绝
   data 外路径，便携服务拒绝非 loopback 配置。启动超时、服务就绪前异常退出或
   启动器中断都会执行有界 `terminate`，超时后 `kill`，并删除就绪文件。
@@ -430,7 +431,7 @@ job/document identity 下复用同一
 5. `create_app(settings)` 使用 `settings.debug` 调用 `logging_config.setup_logging(...)`，输出启动摘要（provider/model/lang/cache_dir/dpi/debug，不含 api_key）；创建 `Flask(__name__)` 并显式传入 `template_folder=PROJECT_ROOT/templates`、`static_folder=PROJECT_ROOT/static`（由 `src/pdf_reader/paths.py` 解析），装配全局 `AppState(settings.cache_dir)` 与 `TranslationCoordinator()`，导入并注册 `pdf_reader.routes.register_routes`。`register_routes` 只消费已注入的 `app.config["app_settings"]`；仅当该 key 缺失（绕过 `create_app` 直接注册 blueprint 的兼容边界）时才惰性调用 `config.build_app_settings()`。
 6. `main` 在 `create_app`（日志已就绪）之后调用 `cache_ops.recover_orphan_temp_workspaces(settings.cache_dir)`：清理上次崩溃/超时退出遗留的、可验证归属（固定前缀 + 有效标记 + 非链接 + PID 已不存活）的翻译任务根工作区（含 `input/` 与 `output/`）；未知/无标记/损坏标记/链接路径/PID 仍存活的目录一律保守保留。清理数量与保留分类写入 INFO/WARNING 日志。
 7. `main` 以 `app.run(host=..., port=..., debug=False, use_reloader=False)` 启动（显式传入全部四个参数，Flask debugger/reloader 始终关闭）；`KeyboardInterrupt` 记录 INFO 并以 130 退出，其它运行期异常经 `logger.exception` 记录完整 traceback 后以 1 退出。`app.run()` 返回或异常退出时先调用 `coordinator.shutdown(timeout=10.0)` 做有界关闭：请求协作式取消并等待 worker 与 active job，按 `no_active_job`（INFO）/ `completed`（INFO）/ `timeout`（WARNING，任务与工作区保留供下次启动恢复）记录日志，worker 未确认退出时追加 WARNING；随后 `app_state.close()` 幂等关闭并释放左右 PyMuPDF 句柄、清空状态并记录 `app state closed`（即使 `shutdown` 抛异常也会执行）。
-8. 配置错误路径：TOML 语法错误在配置导入时被捕获（`config._CONFIG_LOAD_ERROR`），首次解析配置时抛 `ConfigError`；`[server]` 类型/范围错误与 `PDF_READER_DEBUG` 非法值同样由 `resolve_server_config` 抛 `ConfigError`；`--debug`/`--no-debug` 互斥由 argparse 报错。所有路径都在启动服务器前以非零状态退出。
+8. 配置错误路径：TOML 语法错误在配置导入时被捕获（`config._CONFIG_LOAD_ERROR`），首次解析配置时抛 `ConfigError`；`[server]` 类型/范围错误与 `PDF_READER_DEBUG` 非法值同样由 `resolve_server_config` 抛 `ConfigError`；`--debug`/`--no-debug` 互斥由 argparse 报错。开发入口仍在启动服务器前以非零状态退出；便携服务把配置错误转换为 `AppSettings.setup_mode`，以 `127.0.0.1:5000`（有效 loopback server 配置存在时保留其端口）启动受限配置页面，不创建候选提取服务。配置保存成功只原子更新磁盘并返回 `restart_required=true`/`setup_complete=true`，不热替换当前冻结运行态；用户关闭后重新双击进入严格校验的正式模式。
 - `start.bat` 是 Windows 便捷启动入口：切换到仓库根目录后先检查 `.\venv\Scripts\python.exe`（缺失时打印创建/安装命令并不为零退出），再用 `netstat -ano -p tcp | findstr "LISTENING" | findstr ":5000 "` 检测端口占用；若 5000 已被监听，打印占用 PID 与 `netstat`/`tasklist` 排查命令并以非零状态退出，绝不执行 `taskkill`/`Stop-Process` 等终止命令；无冲突时 `call .\venv\Scripts\activate.bat` 激活既有虚拟环境并运行 `python -m pdf_reader`。
 
 ## 配置加载与 Provider 映射
@@ -546,6 +547,7 @@ job/document identity 下复用同一
 | `POST /api/client-errors` | 前端全局错误上报：白名单字段（kind/message/source/line/column/stack）、正文 ≤8KB、控制字符折叠后记 WARNING；仅 loopback 来源可访问，否则 403 `client_errors_local_only`；不记录请求 headers/cookies/prompt |
 | `GET /api/config` | 返回配置中心 schema + 当前值 + revision（API Key 脱敏）；仅 loopback 来源可访问，否则 403 `config_local_only` |
 | `PUT /api/config` | 白名单校验并原子保存 config.toml（revision 乐观并发）；成功返回 `restart_required=true`；仅 loopback 来源可访问，否则 403 `config_local_only` |
+| `GET /api/setup/status` | 返回 `ready` 或脱敏后的 `setup` 状态；setup 响应明确保存后需要重启，不返回 API Key |
 | `GET /api/glossary` | 按当前 `document_id` 返回权威或候选视图、复合 revision、搜索/排序/分页结果、候选统计与有界证据；仅 loopback |
 | `POST/PUT/DELETE /api/glossary/terms` | 新建、编辑 source/target/note 或删除文档用户术语；写入要求当前文档身份、复合 revision 且无 active translation job |
 | `POST /api/glossary/terms/lock` | 锁定/解锁文档用户术语或 accepted 候选；锁定项不能编辑、拒绝或删除 |

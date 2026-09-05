@@ -779,6 +779,65 @@ function makeSpy() {
     api.dispose();
 }
 
+// ============================================================
+// 5. first-run setup harness: only config panel initializes
+// ============================================================
+{
+    const setupEls = makeEls();
+    setupEls.configBtn = { addEventListener() {} };
+    setupEls.glossaryBtn = { addEventListener() {} };
+    let configCreates = 0;
+    let configOpens = 0;
+    let glossaryCreates = 0;
+    let stageFetches = 0;
+    let receivedSetupMode = false;
+    const configPanel = {
+        open() { configOpens++; },
+        dispose() {},
+    };
+    class SetupTranslationController {
+        dispose() {}
+    }
+    const setupApi = createReaderAppController({
+        getElements: () => setupEls,
+        createPageEl: () => ({}),
+        calculatePlaceholderHeight: () => 600,
+        showError: () => {},
+        setupIntersectionObserver: () => ({ observer: { disconnect() {} } }),
+        createSettleGate: () => ({ dispose() {} }),
+        setupPageDetection: () => {},
+        createAlignmentController: () => ({}),
+        fetchStageLabels: () => { stageFetches++; },
+        getStageLabel: stage => stage,
+        translateCurrentPage: async () => {},
+        translateBatch: async () => {},
+        setupZoom: () => ({ resetZoom() {} }),
+        TranslationUIController: SetupTranslationController,
+        createReaderSession,
+        createConfigPanel: options => {
+            configCreates++;
+            receivedSetupMode = options.setupMode;
+            return configPanel;
+        },
+        createGlossaryPanel: () => {
+            glossaryCreates++;
+            return { open() {}, dispose() {} };
+        },
+        setupMode: true,
+        fetchImpl: async () => { throw new Error('setup must not call reader APIs'); },
+        windowObj: jsdomWindow,
+        documentObj: jsdomWindow.document,
+        requestAnimationFrameFn: globalThis.requestAnimationFrame,
+    });
+
+    setupApi.init();
+    check(configCreates === 1 && receivedSetupMode === true, 'setup initializes config panel in setup mode');
+    check(configOpens === 1, 'setup automatically opens config panel');
+    check(glossaryCreates === 0, 'setup does not initialize glossary UI');
+    check(stageFetches === 0, 'setup does not request translation stage API');
+    setupApi.dispose();
+}
+
 console.log('');
 console.log(`Results: ${passed} passed, ${failed} failed`);
 if (failed > 0) {

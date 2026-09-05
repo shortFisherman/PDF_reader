@@ -166,6 +166,8 @@ class AppSettings:
     lang_out: str
     upstream: UpstreamRuntimeConfig
     term_extraction: CandidateExtractionRuntimeConfig = field(default_factory=CandidateExtractionRuntimeConfig)
+    setup_mode: bool = False
+    setup_reason: str | None = field(default=None, repr=False)
 
 
 _DEBUG_TRUE_VALUES = frozenset({"true", "1", "on", "yes"})

@@ -28,7 +28,7 @@ from pdf_reader.glossary_management import (
 )
 from pdf_reader.pdf_renderer import render_page
 from pdf_reader.state import StaleDocumentError
-from pdf_reader.task_logging import STATUS_STARTED, task_context_from_indices, task_log
+from pdf_reader.task_logging import STATUS_STARTED, redact_secrets, task_context_from_indices, task_log
 from pdf_reader.term_model import (
     GlossaryConflictError,
     GlossaryLockedError,
@@ -47,6 +47,17 @@ client_logger = logging.getLogger("pdf_reader.client")
 
 bp = Blueprint("main", __name__)
 
+_SETUP_ALLOWED_ENDPOINTS = frozenset(
+    {
+        "main.index",
+        "main.get_config_center",
+        "main.put_config_center",
+        "main.setup_status",
+        "portable_health",
+        "static",
+    }
+)
+
 _CLIENT_ERROR_FIELDS = frozenset({"kind", "message", "source", "line", "column", "stack"})
 _CLIENT_ERROR_STRING_LIMITS = {
     "kind": 64,
@@ -61,6 +72,20 @@ _CLIENT_ERROR_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]
 
 def error_response(msg: str, code: int, error_code: str) -> tuple:
     return jsonify({"code": error_code, "error": msg}), code
+
+
+@bp.before_app_request
+def _setup_mode_guard():
+    """首次配置时只开放页面资源、配置接口和私有健康检查。"""
+    if not current_app.config.get("setup_mode"):
+        return None
+    if request.endpoint in _SETUP_ALLOWED_ENDPOINTS:
+        return None
+    return error_response(
+        "首次配置尚未完成；请保存有效配置并重启服务",
+        503,
+        "setup_required",
+    )
 
 
 def _get_state():
@@ -323,7 +348,10 @@ def page_count(side: str):
 
 @bp.route("/")
 def index():
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        setup_mode=bool(current_app.config.get("setup_mode")),
+    )
 
 
 @bp.route("/api/translate/<int:page>", methods=["POST"])
@@ -805,7 +833,12 @@ def get_config_center():
     if denied is not None:
         return denied
     try:
-        return jsonify(config_editor.load_config_state(_get_config_path()))
+        return jsonify(
+            config_editor.load_config_state(
+                _get_config_path(),
+                allow_repair=bool(current_app.config.get("setup_mode")),
+            )
+        )
     except config_editor.ConfigEditError as exc:
         logger.warning("config center GET failed: code=%s", exc.code)
         return error_response(exc.message, 500, exc.code)
@@ -820,7 +853,13 @@ def put_config_center():
     if not isinstance(data, dict):
         return error_response("请求体必须是 JSON 对象", 400, "invalid_payload")
     try:
-        result = config_editor.save_config(data, _get_config_path())
+        setup_mode = bool(current_app.config.get("setup_mode"))
+        result = config_editor.save_config(
+            data,
+            _get_config_path(),
+            allow_repair=setup_mode,
+            require_loopback=bool(current_app.config.get("portable_service")),
+        )
     except config_editor.RevisionConflictError as exc:
         logger.warning("config center PUT conflict: code=%s", exc.code)
         return error_response(exc.message, 409, exc.code)
@@ -829,7 +868,24 @@ def put_config_center():
         logger.warning("config center PUT rejected: code=%s status=%d", exc.code, status)
         return error_response(exc.message, status, exc.code)
     logger.info("config center PUT saved")
+    if setup_mode:
+        result["setup_complete"] = True
     return jsonify(result)
+
+
+@bp.route("/api/setup/status", methods=["GET"])
+def setup_status():
+    if not current_app.config.get("setup_mode"):
+        return jsonify({"mode": "ready", "restart_required_after_save": False})
+    reason = current_app.config.get("setup_reason")
+    safe_reason = redact_secrets(reason) if isinstance(reason, str) else "配置缺失或无效"
+    return jsonify(
+        {
+            "mode": "setup",
+            "reason": safe_reason,
+            "restart_required_after_save": True,
+        }
+    )
 
 
 @bp.route("/api/stages")

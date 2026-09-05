@@ -136,6 +136,94 @@ def test_get_malformed_toml_returns_safe_error_without_leaking_key(tmp_path, mon
     assert "sk-top-secret" not in resp.data.decode("utf-8")
 
 
+def test_setup_mode_can_atomically_repair_malformed_config(tmp_path, monkeypatch):
+    secret = "sk-corrupt-secret"
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(f'[model]\napi_key = "{secret}"\nnot = = toml', encoding="utf-8")
+    original = cfg_path.read_bytes()
+    app = Flask(__name__)
+    app.config.update(config_path=cfg_path, setup_mode=True, portable_service=True, TESTING=True)
+    register_routes(app)
+
+    with app.test_client() as client:
+        state_response = client.get("/api/config")
+        assert state_response.status_code == 200
+        assert secret not in state_response.data.decode("utf-8")
+        state = state_response.get_json()
+        assert state["repair_required"] is True
+        assert state["revision"] == config_editor._bytes_revision(original)
+
+        saved = _put(
+            client,
+            cfg_path,
+            {
+                "model": {
+                    "provider": "deepseek",
+                    "model": "deepseek-chat",
+                    "base_url": "https://api.deepseek.com/v1",
+                }
+            },
+            state["revision"],
+            api_key="sk-new-secret",
+        )
+
+    assert saved.status_code == 200
+    payload = saved.get_json()
+    assert payload["setup_complete"] is True
+    assert payload["restart_required"] is True
+    assert secret not in saved.data.decode("utf-8")
+    repaired = cfg_path.read_text(encoding="utf-8")
+    assert 'provider = "deepseek"' in repaired
+    assert 'model = "deepseek-chat"' in repaired
+    assert 'api_key = "sk-new-secret"' in repaired
+
+
+def test_setup_mode_can_repair_semantically_invalid_config(tmp_path, monkeypatch):
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text('model = "not-a-table"\n', encoding="utf-8")
+    app = Flask(__name__)
+    app.config.update(config_path=cfg_path, setup_mode=True, portable_service=True, TESTING=True)
+    register_routes(app)
+
+    with app.test_client() as client:
+        state = client.get("/api/config").get_json()
+        assert state["repair_required"] is True
+        response = _put(
+            client,
+            cfg_path,
+            {"model": {"provider": "deepseek", "model": "deepseek-chat"}},
+            state["revision"],
+            api_key="sk-repair-key",
+        )
+
+    assert response.status_code == 200
+    repaired = cfg_path.read_text(encoding="utf-8")
+    assert 'model = "not-a-table"' not in repaired
+    assert "[model]" in repaired
+    assert 'api_key = "sk-repair-key"' in repaired
+
+
+def test_portable_config_save_rejects_non_loopback_host(editor_client):
+    client, cfg_path = editor_client
+    app = client.application
+    app.config["portable_service"] = True
+    before = _get(client, cfg_path)
+
+    response = _put(
+        client,
+        cfg_path,
+        {"server": {"host": "0.0.0.0"}},
+        before["revision"],
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "invalid_config"
+    assert "loopback" in response.get_json()["error"]
+    assert 'host = "127.0.0.1"' in cfg_path.read_text(encoding="utf-8")
+
+
 def test_put_saves_values_and_preserves_comments_unknown_fields(editor_client):
     client, cfg_path = editor_client
     before = _get(client, cfg_path)

@@ -26,6 +26,7 @@ export function createReaderAppController({
     createReaderSession,
     createConfigPanel = null,
     createGlossaryPanel = null,
+    setupMode = false,
     fetchImpl = fetch,
     windowObj = window,
     documentObj = document,
@@ -361,7 +362,7 @@ export function createReaderAppController({
         els = getElements();
         translationController = new TranslationUIController({ els });
 
-        if (!clientErrorReporter) {
+        if (!setupMode && !clientErrorReporter) {
             clientErrorReporter = createClientErrorReporter({
                 api: `${API}/client-errors`,
                 windowObj,
@@ -369,13 +370,18 @@ export function createReaderAppController({
                 fetchImpl,
             });
         }
-        clientErrorReporter.install();
+        if (clientErrorReporter) clientErrorReporter.install();
 
         if (createConfigPanel && els.configBtn) {
-            configPanel = createConfigPanel({ fetchImpl, windowObj, documentObj, api: API });
+            configPanel = createConfigPanel({ fetchImpl, windowObj, documentObj, api: API, setupMode });
             els.configBtn.addEventListener('click', () => {
                 configPanel.open(els.configBtn);
             });
+        }
+
+        if (setupMode) {
+            if (configPanel) configPanel.open(els.configBtn);
+            return;
         }
 
         if (createGlossaryPanel && els.glossaryBtn) {

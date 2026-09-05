@@ -29,6 +29,7 @@ const controller = createReaderAppController({
     createReaderSession,
     createConfigPanel,
     createGlossaryPanel,
+    setupMode: document.body.dataset.setupMode === 'true',
 });
 
 controller.init();
