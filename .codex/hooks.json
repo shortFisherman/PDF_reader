@@ -3,12 +3,7 @@
     "PreToolUse": [
       {
         "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"C:/Users/Couper/Desktop/projects/PDF_reader/.agents/skills/comet/scripts/comet-hook-router.mjs\" --platform \"codex\" --project-root \"C:/Users/Couper/Desktop/projects/PDF_reader\""
-          }
-        ]
+        "hooks": []
       }
     ]
   }

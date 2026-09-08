@@ -1,6 +1,6 @@
 # 工具与工作流目录治理
 
-> 建立日期：2026-08-30（P3-07），最近更新：2026-09-04。本文档集中说明当前仍在使用的
+> 建立日期：2026-08-30（P3-07），最近更新：2026-09-08。本文档集中说明当前仍在使用的
 > AI、工作流和检索目录的职责、跟踪边界与重建方式，并记录退役工具的处理规则。
 
 ## 事实来源优先级
@@ -15,9 +15,7 @@
 
 | 目录 | 是否跟踪 | 职责 | 生成/维护方 | 可否重建 | 事实来源角色 |
 |---|---|---|---|---|---|
-| `.agents/` | 跟踪 | 项目级 agent skills（comet 等）与子代理说明 | 用户/Agent 技能工具（skill installer） | 可从上游技能仓库重新安装，但本地定制会丢失 | 操作指令；不作为代码事实 |
 | `.codex/` | 跟踪 | Codex 本地配置（hooks、工作流规则） | Codex/用户 | 可重建（重新生成配置），当前文件为基线 | 操作指令 |
-| `.comet/` | 仅跟踪 `config.yaml` | Comet 工作流配置与运行时状态（其余内容已忽略） | Comet CLI | `comet init` 可重建配置，运行时状态不可完整重建 | 操作指令；工作流状态不进入架构事实 |
 | `.opencode/` | 跟踪 | OpenCode Go 命令与路由（OP DeepSeek 子 Agent 等） | OpenCode/用户 | 可重建（重新安装/生成命令） | 操作指令 |
 | `.codegraph/` | 不跟踪（自带 `.gitignore`） | CodeGraph 索引数据库/daemon 状态 | `codegraph` CLI | 可重建（重新索引） | 代码检索辅助；不替代源码事实 |
 | `.firecrawl/` | 不跟踪 | Firecrawl 本地运行数据 | Firecrawl 工具 | 可重建 | 无 |
@@ -26,13 +24,20 @@
 
 ## 退役工具
 
-Superpowers 与 OpenSpec 已于 2026-09-04 从项目工作流退役。当前工作树不保留
-`.superpowers/`、`openspec/`、`docs/superpowers/` 或只为 Superpowers 安装状态服务的
-`skills-lock.json`。这些内容不迁入 `docs/archive/`，因为 Git 历史已经提供完整追溯，
-重复保存只会让旧计划与当前事实混杂。
+Superpowers 与 OpenSpec 已于 2026-09-04 从项目工作流退役；Comet 项目级集成已于
+2026-09-08 通过官方 `comet uninstall . --scope project --force` 完成卸载并退役。
+当前工作树不保留 `.superpowers/`、`openspec/`、`docs/superpowers/` 或只为 Superpowers
+安装状态服务的 `skills-lock.json`，也不保留 Comet 项目级安装物：`.comet/` 配置与
+运行时状态、`.agents/`（其中的 comet/comet-any/comet-native/comet-review 均为纯
+Comet 安装副本）、`.opencode/skills/comet*`、`.opencode/commands/comet*.md`、
+`.opencode/rules/comet-workflow-guard.md` 与 `.codex/rules/comet-workflow-guard.md`。
+这些内容不迁入 `docs/archive/`，因为 Git 历史已经提供完整追溯，重复保存只会让旧计划与
+当前事实混杂。
 
 退役工具名称可以继续出现在 `CHANGELOG.md` 或既有归档文档的历史叙述中，但不得被描述为
-当前事实来源、规范入口或新变更的产物位置。仓库卫生测试会阻止上述路径重新进入工作树。
+当前事实来源、规范入口或新变更的产物位置。`tests/test_repo_hygiene.py` 阻止
+Superpowers/OpenSpec 相关路径重新进入工作树；`tests/test_repo_governance.py` 阻止
+Comet 安装物路径、`.gitignore` 中的 Comet 管理块与在用目录清单条目重新出现。
 
 ## 跟踪边界
 

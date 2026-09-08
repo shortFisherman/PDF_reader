@@ -10,9 +10,7 @@ export default [
             '.venv/**',
             'build/**',
             // 非本项目 JS 的目录/第三方捆绑与历史产物，不在 P2-03 目标内。
-            '.agents/**',
             '.codex/**',
-            '.comet/**',
             '.opencode/**',
             '.worktrees/**',
             'cache/**',
