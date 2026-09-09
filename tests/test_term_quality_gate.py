@@ -221,6 +221,9 @@ def test_gate_does_not_need_api_key_or_config(tmp_path):
 
 @pytest.mark.skipif(os.name != "nt", reason="verify.ps1 is Windows/PowerShell-only")
 def test_verify_script_invokes_term_quality_gate():
-    verify = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
-    assert "term_quality_gate.py" in verify
-    assert "Term quality gate" in verify
+    # 术语质量门步骤由公共编排 scripts/verify.py 承担；verify.ps1 委托 verify.py。
+    verify_py = (REPO_ROOT / "scripts" / "verify.py").read_text(encoding="utf-8")
+    verify_ps1 = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
+    assert "term_quality_gate.py" in verify_py
+    assert "Term quality gate" in verify_py
+    assert "scripts/verify.py" in verify_ps1

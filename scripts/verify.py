@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -49,11 +48,12 @@ def _tool_argv(name: str, args: Sequence[str]) -> list[str]:
     """构造 node/npm 之类 PATH 工具的 argv。
 
     Windows 上 npm 是 ``npm.cmd`` 批处理，不能直接被 CreateProcess 执行
-    （WinError 193），必须交给 ``cmd.exe /c``；POSIX 直接执行。
+    （WinError 193），须交给 ``cmd.exe /c``；POSIX 直接执行。把参数作为独立列表
+    元素跟在 ``/c`` 之后，由 subprocess 的 list2cmdline 负责双引号转发（避免把整条
+    命令拼成单字符串时被 cmd 的引号剥离规则误拆）。
     """
     if os.name == "nt":
-        command = " ".join([name, *(shlex.quote(arg) for arg in args)])
-        return ["cmd", "/d", "/c", command]
+        return ["cmd", "/d", "/c", name, *args]
     return [name, *args]
 
 
@@ -89,8 +89,7 @@ class Verifier:
     def _python_argv(self, args: Sequence[str]) -> list[str]:
         """构造 Python 子进程 argv；Windows 测试用 .cmd 桩解释器同样经 cmd 执行。"""
         if os.name == "nt" and self.python.lower().endswith((".cmd", ".bat")):
-            command = " ".join([self.python, *(shlex.quote(arg) for arg in args)])
-            return ["cmd", "/d", "/c", command]
+            return ["cmd", "/d", "/c", self.python, *args]
         return [self.python, *args]
 
     # -- 版本门槛 ---------------------------------------------------------

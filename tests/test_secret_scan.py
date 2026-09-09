@@ -129,7 +129,10 @@ def test_repo_root_missing_git_fails_cleanly(tmp_path):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="verify.ps1 is Windows/PowerShell-only")
 def test_secret_scan_is_part_of_verify_and_ci():
-    verify = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
+    # 密钥扫描步骤由公共编排 scripts/verify.py 承担；verify.ps1 委托 verify.py。
+    verify_py = (REPO_ROOT / "scripts" / "verify.py").read_text(encoding="utf-8")
+    verify_ps1 = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
     ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert "secret_scan.py" in verify
+    assert "secret_scan.py" in verify_py
+    assert "scripts/verify.py" in verify_ps1
     assert "scripts/verify.ps1" in ci
