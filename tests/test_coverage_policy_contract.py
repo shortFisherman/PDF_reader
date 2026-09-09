@@ -46,20 +46,24 @@ def test_mypy_config_active_without_blanket_core_ignore():
 
 
 def test_verify_pipeline_contract():
-    verify = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
+    """scripts/verify.py（公共编排）与 verify.ps1（Windows 启动器）的管线契约。"""
+    verify = (REPO_ROOT / "scripts" / "verify.py").read_text(encoding="utf-8")
     for needle in (
-        "coverage run --branch -m pytest",
-        "coverage report",
-        "coverage json",
+        '"coverage", "run", "--branch", "-m", "pytest"',
+        '"coverage", "report"',
+        '"coverage", "json"',
         "check_coverage_policy",
-        "-m mypy",
-        "npm run lint:js",
-        "npm test",
+        '"mypy"',
+        "lint:js",
+        "npm",
+        '"test"',
     ):
-        assert needle in verify, f"verify.ps1 missing {needle}"
+        assert needle in verify, f"scripts/verify.py missing {needle}"
     assert "pytest -m " not in verify, "verify must not filter pytest markers"
     assert "pytest --ignore" not in verify
     assert "-k " not in verify
+    launcher = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
+    assert "scripts/verify.py" in launcher, "verify.ps1 must delegate to scripts/verify.py"
 
 
 def test_coverage_policy_thresholds_are_meaningful():

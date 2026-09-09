@@ -36,9 +36,6 @@ jobs:
       - name: Install local package (editable)
         run: pip install -e . --no-deps
 
-      - name: Smoke-test Python dependencies
-        run: python -c "import flask, pymupdf, pdf2zh_next, pdf_reader"
-
       - name: Install frontend test dependencies
         run: npm ci
 
@@ -55,3 +52,40 @@ jobs:
           name: coverage
           path: coverage-artifacts/
           if-no-files-found: error
+
+  # Ubuntu 开发环境兼容 job：只验证 Linux 开发环境能否完整跑通同一公共验证入口
+  # （scripts/verify.py，依赖导入 / pip check / ruff / pytest+coverage / 术语门 /
+  # mypy / npm audit / ESLint / 前端测试，全部同一阈值）。
+  #
+  # 权威门仍是上面的 Windows lint-and-test job（最终产品与发行平台是 Windows）；
+  # 本 job 不做 Windows Portable artifact 打包、不读 config.toml、不调用模型 API。
+  # 若某次 Linux 运行器的环境波动导致本 job 不稳定，先修本 job 的环境/步骤，
+  # 不得为通过而降低任何验证阈值，也不得把本 job 当作产品验收门。
+  ubuntu-dev-compat:
+    runs-on: ubuntu-latest
+    name: Ubuntu dev-env compatibility
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.lock
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.lock
+
+      - name: Install local package (editable)
+        run: pip install -e . --no-deps
+
+      - name: Install frontend test dependencies
+        run: npm ci
+
+      - name: Run shared verification (dev-environment compatibility)
+        run: python scripts/verify.py

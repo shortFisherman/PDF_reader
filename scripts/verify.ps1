@@ -2,6 +2,17 @@ param(
     [string]$PythonExecutable
 )
 
+# P2-04 跨平台公共验证入口的 Windows 启动器。
+#
+# 完整验证编排（步骤顺序、版本门槛、coverage 产物与失败即停）只存在于
+# scripts/verify.py；本脚本只做三件事：解析 Python 解释器、校验基本可用性，
+# 然后以“python scripts/verify.py”委托公共验证并传播退出码。
+# 这样 Windows（PowerShell）与 WSL（venv/bin/python scripts/verify.py）
+# 执行的是同一份逻辑，不会漂移。
+#
+# coverage 产物目录通过环境变量 PDF_READER_COVERAGE_ARTIFACT_DIR 传给
+# scripts/verify.py（与旧版 verify.ps1 的外部调用方式兼容）。
+
 $ErrorActionPreference = 'Stop'
 
 function Resolve-VerifyPython {
@@ -30,87 +41,14 @@ function Resolve-VerifyPython {
     return 'python'
 }
 
-function Invoke-Checked {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Label,
-        [Parameter(Mandatory = $true)]
-        [scriptblock]$Command
-    )
-
-    Write-Host "==> $Label"
-    & $Command
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Label failed with exit code $LASTEXITCODE"
-    }
-}
-
 if ($MyInvocation.InvocationName -ne '.') {
     $pythonCommand = Resolve-VerifyPython -PythonExecutable $PythonExecutable
-    $pythonInfo = & $pythonCommand -c "import sys; print(sys.executable); print(sys.version.split()[0])"
+
+    Write-Host "==> Common verification (scripts/verify.py)"
+    & $pythonCommand scripts/verify.py
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to query Python interpreter: $pythonCommand"
-    }
-    Write-Host "Resolved Python: $($pythonInfo[0])"
-    Write-Host "Python version: $($pythonInfo[1])"
-
-    $pythonVersion = [string]$pythonInfo[1]
-    $pythonParts = $pythonVersion.Split('.')
-    $pythonMajorMinor = if ($pythonParts.Length -ge 2) {
-        [int]$pythonParts[0] * 100 + [int]$pythonParts[1]
-    } else {
-        0
-    }
-    if ($pythonMajorMinor -lt 312) {
-        throw "Unsupported Python version $pythonVersion (>= 3.12 required). Fix the interpreter or pass -PythonExecutable."
+        throw "Verification failed with exit code $LASTEXITCODE"
     }
 
-    $nodeVersionRaw = & node --version 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $nodeVersionRaw) {
-        throw "Node.js not found or failed to report its version; Node.js >= 22 is required for frontend tests."
-    }
-    Write-Host "Node version: $nodeVersionRaw"
-    $nodeMajorText = ([string]$nodeVersionRaw).TrimStart('v')
-    $nodeMajor = 0
-    if ($nodeMajorText -match '^\d+') {
-        $nodeMajor = [int]($nodeMajorText -split '\.')[0]
-    }
-    if ($nodeMajor -lt 22) {
-        throw "Unsupported Node.js version $nodeVersionRaw (>= 22 required)."
-    }
-
-    $coverageArtifactDir = $env:PDF_READER_COVERAGE_ARTIFACT_DIR
-    $coverageDir = $coverageArtifactDir
-    $tempCoverageDir = $null
-    if (-not $coverageDir) {
-        $tempCoverageDir = Join-Path $env:TEMP ('pdf-reader-coverage-' + [guid]::NewGuid().ToString('N'))
-        $coverageDir = $tempCoverageDir
-    }
-    New-Item -ItemType Directory -Path $coverageDir -Force | Out-Null
-    $env:COVERAGE_FILE = Join-Path $coverageDir '.coverage'
-    $coverageJson = Join-Path $coverageDir 'coverage.json'
-    try {
-        Invoke-Checked 'Secret scan' { & $pythonCommand scripts/secret_scan.py }
-        Invoke-Checked 'Upgrade governance gate (static)' { & $pythonCommand scripts/upgrade_governance_gate.py --static-only }
-        Invoke-Checked 'Portable runtime policy' { & $pythonCommand packaging/windows/runtime_policy.py --source-root . }
-        Invoke-Checked 'Ruff lint' { & $pythonCommand -m ruff check . }
-        Invoke-Checked 'Ruff format check' { & $pythonCommand -m ruff format --check . }
-        Invoke-Checked 'Coverage + Python tests' { & $pythonCommand -m coverage run --branch -m pytest -q }
-        Invoke-Checked 'Coverage report' { & $pythonCommand -m coverage report }
-        Invoke-Checked 'Coverage JSON' { & $pythonCommand -m coverage json -o $coverageJson }
-        Invoke-Checked 'Coverage policy' { & $pythonCommand scripts/check_coverage_policy.py $coverageJson }
-        Invoke-Checked 'Term quality gate' { & $pythonCommand scripts/term_quality_gate.py }
-        Invoke-Checked 'Mypy' { & $pythonCommand -m mypy }
-        Invoke-Checked 'JS lint' { npm run lint:js }
-        Invoke-Checked 'Frontend tests' { npm test }
-        if ($coverageArtifactDir) {
-            Invoke-Checked 'Coverage XML artifact' { & $pythonCommand -m coverage xml -o (Join-Path $coverageDir 'coverage.xml') }
-        }
-        Write-Host 'All verification checks passed.'
-    } finally {
-        Remove-Item Env:COVERAGE_FILE -ErrorAction SilentlyContinue
-        if ($tempCoverageDir -and (Test-Path -LiteralPath $tempCoverageDir)) {
-            Remove-Item -LiteralPath $tempCoverageDir -Recurse -Force
-        }
-    }
+    Write-Host 'All verification checks passed.'
 }

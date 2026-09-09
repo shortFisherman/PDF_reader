@@ -144,73 +144,81 @@ def compile_effective_glossary(document_dir: Path, global_glossary: Path | None 
 
     try:
         with lock_for_path(csv_path):
-            document_terms, _, user_meta = _snapshot_user_glossary(document_dir)
-            candidates, _, candidate_meta = _snapshot_candidates(document_dir)
-            global_terms, global_meta = _snapshot_global(global_path)
+            try:
+                document_terms, _, user_meta = _snapshot_user_glossary(document_dir)
+                candidates, _, candidate_meta = _snapshot_candidates(document_dir)
+                global_terms, global_meta = _snapshot_global(global_path)
 
-            doc_map = _dedupe_tier(
-                [(term.source, term.target) for term in document_terms],
-                "document user glossary",
-            )
-            accepted_records: list[tuple[str, str]] = []
-            for entry in candidates:
-                if entry.status == "accepted":
-                    if entry.accepted_target is None:
-                        raise GlossaryCompileError(f"accepted candidate {entry.source_key!r} has no accepted_target")
-                    accepted_records.append((entry.source, entry.accepted_target))
-            accepted_map = _dedupe_tier(accepted_records, "accepted candidates")
-            global_map = _dedupe_tier(
-                [(term.source, term.target) for term in global_terms],
-                "global glossary",
-            )
+                doc_map = _dedupe_tier(
+                    [(term.source, term.target) for term in document_terms],
+                    "document user glossary",
+                )
+                accepted_records: list[tuple[str, str]] = []
+                for entry in candidates:
+                    if entry.status == "accepted":
+                        if entry.accepted_target is None:
+                            raise GlossaryCompileError(
+                                f"accepted candidate {entry.source_key!r} has no accepted_target"
+                            )
+                        accepted_records.append((entry.source, entry.accepted_target))
+                accepted_map = _dedupe_tier(accepted_records, "accepted candidates")
+                global_map = _dedupe_tier(
+                    [(term.source, term.target) for term in global_terms],
+                    "global glossary",
+                )
 
-            merged: dict[str, tuple[str, str]] = {}
-            for tier in (doc_map, accepted_map, global_map):
-                for key, record in tier.items():
-                    merged.setdefault(key, record)
+                merged: dict[str, tuple[str, str]] = {}
+                for tier in (doc_map, accepted_map, global_map):
+                    for key, record in tier.items():
+                        merged.setdefault(key, record)
 
-            rows = sorted(
-                merged.values(),
-                key=lambda record: (normalize_source_key(record[0]), record[0], record[1]),
-            )
-            csv_text = _render_csv(rows)
-            _stage_text(csv_tmp, csv_text)
-            csv_sha256 = _sha256_file(csv_tmp)
+                rows = sorted(
+                    merged.values(),
+                    key=lambda record: (normalize_source_key(record[0]), record[0], record[1]),
+                )
+                csv_text = _render_csv(rows)
+                _stage_text(csv_tmp, csv_text)
+                csv_sha256 = _sha256_file(csv_tmp)
 
-            meta_payload: dict[str, object] = {
-                "schema_version": SIDECAR_SCHEMA_VERSION,
-                "compiler_version": GLOSSARY_COMPILER_VERSION,
-                "inputs": {
-                    USER_GLOSSARY_FILENAME: user_meta,
-                    CANDIDATE_FILENAME: candidate_meta,
-                    GLOBAL_GLOSSARY_LABEL: global_meta,
-                },
-                "output": {
-                    "filename": EFFECTIVE_GLOSSARY_FILENAME,
-                    "sha256": csv_sha256,
-                    "rows": len(rows),
-                },
-            }
-            _stage_text(meta_tmp, _render_meta(meta_payload))
-            _, meta_sha256 = _commit_pair(csv_path, meta_path, csv_tmp, meta_tmp, backup_tmp)
-            return CompileResult(
-                csv_path=csv_path,
-                meta_path=meta_path,
-                csv_sha256=csv_sha256,
-                meta_sha256=meta_sha256,
-                rows=len(rows),
-                document_terms=len(document_terms),
-                accepted_candidates=len(accepted_records),
-                global_terms=len(global_terms),
-            )
+                meta_payload: dict[str, object] = {
+                    "schema_version": SIDECAR_SCHEMA_VERSION,
+                    "compiler_version": GLOSSARY_COMPILER_VERSION,
+                    "inputs": {
+                        USER_GLOSSARY_FILENAME: user_meta,
+                        CANDIDATE_FILENAME: candidate_meta,
+                        GLOBAL_GLOSSARY_LABEL: global_meta,
+                    },
+                    "output": {
+                        "filename": EFFECTIVE_GLOSSARY_FILENAME,
+                        "sha256": csv_sha256,
+                        "rows": len(rows),
+                    },
+                }
+                _stage_text(meta_tmp, _render_meta(meta_payload))
+                _, meta_sha256 = _commit_pair(csv_path, meta_path, csv_tmp, meta_tmp, backup_tmp)
+                return CompileResult(
+                    csv_path=csv_path,
+                    meta_path=meta_path,
+                    csv_sha256=csv_sha256,
+                    meta_sha256=meta_sha256,
+                    rows=len(rows),
+                    document_terms=len(document_terms),
+                    accepted_candidates=len(accepted_records),
+                    global_terms=len(global_terms),
+                )
+            finally:
+                # 必须在释放锁之前清理固定名临时文件：若延后到锁外，下一个并发编译
+                # 可能已用同名路径写入暂存，这里的清理会误删对方刚建好的文件，导致
+                # 其 _commit_pair 的 os.replace 报 FileNotFoundError。锁内清理保证
+                # 本调用的临时文件只在本调用范围内消失（提交后这些 .tmp 已不存在，
+                # unlink 命中 FileNotFoundError 时自动放行）。
+                _cleanup_temps(csv_tmp, meta_tmp, backup_tmp)
     except GlossaryCompileError:
         raise
     except TermStoreError as exc:
         raise GlossaryCompileError(f"failed to compile effective glossary from inputs: {exc}") from exc
     except Exception as exc:
         raise GlossaryCompileError(f"failed to compile effective glossary {csv_path}: {exc}") from exc
-    finally:
-        _cleanup_temps(csv_tmp, meta_tmp, backup_tmp)
 
 
 def verify_effective_glossary(document_dir: Path, global_glossary: Path | None = None) -> EffectiveOutput:

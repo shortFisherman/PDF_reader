@@ -425,6 +425,40 @@ def test_windows_pid_alive_closes_handle(monkeypatch):
     assert closed == [7]
 
 
+# --- P3-05 acceptance: POSIX 平台边界（Windows ctypes 永不加载） ----------
+# Windows 行为契约由上面的 fake-API 测试固定；以下测试在非 Windows 宿主验证
+# ``sys.platform != "win32"`` 边界：ctypes/WinDLL 加载体不执行、存活探测走
+# os.kill(pid, 0)。这些测试也约束 Linux 上 mypy 平台检查的对应代码段。
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-only real boundary probe")
+def test_load_windows_api_returns_none_on_posix():
+    assert sys.platform != "win32"
+    assert cache_ops._load_windows_api() is None
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-only real boundary probe")
+def test_posix_liveness_uses_kill_probe(monkeypatch):
+    probed: list[int] = []
+
+    def fake_kill(pid: int, sig: int) -> None:
+        probed.append(pid)
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(cache_ops.os, "kill", fake_kill)
+    assert cache_ops.is_process_alive(4242) is False
+    assert probed == [4242]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-only real boundary probe")
+def test_posix_live_pid_uses_kill_without_windows_api(monkeypatch):
+    probed: list[int] = []
+    monkeypatch.setattr(cache_ops.os, "kill", lambda pid, sig: probed.append(pid))
+
+    assert cache_ops.is_process_alive(os.getpid()) is True
+    assert probed == [os.getpid()]
+
+
 def _run_manager(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(MANAGER), *args],

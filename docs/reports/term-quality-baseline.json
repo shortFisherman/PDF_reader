@@ -1,5 +1,5 @@
 {
-  "fixture": "tests\\fixtures\\term_quality\\fixture.json",
+  "fixture": "tests/fixtures/term_quality/fixture.json",
   "fixture_sha256": "872fa2734f31d9c82a89f6fb85b2abca672a7f1a92bd9ec08cbc3c9560894717",
   "metric_definitions_version": 1,
   "metrics": {

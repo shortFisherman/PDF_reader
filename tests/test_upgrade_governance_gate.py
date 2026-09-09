@@ -411,10 +411,12 @@ def test_contract_selection_covers_required_invariants():
 
 
 def test_verify_script_invokes_static_gate_and_ci_runs_verify():
-    verify = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
+    verify = (REPO_ROOT / "scripts" / "verify.py").read_text(encoding="utf-8")
     assert "upgrade_governance_gate.py" in verify
     assert "--static-only" in verify
     assert "Upgrade governance gate" in verify
+    launcher = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
+    assert "scripts/verify.py" in launcher
     ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "scripts/verify.ps1" in ci
 
@@ -441,8 +443,13 @@ def test_gate_script_does_not_self_match_markers():
 
 
 @pytest.mark.skipif(os.name != "nt", reason="verify.ps1 is Windows/PowerShell-only")
-def test_verify_full_script_accepts_static_gate_invocation(tmp_path):
-    """verify.ps1 的全量 fake 运行路径必须兼容新增的静态治理门步骤。"""
+def test_verify_full_script_delegates_static_gate_step(tmp_path):
+    """verify.ps1 全量 fake 运行必须成功委托 scripts/verify.py。
+
+    静态治理门步骤由公共编排（scripts/verify.py）承担（见
+    test_verify_script_invokes_static_gate_and_ci_runs_verify 与
+    tests/test_verify_py.py），包装器只负责把解释器解析并委托给 verify.py。
+    """
     fake = tmp_path / "fake-bin"
 
     def write_cmd(path: Path, body: str) -> None:
@@ -475,4 +482,4 @@ def test_verify_full_script_accepts_static_gate_invocation(tmp_path):
         timeout=120,
     )
     assert result.returncode == 0, result.stderr
-    assert "Upgrade governance gate" in result.stdout
+    assert "All verification checks passed." in result.stdout

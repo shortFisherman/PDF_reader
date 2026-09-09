@@ -111,7 +111,7 @@ def test_versioned_baseline_matches_current_report(tmp_path):
     baseline = term_quality.load_baseline(term_quality.BASELINE_PATH)
     assert baseline["schema_version"] == term_quality.QUALITY_SCHEMA_VERSION
     assert baseline["metric_definitions_version"] == term_quality.METRIC_DEFINITIONS_VERSION
-    assert baseline["fixture"] == str(term_quality.FIXTURE_PATH.relative_to(term_quality.REPO_ROOT))
+    assert baseline["fixture"] == term_quality.FIXTURE_PATH.relative_to(term_quality.REPO_ROOT).as_posix()
     assert baseline["fixture_sha256"] == report.fixture_sha256
     assert baseline["metrics"] == report.metrics
     _, drift = term_quality.compare_baseline(
@@ -120,6 +120,35 @@ def test_versioned_baseline_matches_current_report(tmp_path):
         tolerance=term_quality.DRIFT_TOLERANCE,
     )
     assert drift == ()
+
+
+def test_fixture_display_path_is_posix_normalized():
+    """仓库内 fixture 路径必须恒为 POSIX 分隔符，不随宿主 OS 改变。
+
+    Windows 上 ``str(path.relative_to(...))`` 产生反斜杠形式并写入报告/基线，
+    与 Linux 的正斜杠形式不一致导致基线比较失败；``as_posix()`` 固定为 ``/``。
+    """
+    display = term_quality._display_fixture(term_quality.FIXTURE_PATH)
+    assert display == "tests/fixtures/term_quality/fixture.json"
+    assert "\\" not in display
+    assert display == term_quality.FIXTURE_PATH.relative_to(term_quality.REPO_ROOT).as_posix()
+
+
+def test_report_and_baseline_fixture_roundtrip_is_posix_normalized(tmp_path):
+    """write_baseline 生成的基线 fixture 字段必须与报告一致且为 POSIX 形式。
+
+    该测试同时约束未来在 Windows 上重新生成基线（--update-baseline）的行为，
+    确保产物不再夹带反斜杠分隔符。
+    """
+    report = term_quality.evaluate_quality(term_quality.FIXTURE_PATH, work_dir=tmp_path / "work")
+    target = tmp_path / "baseline.json"
+    term_quality.write_baseline(report, target)
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    assert payload["fixture"] == report.fixture
+    assert payload["fixture"] == "tests/fixtures/term_quality/fixture.json"
+    assert "\\" not in payload["fixture"]
+    loaded = term_quality.load_baseline(target)
+    assert loaded["fixture"] == payload["fixture"]
 
 
 def test_store_scenario_wrong_first_translation_does_not_lock(tmp_path):

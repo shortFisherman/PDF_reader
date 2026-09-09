@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -178,8 +179,13 @@ def is_process_alive(pid: int | None) -> bool:
 
 
 def _load_windows_api() -> _WindowsApi | None:
-    """按需加载只读 Windows 进程查询 API；非 Windows 返回 None。"""
-    if os.name != "nt":
+    """按需加载只读 Windows 进程查询 API；非 Windows 返回 None。
+
+    平台边界使用 ``sys.platform == "win32"``（而不是 ``os.name``）守卫：mypy 在
+    Linux 上据此把整个 ctypes/WinDLL 加载体视为 Windows-only 代码段，不会因
+    typeshed 的平台条件定义报 ``attr-defined``，同时运行时行为不变。
+    """
+    if sys.platform != "win32":
         return None
     import ctypes
 

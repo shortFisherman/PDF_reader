@@ -209,11 +209,12 @@ docs/                 文档索引、长期事实、指南、治理、报告与�
 ## 开发
 
 - 依赖锁文件 `requirements.lock` 由 `pip-compile` 按 Python 3.12 生成，同时包含开发依赖（pytest / ruff / mypy / coverage）；前端测试还需要 Node.js 22 与 `npm ci`。
-- 完整验证：`powershell -ExecutionPolicy Bypass -File scripts/verify.ps1`（密钥扫描 → lint → pytest 覆盖率 → mypy → 前端 lint/测试），CI 用 Windows + Python 3.12 + Node 22 每次自动执行。
+- 完整验证走单一跨平台公共入口 `scripts/verify.py`：Windows 用 `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1`（启动器，委托同一 verify.py），WSL 用 `venv/bin/python scripts/verify.py`；覆盖 Python 关键依赖导入、pip check、密钥扫描、Ruff lint、pytest 覆盖率、coverage 策略、术语质量门、mypy、npm audit、前端 lint/测试，失败即停。CI 用 Windows（产品权威门）与 Ubuntu（仅开发兼容验证）分别运行同一入口。
+- 双环境（Windows 产品 + WSL 开发）clone 与同步模式见 [双环境开发](docs/dual-environment-development.md)；Windows 仍是唯一正式产品与发行平台。
 - 上游依赖升级前先跑治理门静态检查：`python scripts/upgrade_governance_gate.py --static-only`。
 - 升级任何 Python 依赖前先跑上游契约测试：`python -m pytest tests/test_upstream_contract.py tests/test_dependency_contract.py`。
 
-深入资料：[文档索引](docs/README.md) · [项目背景](docs/project.md) · [架构](docs/architecture.md) · [路线图](docs/roadmap.md) · [术语系统指南](docs/terminology-system.md) · [许可证说明](docs/governance/license.md) · [文档治理](docs/governance/documentation.md)
+深入资料：[文档索引](docs/README.md) · [项目背景](docs/project.md) · [架构](docs/architecture.md) · [路线图](docs/roadmap.md) · [术语系统指南](docs/terminology-system.md) · [双环境开发](docs/dual-environment-development.md) · [许可证说明](docs/governance/license.md) · [文档治理](docs/governance/documentation.md)
 
 ## 许可与致谢
 

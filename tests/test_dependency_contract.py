@@ -62,18 +62,21 @@ def test_node_locked_via_package_lock_and_npm_ci():
     assert (REPO_ROOT / "package-lock.json").is_file()
     ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "npm ci" in ci
-    verify = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
-    assert "npm test" in verify
+    verify = (REPO_ROOT / "scripts" / "verify.py").read_text(encoding="utf-8")
+    assert "lint:js" in verify
+    assert '"audit"' in verify
+    assert '["test"]' in verify
 
 
 def test_verify_script_prints_python_and_warns_on_fallback():
-    verify = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
-    assert "Resolved Python:" in verify
-    assert "Python version:" in verify
-    assert "Node version:" in verify
-    assert "Unsupported Python version" in verify
-    assert "Unsupported Node.js version" in verify
-    assert "Write-Warning" in verify
+    verify_py = (REPO_ROOT / "scripts" / "verify.py").read_text(encoding="utf-8")
+    assert "Resolved Python:" in verify_py
+    assert "Python version:" in verify_py
+    assert "Node version:" in verify_py
+    assert "Unsupported Python version" in verify_py
+    assert "Unsupported Node.js version" in verify_py
+    launcher = (REPO_ROOT / "scripts" / "verify.ps1").read_text(encoding="utf-8")
+    assert "Write-Warning" in launcher
 
 
 def test_node_engines_declared_and_consistent():

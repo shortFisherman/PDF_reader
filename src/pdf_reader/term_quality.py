@@ -698,12 +698,12 @@ def evaluate_quality(
 
 
 def _display_fixture(path: Path) -> str:
-    """把仓库内 fixture 显示为可移植的仓库相对路径，仓库外保持绝对路径。"""
+    """把仓库内 fixture 显示为可移植的仓库相对路径（POSIX 分隔符），仓库外保持绝对路径。"""
     resolved = path.resolve()
     try:
-        return str(resolved.relative_to(REPO_ROOT))
+        return resolved.relative_to(REPO_ROOT).as_posix()
     except ValueError:
-        return str(resolved)
+        return resolved.as_posix()
 
 
 def _evaluate_once(fixture: dict[str, Any], work_dir: Path) -> _RunResult:

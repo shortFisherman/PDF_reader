@@ -13,6 +13,7 @@
 ## 使用与开发指南
 
 - [`terminology-system.md`](terminology-system.md)：术语提取、审核、编译与翻译控制流程。
+- [`dual-environment-development.md`](dual-environment-development.md)：Windows 产品环境与 WSL 开发环境的双 clone/GitHub 同步模式、跨平台公共验证入口用法。
 - [`pdf2zh-next-development-guide.md`](pdf2zh-next-development-guide.md)：与固定版本上游接口协作时的开发参考。
 - [`windows-portable-release-plan.md`](<improvement items/windows-portable-release-plan.md>)：已获授权的 Windows 便携发行跨会话实施台账、隔离红线与验收门。
 - [`glossary.csv`](glossary.csv)：随项目提供的全局默认词表。
