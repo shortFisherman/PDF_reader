@@ -40,9 +40,20 @@ def _layout(tmp_path: Path) -> paths.RuntimeLayout:
     return layout
 
 
-def test_service_environment_is_child_only_and_scrubs_python_overrides(monkeypatch, tmp_path):
-    from pdf_reader.portable_runtime import build_service_environment
+def _service_environment(layout: paths.RuntimeLayout, base: dict[str, str] | None = None) -> dict[str, str]:
+    """Build a bootstrap-only env with a valid per-launch liveness descriptor."""
 
+    from pdf_reader.portable_runtime import POSIX_LIVENESS_DESCRIPTOR, build_service_environment
+
+    liveness_path = layout.runtime_dir / "launcher-liveness-bootstrap.lock"
+    return build_service_environment(
+        layout,
+        base,
+        launcher_liveness=f"{POSIX_LIVENESS_DESCRIPTOR}{liveness_path}",
+    )
+
+
+def test_service_environment_is_child_only_and_scrubs_python_overrides(monkeypatch, tmp_path):
     layout = _layout(tmp_path)
     parent_before = os.environ.copy()
     base = parent_before | {
@@ -55,7 +66,7 @@ def test_service_environment_is_child_only_and_scrubs_python_overrides(monkeypat
         "PYTHONUSERBASE": r"C:\host-user-site",
     }
 
-    child = build_service_environment(layout, base)
+    child = _service_environment(layout, base)
 
     assert os.environ == parent_before
     assert "PYTHONHOME" not in child
@@ -81,11 +92,11 @@ def test_service_environment_is_child_only_and_scrubs_python_overrides(monkeypat
     assert "TORCH_HOME" not in child
     assert "TRANSFORMERS_CACHE" not in child
     assert child["PDF_READER_PORTABLE_SERVICE"] == "1"
+    assert child["PDF_READER_LAUNCHER_LIVENESS"].startswith("posix-flock:")
+    assert "PDF_READER_LAUNCHER_PID" not in child
 
 
 def test_service_bootstrap_precedes_pdf_reader_and_upstream_imports(tmp_path):
-    from pdf_reader.portable_runtime import build_service_environment
-
     layout = _layout(tmp_path)
     assert layout.portable_root is not None
     launcher = layout.portable_root / "PDF Reader.exe"
@@ -117,7 +128,7 @@ snapshot = {
 }
 print(json.dumps(snapshot))
 """
-    env = build_service_environment(layout)
+    env = _service_environment(layout)
     result = subprocess.run(
         [sys.executable, "-c", probe, str(launcher)],
         cwd=tmp_path,
@@ -137,8 +148,6 @@ print(json.dumps(snapshot))
 
 
 def test_upstream_home_and_temp_are_bound_before_first_import(tmp_path):
-    from pdf_reader.portable_runtime import build_service_environment
-
     layout = _layout(tmp_path)
     assert layout.portable_root is not None
     launcher = layout.portable_root / "PDF Reader.exe"
@@ -166,7 +175,7 @@ print(json.dumps({
     result = subprocess.run(
         [sys.executable, "-c", probe, str(launcher)],
         cwd=tmp_path,
-        env=build_service_environment(layout),
+        env=_service_environment(layout),
         capture_output=True,
         text=True,
         timeout=60,
@@ -183,8 +192,6 @@ print(json.dumps({
 
 
 def test_pinned_upstream_write_paths_stay_inside_portable_data(tmp_path):
-    from pdf_reader.portable_runtime import build_service_environment
-
     layout = _layout(tmp_path)
     assert layout.portable_root is not None
     launcher = layout.portable_root / "PDF Reader.exe"
@@ -268,7 +275,7 @@ print(json.dumps({
     result = subprocess.run(
         [sys.executable, "-c", probe, str(launcher)],
         cwd=tmp_path,
-        env=build_service_environment(layout),
+        env=_service_environment(layout),
         capture_output=True,
         text=True,
         timeout=60,
@@ -335,6 +342,42 @@ def test_service_rejects_direct_start_without_controlled_environment(tmp_path):
     assert exc_info.value.code == "portable_service_environment_missing"
 
 
+def test_launcher_liveness_descriptor_is_required_and_must_stay_in_data(tmp_path):
+    from pdf_reader.portable_runtime import (
+        LAUNCHER_LIVENESS_ENV,
+        POSIX_LIVENESS_DESCRIPTOR,
+        WINDOWS_LIVENESS_DESCRIPTOR,
+        WINDOWS_LIVENESS_PREFIX,
+        PortableEnvironmentError,
+        build_service_environment,
+        validate_service_environment,
+    )
+
+    layout = _layout(tmp_path)
+    outside = tmp_path / "outside" / "launcher-liveness-escape.lock"
+    # 服务只有在存在“本次启动专属、内核可判定”的存活归属时才允许启动；
+    # PID 形状或 data 之外的标识都不是可接受的替代品。
+    cases = {
+        "缺失": "",
+        "未知格式": "launcher-pid:4321",
+        "data 之外的路径": f"{POSIX_LIVENESS_DESCRIPTOR}{outside}",
+        "非存活文件名": f"{POSIX_LIVENESS_DESCRIPTOR}{layout.runtime_dir / 'instance.lock'}",
+        "Windows 名称不是随机十六进制": f"{WINDOWS_LIVENESS_DESCRIPTOR}{WINDOWS_LIVENESS_PREFIX}pid-4321",
+    }
+    for label, descriptor in cases.items():
+        with pytest.raises(PortableEnvironmentError) as exc_info:
+            build_service_environment(layout, {}, launcher_liveness=descriptor)
+        assert exc_info.value.code == "portable_service_launcher_liveness_invalid", label
+
+    valid = _service_environment(layout)
+    validate_service_environment(layout, valid)
+    for tampered in ("", f"{POSIX_LIVENESS_DESCRIPTOR}{outside}"):
+        rejected = valid | {LAUNCHER_LIVENESS_ENV: tampered}
+        with pytest.raises(PortableEnvironmentError) as exc_info:
+            validate_service_environment(layout, rejected)
+        assert exc_info.value.code == "portable_service_environment_missing"
+
+
 def test_frozen_service_rejects_host_interpreter_user_site_and_search_paths(tmp_path):
     from pdf_reader.portable_runtime import PortableEnvironmentError, validate_private_frozen_runtime
 
@@ -396,11 +439,25 @@ def test_launcher_uses_private_service_executable_and_real_browser_environment(m
         captured["browser_env"] = os.environ.copy()
         return True
 
+    class QuittingWindow:
+        def __init__(self, *, dispatch: Any, should_stop: Any) -> None:
+            self._dispatch = dispatch
+
+        def run(self) -> None:
+            self._dispatch("quit")
+
+        def close(self) -> None:
+            pass
+
     monkeypatch.setattr(portable_launcher.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(portable_launcher, "wait_until_ready", lambda *_args, **_kwargs: "http://127.0.0.1:5000/")
     monkeypatch.setattr(portable_launcher.webbrowser, "open", fake_browser)
 
-    result = portable_launcher.run_portable_launcher(launcher, startup_timeout=0.01)
+    result = portable_launcher.run_portable_launcher(
+        launcher,
+        startup_timeout=0.01,
+        window_factory=QuittingWindow,
+    )
 
     assert result == 0
     assert captured["command"] == [str(service_exe), "--launcher-executable", str(launcher)]

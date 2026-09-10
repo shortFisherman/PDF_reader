@@ -185,6 +185,12 @@ class RuntimeLayout:
         return self.data_root / "temp"
 
     @property
+    def runtime_dir(self) -> Path:
+        """单实例锁与实例记录的协调目录（便携态固定在 data/runtime）。"""
+
+        return self.data_root / "runtime"
+
+    @property
     def default_cache_dirname(self) -> str:
         return "documents" if self.mode is RuntimeMode.PORTABLE else "cache"
 
@@ -203,6 +209,7 @@ class RuntimeLayout:
             self.data_root / "temp",
             self.data_root / "pycache",
             self.data_root / "logs",
+            self.data_root / "runtime",
             self.data_root / "home",
             self.data_root / "home" / ".cache",
         )

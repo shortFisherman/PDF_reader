@@ -62,9 +62,10 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | 路径 | 职责 |
 |---|---|
 | `src/pdf_reader/app.py` | 开发/服务共享的启动边界 `main(argv)`、`create_app(settings)` 装配 Flask 与全局 `AppState`、启动服务；开发入口继续对无效配置快速失败，便携服务则以安全默认 loopback 进入受限首次配置模式；便携服务通过进程私有随机令牌提供 `/api/health` 就绪验证；`src/pdf_reader/__main__.py` 提供 `python -m pdf_reader` 开发入口（导入无副作用，仅 `python -m` 时调用 `main`） |
-| `src/pdf_reader/portable_launcher.py` | 顶层 `PDF Reader.exe` 的纯启动器逻辑：保持真实用户环境、从自身位置建立便携布局、只启动 `app/PDF Reader Service.exe`、以 data 内原子就绪描述符和令牌化 loopback 健康检查等待服务、由父进程打开默认浏览器，并在启动失败/中断时有界 terminate→kill 回收服务 |
+| `src/pdf_reader/portable_launcher.py` | 顶层 `PDF Reader.exe` 的纯启动器逻辑：保持真实用户环境、从自身位置建立便携布局、以内核单实例锁判定所有权（第二次启动只验证并激活既有实例，绝不启动第二个服务，也不结束他人进程）、只启动 `app/PDF Reader Service.exe`、以 data 内原子就绪描述符和令牌化 loopback 健康检查等待服务、由父进程打开默认浏览器；就绪后固定提供三按钮控制窗口（打开阅读器/打开日志/退出程序），默认窗口不可用时稳定失败并协作关闭服务，只有显式 `--no-ui` 才允许无窗口诊断；退出时先请求服务协作关闭（停止接受新任务 → 取消/等待当前任务 → 关闭 AppState），只有超时才兜底结束本启动器自己启动的进程，启动失败/中断时同样有界 terminate→kill 回收 |
+| `src/pdf_reader/portable_instance.py` | 纯标准库单实例协调层（顶层启动器在导入任何应用代码前使用）：Windows 命名互斥体 / POSIX `flock` 是“实例正在运行”的唯一权威，进程死亡即由内核释放，崩溃或强制结束都不会留下陈旧锁；`DATA_ROOT/runtime/instance.json` 只是二次启动激活用的建议性记录（PID、启动器控制端点与令牌、服务端点、健康令牌、服务控制令牌），写入前经 data 物理边界与逐字段严格校验，读取方只有在令牌认证健康探测通过后才信任它，正常退出即删除 |
 | `src/pdf_reader/portable_service.py` | `PDF Reader Service.exe` 的延迟导入引导入口：先验证受控子进程环境与冻结私有运行时、准备并安装便携布局，再动态导入 `pdf_reader.app`；引导模块本身不导入 Flask、pdf2zh-next 或 BabelDOC |
-| `src/pdf_reader/portable_runtime.py` | 启动器/服务共享的纯标准库进程边界：构造不修改父进程的 child env，清除宿主 `PYTHONHOME`/`PYTHONPATH`/用户 site 覆盖，设置 `PYTHONNOUSERSITE=1`/`PYTHONSAFEPATH=1`，把虚拟 Home/Python pycache/固定 huggingface-hub 与 tiktoken 缓存映射到 data；冻结服务在第三方导入前强制自身可执行文件等于 `app/PDF Reader Service.exe`、用户 site 已禁用且全部模块搜索路径位于 `app/` 私有运行时；每次启动创建带所有权标记的 `data/temp/pdf-reader-service-*` 作为服务进程树唯一系统 Temp，正常退出安全删除、下次启动只回收已标记且 PID 确认死亡的孤儿目录；并安全创建、验证和原子写入就绪描述符 |
+| `src/pdf_reader/portable_runtime.py` | 启动器/服务共享的纯标准库进程边界：构造不修改父进程的 child env，清除宿主 Python 覆盖，把虚拟 Home/Temp/缓存映射到 data，并验证冻结私有运行时；每次启动创建并清理带标记的服务 Temp；安全创建、验证和原子写入就绪描述符；提供不依赖 PID 的每次启动内核存活对象（Windows 随机命名 owned mutex + abandoned wait，POSIX 随机文件 `flock`）、服务 watchdog 与陈旧 POSIX 名称清理 |
 | `packaging/windows/runtime-requirements.lock` | P0-04 的 Python 3.12 仅运行时依赖闭包：由 `pyproject.toml` 解析并受总 `requirements.lock` 约束，136 个版本必须逐项一致；排除 pytest/coverage/mypy/pip-tools 与 pip/setuptools/wheel，`ruff` 因固定 Gradio/Xsdata 依赖图的运行时要求保留并在发行说明中显式解释 |
 | `packaging/windows/runtime_policy.py` | 纯标准库发行策略门：静态扫描生产源码，拒绝导入 pip/ensurepip/venv/setuptools/wheel、拒绝未批准的进程启动和系统 Python/pip 启动；P2 构建后扫描最终 onedir，拒绝系统解释器、安装工具及纯开发包，并校验 `app/runtime-manifest.json` 的 commit、Python 3.12 patch、私有服务哈希、锁文件哈希以及完整包版本/wheel SHA-256 与运行时锁一致 |
 | `docs/governance/portable-upstream-write-contract.md` | P0-03 固定版本上游写入清单：BabelDOC 模型/字体/CMap/tiktoken/SQLite、pdf2zh-next 配置与 SQLite、huggingface-hub、Python Temp/pycache 的求值时机、控制方式、data 内目标和失败/取消/崩溃语义；依赖升级门必须同步验证 |
@@ -421,6 +422,49 @@ job/document identity 下复用同一
   带令牌请求 `/api/health` 得到精确 `{status: ok}` 后才打开根页面。描述符拒绝
   data 外路径，便携服务拒绝非 loopback 配置。启动超时、服务就绪前异常退出或
   启动器中断都会执行有界 `terminate`，超时后 `kill`，并删除就绪文件。
+- 单实例所有权来自内核而非文件：Windows 使用命名互斥体（进程结束、崩溃或强制
+  终止时由内核释放），POSIX 使用 `DATA_ROOT/runtime/instance.lock` 的 `flock`，
+  不存在只靠可陈旧 lockfile 判断的路径。`DATA_ROOT/runtime/instance.json` 只记录
+  PID、启动器控制端点/令牌、服务端点、健康令牌与服务控制令牌，是建议性元数据：
+  第二次启动必须依次通过“记录可解析 → 令牌健康探测通过 → 控制通道 `open_reader`
+  返回 `opened`”才承认既有实例，任一步失败都会清理陈旧记录并在本进程内继续尝试
+  取得所有权，绝不据此终止任何进程。
+- 第二次启动不启动第二个服务：它经既有实例的控制通道
+  `POST 127.0.0.1:<launcher_port>/api/control`（令牌头
+  `X-PDF-Reader-Control-Token`）请求 `open_reader`，由既有启动器以真实用户环境
+  调用 `webbrowser.open()` 打开阅读器；并发双击只会产生一次服务启动。
+- 控制入口固定为一个 Tk 启动器窗口，只有三个动作：打开阅读器、打开日志、退出
+  程序。默认启动必须先成功创建窗口才自动打开浏览器；Tk/Tcl 缺失、没有图形会话或
+  窗口初始化/运行失败均报告稳定 `launcher_ui_unavailable`，先请求刚启动的服务
+  协作退出，只有退出超时才兜底，并以退出码 7 结束，不允许退化成无控制入口的隐藏
+  常驻服务。只有显式 `--no-ui` 测试/诊断模式允许无窗口等待。关闭浏览器标签页与
+  服务生命周期无关；关闭控制窗口等同“退出程序”，该语义由窗口内 `WINDOW_HINT`
+  向用户明示；服务在用户退出前自行结束始终按异常服务退出码 6 报告。
+- 退出是协作式的：`quit` 后启动器只发一次带服务控制令牌的 `POST /api/shutdown`
+  （未认证请求一律 404，令牌不进 URL、日志或普通路由），服务以 202 应答并结束
+  `serve_forever()`，回到 `app.main` 既有收尾路径：先
+  `TranslationCoordinator.shutdown(timeout=10.0)`（停止接受新任务、协作取消并等待
+  当前任务与其工作区），再 `AppState.close()`。只有服务在 `shutdown_timeout`
+  （默认 15s）内没有退出时，启动器才兜底结束自己启动的子进程；服务侧另有
+  `LauncherLivenessWatchdog` 监督每次启动专属的内核对象：Windows 启动器线程持有
+  随机命名 mutex，服务等待其 abandoned 状态；POSIX 测试/诊断态持有 data/runtime
+  下随机名称文件的 `flock`，服务只观察同一 open-file-description 的内核锁释放。
+  两者都不以 PID 判断身份；即使旧 PID 或其他标识被新进程复用，旧服务仍只观察
+  原启动器的随机内核对象并在其消失后请求同一协作退出路径。正常 stop 会先结束
+  watchdog，再由启动器释放 owner；崩溃残留的 POSIX 文件名在取得全局实例锁后清理，
+  文件存在从来不是存活权威。
+- 端口占用不终止他人：端口被占时便携服务发布 `service_port_in_use` 就绪失败
+  描述符并以退出码 3 结束，启动器报告同一稳定错误码并以退出码 4 结束，只清理自己
+  启动的进程与状态文件，不探测或结束占用端口的其他进程，也不自动更换端口。
+- 启动器退出码固定为：0 正常退出、2 启动/状态错误、3 服务启动失败、4 端口占用、
+  5 无法在超时内激活既有实例、6 服务异常/意外退出、7 必需控制窗口不可用、130 用户中断；服务非零退出码由
+  `_exit_code_for` 映射。启动器日志写入 `DATA_ROOT/logs/launcher.log`，控制令牌与
+  健康令牌不进入日志或错误正文。
+- 正常收尾保持严格所有权顺序：停止启动器控制 server → 确认服务已协作退出或完成
+  有界兜底 → 关闭本次 liveness owner → 删除实例记录/就绪文件/服务 Temp → 最后释放
+  全局单实例锁。第二个启动器因此不会在旧记录仍可见或旧服务仍运行时接管所有权。
+- 核验日期：2026-09-10（P1-02）；上述状态机由 `tests/release/` 的可注入回归覆盖
+  （内核锁与实例记录、启动器主流程、控制通道与窗口、服务生命周期）。
 - 当前源码已经固定双进程协议与 PyInstaller 入口职责；真正生成两个 EXE、证明
   私有解释器/依赖的最终二进制来源以及最终 ZIP/干净机验证仍分别属于 P2-01、
   P2-02。开发入口 `start.bat` 和 `python -m pdf_reader` 不进入此双进程路径。
@@ -502,7 +546,7 @@ job/document identity 下复用同一
 | `DATA_ROOT/upstream-cache/huggingface/` | 已锁定传递依赖 huggingface-hub 1.29.0 的 `HF_HOME`/hub/assets 缓存；当前锁文件不含 ModelScope、Torch、Transformers，便携环境不注入这些未使用变量 |
 | 当前布局的 `GLOSSARY_PATH` | 手动术语表；开发态为 `PROJECT_ROOT/docs/glossary.csv`，便携态为 `DATA_ROOT/glossary/glossary.csv`，非空时参与每次翻译 |
 
-开发布局的 `DATA_ROOT` 默认等于 `PROJECT_ROOT`（仓库根），因此正常本地运行的数据位置与既有约定一致：`cache/`、`logs/` 仍在仓库根下；`PDF_READER_DATA_ROOT` 继续用于测试隔离或显式分离开发数据。便携布局固定 `DATA_ROOT=PORTABLE_ROOT/data`，忽略这两个开发覆盖变量且不允许 cache 逃逸。
+开发布局的 `DATA_ROOT` 默认等于 `PROJECT_ROOT`（仓库根），因此正常本地运行的数据位置与既有约定一致：`cache/`、`logs/` 仍在仓库根下；`PDF_READER_DATA_ROOT` 继续用于测试隔离或显式分离开发数据。便携布局固定 `DATA_ROOT=PORTABLE_ROOT/data`，忽略这两个开发覆盖变量且不允许 cache 逃逸。便携态的单实例协调状态也只有一条路径：`DATA_ROOT/runtime/instance.lock`（POSIX 锁文件，Windows 改用内核命名互斥体、不落盘）与 `DATA_ROOT/runtime/instance.json`（建议性实例记录，正常退出即删除），两者都经 data 边界守卫，绝不写入 `data/` 之外的临时目录或用户目录。
 
 配置扩展不改变缓存身份与复用语义：文档缓存仍只按原 PDF 哈希保存（`right.pdf`、`cumulative_glossary.csv`、`reading_progress.json`；debug 会话的 `debug_trace.log` 也按同一哈希目录保存），不产生配置指纹、缓存分支或自动失效；修改模型、Prompt、字体或 PDF 高级参数只影响之后执行的翻译或主动重译，已有 `right.pdf` 页面继续复用，旧累计术语表作为历史输入继续保留并跨配置复用；上游请求缓存仍固定 `TranslationSettings.ignore_cache=True`。
 

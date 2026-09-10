@@ -54,6 +54,8 @@ _SETUP_ALLOWED_ENDPOINTS = frozenset(
         "main.put_config_center",
         "main.setup_status",
         "portable_health",
+        # 控制窗口的“退出程序”在首次配置阶段也必须可用；令牌校验仍是安全边界。
+        "portable_shutdown",
         "static",
     }
 )

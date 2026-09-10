@@ -4,7 +4,11 @@ import io
 import logging
 import os
 import sys
+import threading
+from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
+from typing import Protocol, cast
 
 from flask import Flask, Response, jsonify, request
 
@@ -16,6 +20,12 @@ from pdf_reader.translation_coordinator import TranslationCoordinator
 logger = logging.getLogger("pdf_reader.app")
 
 SHUTDOWN_JOIN_TIMEOUT = 10.0
+
+# 便携服务控制通道轮询间隔；只影响发现退出请求的延迟，不影响请求处理。
+PORTABLE_SHUTDOWN_POLL_INTERVAL = 0.2
+
+# 停止后等待监督线程收尾的上限；它是守护线程，超时不会阻止进程退出。
+PORTABLE_MONITOR_JOIN_TIMEOUT = 1.0
 
 
 def _ensure_utf8_stdio() -> None:
@@ -101,19 +111,205 @@ def create_app(settings: config.AppSettings) -> Flask:
         )
     )
     if app.config["portable_service"]:
-        health_token = os.environ.get("PDF_READER_HEALTH_TOKEN", "")
+        from pdf_reader.portable_runtime import (
+            CONTROL_TOKEN_ENV,
+            CONTROL_TOKEN_HEADER,
+            HEALTH_TOKEN_ENV,
+            HEALTH_TOKEN_HEADER,
+            MINIMUM_TOKEN_LENGTH,
+            SHUTDOWN_PATH,
+            PortableShutdownController,
+        )
+
+        health_token = os.environ.get(HEALTH_TOKEN_ENV, "")
+        control_token = os.environ.get(CONTROL_TOKEN_ENV, "")
+        shutdown_controller = PortableShutdownController()
+        app.config["portable_shutdown_controller"] = shutdown_controller
 
         @app.get("/api/health")
         def portable_health() -> Response | tuple[Response, int]:
-            supplied = request.headers.get("X-PDF-Reader-Health-Token", "")
-            if len(health_token) < 32 or not hmac.compare_digest(supplied, health_token):
+            supplied = request.headers.get(HEALTH_TOKEN_HEADER, "")
+            if len(health_token) < MINIMUM_TOKEN_LENGTH or not hmac.compare_digest(supplied, health_token):
                 return jsonify({"status": "not_found"}), 404
             return jsonify({"status": "ok"})
+
+        @app.post(SHUTDOWN_PATH)
+        def portable_shutdown() -> Response | tuple[Response, int]:
+            """认证后的协作式退出入口：只提出退出请求，不直接结束进程。
+
+            控制令牌仅通过进程私有环境变量传入，未认证请求一律返回 404，
+            不泄露端点是否存在；真正的收敛（停止接受新任务 → 等待当前任务 →
+            关闭 AppState）由 main 的既有收尾路径完成。
+            """
+
+            supplied = request.headers.get(CONTROL_TOKEN_HEADER, "")
+            if len(control_token) < MINIMUM_TOKEN_LENGTH or not hmac.compare_digest(supplied, control_token):
+                return jsonify({"status": "not_found"}), 404
+            shutdown_controller.request("launcher_request")
+            return jsonify({"status": "shutting_down"}), 202
 
     from pdf_reader.routes import register_routes
 
     register_routes(app)
     return app
+
+
+class _ShutdownControlChannel(Protocol):
+    """协作退出信号的最小接口；服务只依赖它，便于测试注入替代实现。"""
+
+    @property
+    def reason(self) -> str | None: ...
+
+    def request(self, reason: str) -> bool: ...
+
+    def wait(self, timeout: float = 0.1) -> bool: ...
+
+
+class _PortableWsgiServer(Protocol):
+    """真实 WSGI server 的最小接口（werkzeug make_server 的返回值满足）。"""
+
+    def serve_forever(self, poll_interval: float = 0.5) -> None: ...
+
+    def shutdown(self) -> None: ...
+
+    def server_close(self) -> None: ...
+
+
+class _LauncherWatchdog(Protocol):
+    def stop(self) -> None: ...
+
+
+def _publish_readiness_failure(
+    layout: paths.RuntimeLayout,
+    readiness_file: Path | None,
+    *,
+    code: str,
+    message: str,
+) -> None:
+    """尽力把稳定失败码写进就绪文件；失败路径上的失败不能掩盖原始退出原因。"""
+
+    if readiness_file is None:
+        return
+    from pdf_reader.portable_runtime import write_readiness_failure
+
+    try:
+        write_readiness_failure(layout, readiness_file, code=code, message=message)
+    except Exception:  # noqa: BLE001 - 只记录；退出码与 stderr 仍是主要诊断
+        logger.warning("cannot publish portable readiness failure code=%s", code, exc_info=True)
+
+
+def _make_wsgi_server(host: str, port: int, app: Flask) -> _PortableWsgiServer:
+    """构造真实 WSGI server；端口被占用时 werkzeug 直接 SystemExit，由调用方归类。"""
+
+    from werkzeug.serving import make_server
+
+    return make_server(host, port, app, threaded=True)
+
+
+def _default_launcher_watchdog(controller: _ShutdownControlChannel) -> _LauncherWatchdog | None:
+    """监督每次启动专属的内核对象；PID 复用不能伪造启动器仍存活。"""
+
+    from pdf_reader.portable_runtime import (
+        LAUNCHER_LIVENESS_ENV,
+        LauncherLivenessWatchdog,
+        PortableEnvironmentError,
+        PortableShutdownController,
+        open_launcher_liveness_monitor,
+    )
+
+    try:
+        monitor = open_launcher_liveness_monitor(
+            paths.get_runtime_layout(),
+            os.environ.get(LAUNCHER_LIVENESS_ENV, ""),
+        )
+    except (OSError, ValueError, paths.PathStrategyError, PortableEnvironmentError):
+        logger.error("portable service cannot open the launcher kernel-liveness object", exc_info=True)
+        controller.request("launcher_liveness_unavailable")
+        return None
+    watchdog = LauncherLivenessWatchdog(cast(PortableShutdownController, controller), monitor=monitor)
+    watchdog.start()
+    return watchdog
+
+
+def _monitor_shutdown_channel(server: _PortableWsgiServer, controller: _ShutdownControlChannel) -> None:
+    """后台等待协作退出请求，再让 server 停止接受新任务。"""
+
+    while not controller.wait(PORTABLE_SHUTDOWN_POLL_INTERVAL):
+        continue
+    logger.info("portable shutdown requested: reason=%s", controller.reason)
+    server.shutdown()
+
+
+def _serve_portable_service(
+    app: Flask,
+    run_cfg: config.ServerConfig,
+    *,
+    layout: paths.RuntimeLayout,
+    readiness_file: Path | None,
+    controller: _ShutdownControlChannel,
+    server_factory: Callable[[str, int, Flask], _PortableWsgiServer] | None = None,
+    watchdog_factory: Callable[[_ShutdownControlChannel], _LauncherWatchdog | None] | None = None,
+) -> int:
+    """受认证的便携服务循环：真实绑定 → 监督启动器 → 可协作停止。
+
+    与开发入口的 app.run 不同，这里必须持有真实 WSGI server，才能在任意时刻
+    响应控制通道的退出请求；端口被其他进程占用时只发布稳定失败码，绝不终止
+    占用进程。收敛顺序固定为：停止接受新任务 → 等待当前任务 → 关闭 AppState
+    （由 main 既有收尾路径完成）。
+    """
+
+    from pdf_reader.portable_runtime import SERVICE_EXIT_PORT_IN_USE, SERVICE_PORT_IN_USE_CODE
+
+    create_server = server_factory if server_factory is not None else _make_wsgi_server
+    try:
+        server = create_server(run_cfg.host, run_cfg.port, app)
+    except (OSError, SystemExit):
+        logger.error(
+            "portable service cannot bind http://%s:%d: the port is owned by another process; "
+            "PDF Reader never terminates a process it does not own",
+            run_cfg.host,
+            run_cfg.port,
+        )
+        _publish_readiness_failure(
+            layout,
+            readiness_file,
+            code=SERVICE_PORT_IN_USE_CODE,
+            message=(
+                f"本地端口 {run_cfg.port} 已被其他程序占用；请关闭占用该端口的程序后重新启动 PDF Reader，"
+                "PDF Reader 不会终止占用端口的程序"
+            ),
+        )
+        return SERVICE_EXIT_PORT_IN_USE
+
+    watchdog = watchdog_factory(controller) if watchdog_factory is not None else _default_launcher_watchdog(controller)
+    monitor = threading.Thread(
+        target=_monitor_shutdown_channel,
+        args=(server, controller),
+        name="pdf-reader-shutdown-monitor",
+        daemon=True,
+    )
+    monitor.start()
+    logger.info(
+        "portable service listening on http://%s:%d (authenticated loopback control channel)",
+        run_cfg.host,
+        run_cfg.port,
+    )
+    try:
+        server.serve_forever(poll_interval=PORTABLE_SHUTDOWN_POLL_INTERVAL)
+    except KeyboardInterrupt:
+        controller.request("keyboard_interrupt")
+        logger.info("portable service stopped by KeyboardInterrupt")
+        return 130
+    finally:
+        if watchdog is not None:
+            watchdog.stop()
+        monitor.join(timeout=PORTABLE_MONITOR_JOIN_TIMEOUT)
+        try:
+            server.server_close()
+        except OSError:
+            logger.warning("closing the portable WSGI server reported an error", exc_info=True)
+    logger.info("portable service stopped: reason=%s", controller.reason)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -200,7 +396,9 @@ def main(argv: list[str] | None = None) -> int:
                 run_cfg.host,
             )
         readiness_file = None
+        layout: paths.RuntimeLayout | None = None
         try:
+            shutdown_controller = app.config.get("portable_shutdown_controller")
             if portable_service:
                 from pdf_reader.portable_runtime import (
                     readiness_file_from_environment,
@@ -218,6 +416,16 @@ def main(argv: list[str] | None = None) -> int:
                         port=run_cfg.port,
                         health_token=health_token,
                     )
+            if layout is not None and readiness_file is not None and shutdown_controller is not None:
+                # 便携服务必须能被受认证控制通道协作关闭，因此这里持有真实 WSGI server；
+                # 开发入口（python -m pdf_reader）继续使用 app.run。
+                return _serve_portable_service(
+                    app,
+                    run_cfg,
+                    layout=layout,
+                    readiness_file=readiness_file,
+                    controller=shutdown_controller,
+                )
             app.run(
                 host=run_cfg.host,
                 port=run_cfg.port,
