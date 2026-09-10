@@ -1,6 +1,6 @@
 # 工具与工作流目录治理
 
-> 建立日期：2026-08-30（P3-07），最近更新：2026-09-08。本文档集中说明当前仍在使用的
+> 建立日期：2026-08-30（P3-07），最近更新：2026-09-10。本文档集中说明当前仍在使用的
 > AI、工作流和检索目录的职责、跟踪边界与重建方式，并记录退役工具的处理规则。
 
 ## 事实来源优先级
@@ -17,7 +17,7 @@
 |---|---|---|---|---|---|
 | `.codex/` | 跟踪 | Codex 本地配置（hooks、工作流规则） | Codex/用户 | 可重建（重新生成配置），当前文件为基线 | 操作指令 |
 | `.opencode/` | 跟踪 | OpenCode Go 命令与路由（OP DeepSeek 子 Agent 等） | OpenCode/用户 | 可重建（重新安装/生成命令） | 操作指令 |
-| `.codegraph/` | 不跟踪（自带 `.gitignore`） | CodeGraph 索引数据库/daemon 状态 | `codegraph` CLI | 可重建（重新索引） | 代码检索辅助；不替代源码事实 |
+| `.codegraph/` | 不跟踪（由仓库根 `.gitignore` 忽略） | CodeGraph 索引数据库/daemon 状态 | `codegraph` CLI | 可重建（重新索引） | 代码检索辅助；不替代源码事实 |
 | `.firecrawl/` | 不跟踪 | Firecrawl 本地运行数据 | Firecrawl 工具 | 可重建 | 无 |
 | `.worktrees/` | 不跟踪（已忽略） | Git worktree 本地布局 | Git/用户 | 可重建 | 无 |
 | `.git-rewrite/` | 不跟踪（已忽略） | git-filter-repo 历史重写临时状态 | git-filter-repo | 可重建，纯临时状态 | 无；不得把其中内容当作项目数据 |

@@ -42,6 +42,17 @@ def test_tool_directory_governance_doc_covers_required_dirs():
     assert "退役工具" in doc
 
 
+def test_codegraph_is_entirely_local_and_ignored_from_repo_root():
+    """CodeGraph 数据和目录规则都属于各 clone 的本机可重建状态。"""
+    ignore_lines = {
+        line.strip()
+        for line in (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    assert ".codegraph/" in ignore_lines
+    assert not (REPO_ROOT / ".codegraph" / ".gitignore").exists()
+
+
 def test_retired_comet_dirs_are_not_current_tool_listing():
     """Comet 项目集成已退役：在用目录清单不得再把 .agents/.comet 写成在用/跟踪目录。"""
     doc = (REPO_ROOT / "docs" / "governance" / "tool-directories.md").read_text(encoding="utf-8")
