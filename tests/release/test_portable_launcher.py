@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from typing import Any
 
 import pytest
 
-from pdf_reader import paths, portable_instance, portable_launcher, portable_runtime
+from pdf_reader import paths, portable_data, portable_instance, portable_launcher, portable_runtime
 from tests.release import portable_harness as h
 
 
@@ -996,3 +997,179 @@ class TestBrowserSemantics:
         assert len(created) == 1
         assert service.process is not None
         assert service.process.kill_calls == 0
+
+
+class TestPortableDataGovernance:
+    """P1-03：数据格式治理在单实例锁之后、服务启动之前完成，失败不启动服务。"""
+
+    def _guard_spawn(self, monkeypatch: Any) -> list[Any]:
+        """把 Popen 换成探针：本组用例里任何服务启动都是缺陷。"""
+
+        spawns: list[Any] = []
+
+        def spy(command: list[str], **kwargs: Any) -> Any:
+            spawns.append(command)
+            raise AssertionError("数据命令路径不得启动服务进程")
+
+        monkeypatch.setattr(portable_launcher.subprocess, "Popen", spy)
+        return spawns
+
+    def test_prepare_runs_after_lock_and_before_service_spawn(self, monkeypatch, tmp_path):
+        layout = h.make_portable_layout(tmp_path)
+        h.create_service_executable(layout)
+        service = h.FakePortableService(layout)
+        observed: dict[str, Any] = {}
+        lock_events: list[bool] = []
+        real_lock_factory = portable_launcher.create_instance_lock
+
+        class NotingLock:
+            def __init__(self, inner: Any) -> None:
+                self._inner = inner
+
+            def acquire(self) -> bool:
+                held = bool(self._inner.acquire())
+                lock_events.append(held)
+                return held
+
+            def release(self) -> None:
+                self._inner.release()
+
+        def lock_factory(selected: paths.RuntimeLayout) -> Any:
+            return NotingLock(real_lock_factory(selected))
+
+        def spy_popen(command: list[str], **kwargs: Any) -> Any:
+            observed["lock_acquired_before_spawn"] = lock_events == [True]
+            observed["schema_state_at_spawn"] = portable_data.detect_schema(layout).state
+            observed["manifest_at_spawn"] = portable_data.manifest_path(layout).is_file()
+            return service(command, **kwargs)
+
+        monkeypatch.setattr(portable_launcher.subprocess, "Popen", spy_popen)
+        try:
+            result = portable_launcher.run_portable_launcher(
+                h.launcher_executable(layout),
+                startup_timeout=10.0,
+                lock_factory=lock_factory,
+                window_factory=window_factory("quit"),
+                browser=lambda url: True,
+            )
+        finally:
+            service.cleanup()
+
+        assert result == 0
+        assert observed == {
+            "lock_acquired_before_spawn": True,
+            "schema_state_at_spawn": "current",
+            "manifest_at_spawn": True,
+        }
+        assert portable_data.detect_schema(layout).state == "current"
+        assert len(list(portable_data.backup_root(layout).iterdir())) == 2  # 备份目录 + 迁移账本
+
+    def test_newer_data_schema_refuses_to_start_the_service(self, monkeypatch, tmp_path, capsys):
+        layout = h.make_portable_layout(tmp_path)
+        h.create_service_executable(layout)
+        payload = {
+            "schema_version": portable_data.SCHEMA_VERSION + 1,
+            "product": portable_data.PRODUCT,
+            "app_version": "9.9.9",
+            "created_at": "2026-09-11T08:00:00+00:00",
+            "updated_at": "2026-09-11T08:00:00+00:00",
+            "applied_migrations": [],
+        }
+        manifest = portable_data.manifest_path(layout)
+        manifest.write_text(json.dumps(payload), encoding="utf-8")
+        original = manifest.read_bytes()
+        spawns = self._guard_spawn(monkeypatch)
+
+        result = portable_launcher.run_portable_launcher(
+            h.launcher_executable(layout),
+            startup_timeout=1.0,
+            no_browser=True,
+            no_ui=True,
+        )
+
+        assert result == portable_launcher.EXIT_LAUNCHER_ERROR
+        assert spawns == []
+        assert manifest.read_bytes() == original
+        assert "ERROR [portable_data_schema_newer]" in capsys.readouterr().err
+        assert "ERROR [portable_data_schema_newer]" in _read_launcher_log(layout)
+
+    def test_data_report_command_never_spawns_the_service(self, monkeypatch, tmp_path, capsys):
+        layout = h.make_portable_layout(tmp_path)
+        h.create_service_executable(layout)
+        model = layout.data_root / "models" / "layout.onnx"
+        model.write_bytes(b"model-bytes")
+        spawns = self._guard_spawn(monkeypatch)
+
+        result = portable_launcher.run_portable_launcher(
+            h.launcher_executable(layout),
+            no_browser=True,
+            no_ui=True,
+            data_command=portable_launcher.DataCommand(kind="report"),
+        )
+
+        assert result == 0
+        assert spawns == []
+        stdout = capsys.readouterr().out
+        assert "文档缓存" in stdout
+        assert "重新下载" in stdout
+        assert model.is_file()
+
+    def test_clean_command_previews_by_default_and_deletes_only_the_selected_category(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        layout = h.make_portable_layout(tmp_path)
+        h.create_service_executable(layout)
+        right_pdf = layout.data_root / "documents" / "hash" / "right.pdf"
+        right_pdf.parent.mkdir(parents=True, exist_ok=True)
+        right_pdf.write_bytes(b"%PDF-1.4 cached")
+        model = layout.data_root / "models" / "layout.onnx"
+        model.write_bytes(b"model")
+        spawns = self._guard_spawn(monkeypatch)
+
+        preview = portable_launcher.run_portable_launcher(
+            h.launcher_executable(layout),
+            no_browser=True,
+            no_ui=True,
+            data_command=portable_launcher.DataCommand(kind="clean", categories=("documents",)),
+        )
+
+        assert preview == 0
+        assert right_pdf.is_file()
+        assert "预览" in capsys.readouterr().out
+
+        confirmed = portable_launcher.run_portable_launcher(
+            h.launcher_executable(layout),
+            no_browser=True,
+            no_ui=True,
+            data_command=portable_launcher.DataCommand(kind="clean", categories=("documents",), confirmed=True),
+        )
+
+        assert confirmed == 0
+        assert spawns == []
+        assert not right_pdf.exists()
+        assert not right_pdf.parent.exists()
+        assert model.read_bytes() == b"model"
+        assert "已删除" in capsys.readouterr().out
+
+    def test_import_data_command_copies_models_and_never_imports_config(self, monkeypatch, tmp_path, capsys):
+        layout = h.make_portable_layout(tmp_path)
+        h.create_service_executable(layout)
+        old = h.make_portable_layout(tmp_path / "old", name="旧安装")
+        (old.data_root / "models").mkdir(parents=True, exist_ok=True)
+        (old.data_root / "models" / "layout.onnx").write_bytes(b"model-bytes")
+        (old.data_root / "config").mkdir(parents=True, exist_ok=True)
+        (old.data_root / "config" / "config.toml").write_bytes(b"from-old-install")
+        spawns = self._guard_spawn(monkeypatch)
+
+        result = portable_launcher.run_portable_launcher(
+            h.launcher_executable(layout),
+            no_browser=True,
+            no_ui=True,
+            data_command=portable_launcher.DataCommand(kind="import", source=old.data_root, confirmed=True),
+        )
+
+        assert result == 0
+        assert spawns == []
+        assert (layout.data_root / "models" / "layout.onnx").read_bytes() == b"model-bytes"
+        assert not (layout.data_root / "config" / "config.toml").exists()
+        assert "config/config.toml" in capsys.readouterr().out

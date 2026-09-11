@@ -194,6 +194,27 @@ python scripts/cache_manage.py clean --yes    # 删除可识别且无活进程�
 
 `clean` 只删除有归属标记且对应进程已退出的临时目录，译文、术语表、进度与任何文档缓存永远不会被清理。
 
+### 便携版数据、升级与清理
+
+Windows 便携版把全部可变数据放在解压目录内：`data/config/config.toml`（配置与 API Key）、
+`data/models/` 与 `data/upstream-cache/`（模型与上游缓存）、`data/documents/`（译文、按文档隔离的术语与阅读进度）、
+`data/fonts/`、`data/logs/`、`data/temp/`、`data/backups/`（升级备份）。发行 ZIP 不包含真实
+`data/config/config.toml`、模型权重或文档缓存，因此把 ZIP 解压覆盖到同一目录不会覆盖你的配置、模型与缓存。
+
+- 升级：启动器在启动服务之前读取 `data/portable-data.json` 检测数据格式版本；旧版本先备份清单到
+  `data/backups/`，再以同目录临时文件加原子替换提交，失败时旧数据保持原样。需要退回时执行
+  `python scripts/portable_data.py rollback --yes`（可用 `--backup DIR` 指定某个备份）。
+- 换目录安装：把新 ZIP 解压到新目录后，可以直接复制旧目录的 `data/`，也可以受控导入旧安装的 data
+  （只复制模型、上游缓存、字体与文档缓存，不导入旧配置）：
+  `python scripts/portable_data.py import --from "旧目录\data" --yes`。模型与上游缓存复用后不必重新下载。
+- 清理：`python scripts/portable_data.py status` 分别显示文档缓存、模型与上游缓存、字体、日志、
+  临时文件的大小与删除后果；`clean` 默认只预览，例如
+  `python scripts/portable_data.py clean --category logs --category temp --yes`，
+  `python scripts/portable_data.py clean --all --yes`。清理只作用于规范化数据根 `data/` 的直接子项，
+  拒绝链接/junction 分类根，链接子项只删除链接本身，绝不递归删除 `data/` 之外的用户 PDF。
+- **删除整个便携目录会删除配置和缓存**：`data/` 里同时保存配置、模型、文档缓存与日志，
+  删除解压目录后这些内容无法从发行包恢复；升级、移动或清理前请先备份需要保留的 `data/`。
+
 ## 项目结构
 
 ```text

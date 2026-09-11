@@ -101,3 +101,68 @@ The source-level state machine is covered by `tests/release/`
 `test_portable_control_window.py`, `test_portable_service_lifecycle.py`) with
 `python -m pytest tests/release -q`.  Real Windows double-click behaviour on a
 clean machine and the final ZIP still belong to P2-01/P2-02.
+
+## P1-03 portable data contract (source level)
+
+All mutable state stays inside the extracted directory, and the extracted directory
+is the unit of uninstall: **deleting the whole portable directory deletes
+configuration and caches**.  `README.md` states this for users, and the P1-03 build
+gate fails the build if that statement (or the documented copy/import path for an
+old `data/`) disappears from the release notes.
+
+**Release package.**  The artifact must ship no real `data/` content.  The P1-03
+gate rejects any file under `data/` (config, models, document cache, logs, temp), any
+leaked top-level development directory (an empty `data/` scaffold is allowed), a
+user `config.toml`, a `portable-data.json` manifest, a launcher log or model weights
+placed anywhere in the tree.  P2-01 runs the same policy against the assembled
+onedir tree before packaging:
+
+```powershell
+python packaging/windows/data_policy.py --artifact "dist/release-windows/PDF Reader"
+```
+
+**In-place upgrade.**  Overwriting the same directory with a newer ZIP only replaces
+`app/` and the launcher executable; `data/` is not part of any release package, so
+configuration, models and document caches survive the upgrade.  The data format
+version lives in `data/portable-data.json` (`schema_version`, `product`,
+`app_version`, `created_at`, `updated_at`, `applied_migrations`) and is detected
+before the service starts.
+
+**Migration ordering, backup and rollback.**  `portable_launcher` calls
+`portable_data.prepare_portable_data()` after it owns the single-instance lock and
+before it spawns `app/PDF Reader Service.exe`; a second launch therefore only
+activates the existing instance and never migrates concurrently.  A migration backs
+up the old manifest bytes under `data/backups/<timestamp>/files/`, writes a sibling
+`*.tmp` file and commits with an atomic replace (`DataMigrationTxn.commit`); a
+failure keeps the old bytes and the failed temporary file is discarded, so the old
+version still starts.  Stable codes are `portable_data_manifest_invalid`,
+`portable_data_schema_newer` and `portable_data_write_failed`; a newer schema is
+refused instead of downgraded.  `python scripts/portable_data.py rollback --yes`
+(optionally `--backup DIR`) reverses the recorded file operations of the last
+committed migration so the previous version can start again.
+
+**New-directory install / import.**  Copying the old `data/` directory is a
+documented, supported path; the controlled import copies only non-volatile data
+(`documents/`, `models/`, `upstream-cache/`, `fonts/`, glossary) and never imports
+`config/`, `logs/`, `temp/`, `runtime/`, the target manifest or migration backups,
+so models do not have to be downloaded again:
+`python scripts/portable_data.py import --from "D:\old\data" --yes`.  The source must
+be a real directory outside the target data root and must not be a link.
+
+**Cleanup.**  `python scripts/portable_data.py status` (also reachable through the
+launcher's hidden data commands) reports one row per category with size, file count
+and consequence: 文档缓存 (not regenerable), 模型与上游缓存, 字体, 日志, 临时文件.
+`clean` requires explicit categories (`--category ...` or `--all`) and only deletes
+with `--yes`; preview is the default.  Cleanup refuses to run while
+`data/runtime/instance.json` exists, resolves every target inside the normalized
+data root, rejects a category root that is a symlink or junction, deletes a linked
+child as a link only, and therefore never recursively deletes user PDFs stored
+outside `data/`.
+
+Source-level coverage: `tests/release/test_portable_data.py` (schema detection,
+atomic migration/rollback, category statistics, boundary-safe cleanup, controlled
+import), `tests/release/test_portable_data_cli.py` (status/clean/import/rollback
+commands), `tests/release/test_portable_launcher.py` (preparation happens after the
+lock and before the service spawn) and `tests/release/test_data_policy.py`
+(artifact and release-notes gate).  A real Windows ZIP, a real clean-machine upgrade
+and the final artifact audit still belong to P2-01/P2-02.

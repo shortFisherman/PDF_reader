@@ -27,13 +27,15 @@ import time
 import urllib.parse
 import webbrowser
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Protocol
 
-from pdf_reader import paths
+from pdf_reader import __version__ as APP_VERSION
+from pdf_reader import paths, portable_data
 from pdf_reader.portable_instance import (
     InstanceLock,
     InstanceRecord,
@@ -84,6 +86,23 @@ EXIT_UI_UNAVAILABLE = 7
 EXIT_INTERRUPTED = 130
 
 PORT_IN_USE_CODE = SERVICE_PORT_IN_USE_CODE
+
+
+@dataclass(frozen=True, slots=True)
+class DataCommand:
+    """启动前执行一次的数据治理命令；``None`` 表示正常启动服务。
+
+    ``report`` 只读报告；``clean`` 按分类清理（``confirmed=False`` 时只预览）；
+    ``import`` 从外部 data 根受控导入（``confirmed=False`` 时只预览）。删除与写入
+    都需要 ``confirmed``，因此双击入口永远不会有隐式破坏性行为。
+    """
+
+    kind: str
+    categories: tuple[str, ...] = ()
+    source: Path | None = None
+    overwrite: bool = False
+    confirmed: bool = False
+
 
 LOGGER_NAME = "pdf_reader.launcher"
 LAUNCHER_LOG_NAME = "launcher.log"
@@ -905,6 +924,7 @@ def run_portable_launcher(
     port_probe: PortProbe | None = None,
     no_ui: bool = False,
     no_browser: bool = False,
+    data_command: DataCommand | None = None,
 ) -> int:
     """便携启动器主流程：单实例 → 启动服务 → 真实健康探测 → 打开阅读器 → 协作退出。
 
@@ -912,6 +932,9 @@ def run_portable_launcher(
 
     * 单实例：内核锁是唯一所有权权威；第二次启动只验证并激活现有实例，既不启动
       第二个服务，也不终止任何进程。
+    * 数据治理（P1-03）：取得单实例所有权之后、启动服务之前完成数据格式版本检测与
+      迁移，因此任何应用/上游导入之前 data 已经定型，第二次启动不会重复迁移；
+      ``data_command`` 在同一位置就地执行数据报告/清理/受控导入且不启动服务。
     * 就绪：不使用固定 sleep 猜测，只相信带令牌的真实 loopback 健康探测。
     * 退出：先请求服务协作退出（停止接受新任务 → 取消/等待当前任务 → 关闭
       AppState），只有超时才由启动器兜底结束自己启动的进程。
@@ -979,6 +1002,25 @@ def run_portable_launcher(
 
         logger.info("已取得单实例所有权：data=%s", layout.data_root)
         _clear_stale_instance_state(layout, port_probe=selected_port_probe)
+
+        try:
+            migration = portable_data.prepare_portable_data(layout, app_version=APP_VERSION)
+        except portable_data.PortableDataError as exc:
+            # 版本过新/清单损坏必须是稳定错误码：绝不在未知数据格式上继续启动。
+            _report_error(f"ERROR [{exc.code}]: {exc}")
+            return EXIT_LAUNCHER_ERROR
+        except (OSError, ValueError, paths.PathStrategyError) as exc:
+            _report_error(f"ERROR [portable_data_unavailable]: 便携数据治理不可用：{exc}")
+            return EXIT_LAUNCHER_ERROR
+        if migration.performed:
+            logger.info(
+                "便携数据 schema 已迁移：v%s → v%s，备份=%s",
+                migration.from_version,
+                migration.to_version,
+                migration.backup_dir,
+            )
+        if data_command is not None:
+            return _run_data_command(layout, data_command)
 
         service_exe = _service_executable(layout)
         if not service_exe.is_file():
@@ -1132,6 +1174,58 @@ def run_portable_launcher(
         logger.info("便携启动器已退出")
 
 
+def _print_stdout(message: str) -> None:
+    """窗口化 EXE 可能没有 stdout：输出失败不能影响数据命令的退出码。"""
+
+    try:
+        print(message)
+    except (OSError, ValueError):
+        pass
+
+
+def _run_data_command(layout: paths.RuntimeLayout, command: DataCommand) -> int:
+    """执行数据报告/清理/受控导入；同一位置（单实例锁之后、服务启动之前）。"""
+
+    try:
+        if command.kind == "report":
+            text = portable_data.render_data_report(layout)
+            logger.info("便携数据报告：\n%s", text)
+            _print_stdout(text)
+            return 0
+        if command.kind == "clean":
+            reports = portable_data.run_cleanup(
+                layout,
+                command.categories,
+                dry_run=not command.confirmed,
+            )
+            text = portable_data.render_cleanup_report(reports)
+            logger.info("便携数据清理：\n%s", text)
+            _print_stdout(text)
+            return 0
+        if command.kind == "import":
+            if command.source is None:
+                _report_error("ERROR [portable_data_command_invalid]: 导入命令缺少源目录")
+                return EXIT_LAUNCHER_ERROR
+            report = portable_data.import_portable_data(
+                layout,
+                command.source,
+                dry_run=not command.confirmed,
+                overwrite=command.overwrite,
+            )
+            text = portable_data.render_import_report(report)
+            logger.info("便携数据导入：\n%s", text)
+            _print_stdout(text)
+            return 0
+    except portable_data.PortableDataError as exc:
+        _report_error(f"ERROR [{exc.code}]: {exc}")
+        return EXIT_LAUNCHER_ERROR
+    except (OSError, ValueError, paths.PathStrategyError) as exc:
+        _report_error(f"ERROR [portable_data_command_failed]: 数据命令失败：{exc}")
+        return EXIT_LAUNCHER_ERROR
+    _report_error(f"ERROR [portable_data_command_invalid]: 未知数据命令：{command.kind}")
+    return EXIT_LAUNCHER_ERROR
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """便携启动器的隐藏参数：双击入口不暴露 CLI 契约，参数只服务于诊断与测试。"""
 
@@ -1140,7 +1234,32 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--startup-timeout", type=float, default=DEFAULT_STARTUP_TIMEOUT, help=argparse.SUPPRESS)
     parser.add_argument("--no-browser", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-ui", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--data-report", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--clean", nargs="+", metavar="CATEGORY", help=argparse.SUPPRESS)
+    parser.add_argument("--import-data", metavar="PATH", help=argparse.SUPPRESS)
+    parser.add_argument("--overwrite", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)
     return parser
+
+
+def _data_command_from_args(args: argparse.Namespace) -> DataCommand | None:
+    """把隐藏参数折叠成唯一的数据命令；互斥冲突返回 None 由调用方报错。"""
+
+    selected = [name for name in ("data_report", "clean", "import_data") if getattr(args, name)]
+    if not selected:
+        return None
+    if len(selected) > 1:
+        raise ValueError("一次只能执行一个数据命令（--data-report/--clean/--import-data）")
+    if args.data_report:
+        return DataCommand(kind="report")
+    if args.clean:
+        return DataCommand(kind="clean", categories=tuple(args.clean), confirmed=bool(args.yes))
+    return DataCommand(
+        kind="import",
+        source=Path(args.import_data),
+        overwrite=bool(args.overwrite),
+        confirmed=bool(args.yes),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1148,11 +1267,17 @@ def main(argv: list[str] | None = None) -> int:
 
     args = _build_parser().parse_args(argv)
     launcher_executable = args.launcher_executable or sys.executable
+    try:
+        data_command = _data_command_from_args(args)
+    except ValueError as exc:
+        _report_error(f"ERROR [portable_data_command_conflict]: {exc}")
+        return EXIT_LAUNCHER_ERROR
     return run_portable_launcher(
         launcher_executable,
         startup_timeout=args.startup_timeout,
         no_browser=args.no_browser,
         no_ui=args.no_ui,
+        data_command=data_command,
     )
 
 

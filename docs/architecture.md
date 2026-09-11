@@ -65,9 +65,11 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/portable_launcher.py` | 顶层 `PDF Reader.exe` 的纯启动器逻辑：保持真实用户环境、从自身位置建立便携布局、以内核单实例锁判定所有权（第二次启动只验证并激活既有实例，绝不启动第二个服务，也不结束他人进程）、只启动 `app/PDF Reader Service.exe`、以 data 内原子就绪描述符和令牌化 loopback 健康检查等待服务、由父进程打开默认浏览器；就绪后固定提供三按钮控制窗口（打开阅读器/打开日志/退出程序），默认窗口不可用时稳定失败并协作关闭服务，只有显式 `--no-ui` 才允许无窗口诊断；退出时先请求服务协作关闭（停止接受新任务 → 取消/等待当前任务 → 关闭 AppState），只有超时才兜底结束本启动器自己启动的进程，启动失败/中断时同样有界 terminate→kill 回收 |
 | `src/pdf_reader/portable_instance.py` | 纯标准库单实例协调层（顶层启动器在导入任何应用代码前使用）：Windows 命名互斥体 / POSIX `flock` 是“实例正在运行”的唯一权威，进程死亡即由内核释放，崩溃或强制结束都不会留下陈旧锁；`DATA_ROOT/runtime/instance.json` 只是二次启动激活用的建议性记录（PID、启动器控制端点与令牌、服务端点、健康令牌、服务控制令牌），写入前经 data 物理边界与逐字段严格校验，读取方只有在令牌认证健康探测通过后才信任它，正常退出即删除 |
 | `src/pdf_reader/portable_service.py` | `PDF Reader Service.exe` 的延迟导入引导入口：先验证受控子进程环境与冻结私有运行时、准备并安装便携布局，再动态导入 `pdf_reader.app`；引导模块本身不导入 Flask、pdf2zh-next 或 BabelDOC |
+| `src/pdf_reader/portable_data.py` | P1-03 便携数据治理（只依赖标准库、`paths` 与 `portable_runtime`，因此启动器可在导入应用/上游代码前调用）：以 `DATA_ROOT/portable-data.json` 为数据格式版本唯一事实（缺字段/未知字段/类型错误一律 fail closed），`prepare_portable_data()` 在取得单实例锁后、启动服务前完成检测与迁移；迁移先备份旧字节到 `data/backups/<时间戳>/files/`，再写同目录 `*.tmp`，最后 `os.replace` 原子提交并追加 `data/backups/migrations.log`，失败保留旧字节且可 `rollback_last_migration()`/`restore_backup_directory()` 显式回滚；`category_stats()`/`run_cleanup()` 按文档缓存、模型与上游缓存、字体、日志、临时文件分类统计与清理（存在 `data/runtime/instance.json` 时拒绝清理，分类根是 link/junction 时整体拒绝，子项是链接只删链接本身，绝不递归删除 data 之外的用户 PDF）；`import_portable_data()` 只从显式给出且与目标 data 根互不包含的非链接旧 data 根复制非易变数据，`config/`、`logs/`、`temp/`、`runtime/`、`pycache/`、`home/`、迁移备份与清单永不导入 |
 | `src/pdf_reader/portable_runtime.py` | 启动器/服务共享的纯标准库进程边界：构造不修改父进程的 child env，清除宿主 Python 覆盖，把虚拟 Home/Temp/缓存映射到 data，并验证冻结私有运行时；每次启动创建并清理带标记的服务 Temp；安全创建、验证和原子写入就绪描述符；提供不依赖 PID 的每次启动内核存活对象（Windows 随机命名 owned mutex + abandoned wait，POSIX 随机文件 `flock`）、服务 watchdog 与陈旧 POSIX 名称清理 |
 | `packaging/windows/runtime-requirements.lock` | P0-04 的 Python 3.12 仅运行时依赖闭包：由 `pyproject.toml` 解析并受总 `requirements.lock` 约束，136 个版本必须逐项一致；排除 pytest/coverage/mypy/pip-tools 与 pip/setuptools/wheel，`ruff` 因固定 Gradio/Xsdata 依赖图的运行时要求保留并在发行说明中显式解释 |
 | `packaging/windows/runtime_policy.py` | 纯标准库发行策略门：静态扫描生产源码，拒绝导入 pip/ensurepip/venv/setuptools/wheel、拒绝未批准的进程启动和系统 Python/pip 启动；P2 构建后扫描最终 onedir，拒绝系统解释器、安装工具及纯开发包，并校验 `app/runtime-manifest.json` 的 commit、Python 3.12 patch、私有服务哈希、锁文件哈希以及完整包版本/wheel SHA-256 与运行时锁一致 |
+| `packaging/windows/data_policy.py` | P1-03 纯标准库发行数据策略门（P2-01 构建时对最终 onedir 执行）：拒绝发行树中的任何 `data/` 内容（空 `data/` 目录骨架允许）、泄漏到顶层的开发目录、用户 `config.toml`、`portable-data.json` 清单、`launcher.log`/`instance.json`/`migrations.log` 打点文件与 `.safetensors`/`.gguf`/`.onnx`/`.ckpt`/`.pt` 模型权重；同时审计用户发行说明，要求同一段内明确“删除整个便携目录会删除配置和缓存”并给出旧 `data` 的复制/受控导入说明 |
 | `docs/governance/portable-upstream-write-contract.md` | P0-03 固定版本上游写入清单：BabelDOC 模型/字体/CMap/tiktoken/SQLite、pdf2zh-next 配置与 SQLite、huggingface-hub、Python Temp/pycache 的求值时机、控制方式、data 内目标和失败/取消/崩溃语义；依赖升级门必须同步验证 |
 | `src/pdf_reader/cache_ops.py` | 任务临时工作区所有权（每任务 cache 根 workspace：input/output+标记创建与失败清理）、缓存分类、只读统计与孤儿工作区清理：固定前缀/标记校验、Windows 安全 PID 存活探测、dry-run 清理边界与启动恢复 |
 | `pyproject.toml` | P2-01/P2-04 可安装包与依赖契约：setuptools src 布局、`project.dependencies` 唯一直接依赖声明、`project.optional-dependencies.dev`（pytest/Ruff/coverage/mypy/pip-tools）、PEP 639 许可证（AGPL-3.0-only + LICENSE） |
@@ -85,6 +87,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/routes.py` | Blueprint HTTP/SSE 端点（含配置中心、首次配置状态、术语管理与前端错误上报）；统一 JSON 错误契约（`code`+`error`）、404/HTTPException/500 处理器，术语/配置/错误上报 loopback-only 守卫，以及翻译与术语写入共享的 active-job 互斥边界；首次配置时全局 guard 只允许根页面、静态资源、`/api/config`、`/api/setup/status` 和令牌化健康接口，其余 API 固定返回 503 `setup_required` |
 | `src/pdf_reader/state.py` | `AppState`：不可变文档会话身份、锁内翻译快照、左右文档、缓存路径、哈希、页数/尺寸、翻译页集合、阅读进度、非重入锁 |
 | `scripts/cache_manage.py` | 缓存只读统计与孤儿临时工作区清理 CLI：`stats`（只读/可 `--json`）、`orphans`、`clean`（默认 dry-run，`--yes` 才删除） |
+| `scripts/portable_data.py` | P1-03 便携数据治理 CLI：`status`（只读显示数据格式版本、迁移备份数与文档缓存/模型与上游缓存/字体/日志/临时文件的大小、文件数与删除后果）、`clean --category ...`/`--all`（默认只预览，`--yes` 才删除）、`import --from OLD_DATA`（默认只预览，`--yes` 才复制，`--overwrite` 才覆盖同名文件）、`rollback [--backup DIR]`（必须 `--yes`）；`--portable-root` 用于对指定便携根诊断，稳定错误码原样透出 |
 | `src/pdf_reader/file_hash.py` | `sha256()` 流式文件哈希 |
 | `src/pdf_reader/pdf_renderer.py` | `render_page()` 在锁内渲染页面为 PNG |
 | `src/pdf_reader/pdf_extraction.py` | `extract_single_page()` / `extract_pages()` 在锁内抽取临时输入 PDF |
@@ -468,6 +471,45 @@ job/document identity 下复用同一
 - 当前源码已经固定双进程协议与 PyInstaller 入口职责；真正生成两个 EXE、证明
   私有解释器/依赖的最终二进制来源以及最终 ZIP/干净机验证仍分别属于 P2-01、
   P2-02。开发入口 `start.bat` 和 `python -m pdf_reader` 不进入此双进程路径。
+
+### 便携数据版本、迁移、导入与清理（P1-03）
+
+- 数据格式版本只由 `DATA_ROOT/portable-data.json`（`schema_version`、`product`、
+  `app_version`、`created_at`、`updated_at`、`applied_migrations`）决定：缺失记为
+  `absent`（首次启动采纳为 v1），低于当前版本记为 `outdated`（启动时迁移），等于当前
+  版本时完全不动字节，字段缺失/未知/类型错误记 `invalid` 并拒绝启动，高于本程序支持的
+  版本记 `newer` 并以 `portable_data_schema_newer` 拒绝启动而不是降级改写。
+- `prepare_portable_data()` 的调用位置固定在 `portable_launcher` 取得内核单实例锁
+  之后、启动 `app/PDF Reader Service.exe` 之前，因此第二次启动只走既有实例激活路径，
+  不会重复迁移或并发改写同一个数据根；便携数据准备失败以 `portable_data_unavailable`
+  结束启动。启动器另有隐藏数据命令（`--data-report`、`--clean CATEGORY...`、
+  `--import-data PATH`），它们同样只在取得锁之后执行，且不启动服务进程。
+- 迁移由 `DataMigrationTxn` 完成：先把旧清单原字节写入
+  `data/backups/<UTC 时间戳>/files/` 并写 `state.json` 账本，再在同目录写 `*.tmp`，最后
+  `os.replace` 原子提交，提交后追加 `data/backups/migrations.log`。任何一步失败都保留旧
+  数据文件、丢弃未提交的临时文件，因此旧版本仍可启动；`rollback_last_migration()` 按
+  账本逆序恢复最近一次已提交迁移并删除清单，`restore_backup_directory()` 支持指定备份，
+  命令行入口 `scripts/portable_data.py rollback --yes`。
+- 分类清理只作用于规范化 data root 的**直接子项**，分类固定为 `documents`（文档缓存，
+  不可重建）、`models`（`models/` + `upstream-cache/`）、`fonts`、`logs`、`temp`；每类
+  都携带稳定 `consequence` 文案供命令/界面显示大小与后果。存在
+  `data/runtime/instance.json`（可能仍有实例在运行）时拒绝清理；分类根是符号链接/
+  junction 时整体拒绝（`portable_data_cleanup_root_is_link`），子项是链接时只删除链接
+  本身；所有目标先经 data 物理边界守卫，因此绝不递归删除 data 之外的用户 PDF。清理必须
+  显式给出分类，默认 dry-run，只有 `--yes` 才真正删除。
+- 受控导入只读取用户显式给出的旧 `data` 根，要求该根与目标 data 根互不包含且不是链接；
+  逐条跳过链接、清单与易变状态（`config/`、`logs/`、`temp/`、`runtime/`、`pycache/`、
+  `home/`、`backups/`），非 dry-run 时以临时文件 + 原子替换复制，因此模型、上游缓存、
+  字体与文档缓存可整体复用而无需重新下载；目标已存在同名文件时默认跳过，`--overwrite`
+  才覆盖，`config/config.toml` 永不自动导入。
+- 发行包契约由 `packaging/windows/data_policy.py` 锁定：发行树不得包含真实 `data/`
+  内容、用户配置、模型权重与文档缓存，用户发行说明必须明确“删除整个便携目录会删除配置
+  和缓存”并给出旧 `data` 的复制/受控导入方式；原地覆盖升级只替换 `app/` 与启动器，
+  `data/` 从不进入发行包。
+- 核验日期：2026-09-11（P1-03）；上述行为由 `tests/release/test_portable_data.py`、
+  `tests/release/test_portable_data_cli.py`、`tests/release/test_data_policy.py` 与
+  `tests/release/test_portable_launcher.py` 的定向回归覆盖。真实 ZIP、干净机升级与最终
+  发行物审计仍属于 P2-01/P2-02。
 
 1. `python -m pdf_reader` 进入 `app.main(argv=None)`：模块导入不解析 CLI、不修改 `config.DEBUG`；CLI 解析只发生在该启动边界内，`__main__.py` 的 `main()` 调用受 `if __name__ == "__main__"` 守卫保护，`import pdf_reader.__main__` 同样无副作用。`--debug` 与 `--no-debug` 互斥。
 2. `config.resolve_server_config(cli_debug=...)` 按优先级 CLI `--debug`/`--no-debug` > 环境变量 `PDF_READER_DEBUG` > `[server].debug` > 默认 `false` 解析一次，返回 frozen `ServerConfig(host, port, debug)`；`use_reloader` 恒为 `False`——`debug` 只表示“详细诊断日志模式”（日志 DEBUG + debug_trace），不再控制 Flask debugger/reloader。
