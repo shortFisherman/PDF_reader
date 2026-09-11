@@ -27,6 +27,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from pdf_reader import paths
 from pdf_reader.portable_runtime import INSTANCE_RECORD_NAME
@@ -46,6 +47,7 @@ CODE_MANIFEST_INVALID = "portable_data_manifest_invalid"
 CODE_BACKUP_MISSING = "portable_data_backup_missing"
 CODE_BACKUP_INCOMPLETE = "portable_data_backup_incomplete"
 CODE_WRITE_FAILED = "portable_data_write_failed"
+CODE_RECOVERY_FAILED = "portable_data_recovery_failed"
 CODE_TARGET_IS_LINK = "portable_data_target_is_link"
 CODE_CLEANUP_CATEGORY_REQUIRED = "portable_data_cleanup_category_required"
 CODE_CLEANUP_CATEGORY_UNKNOWN = "portable_data_cleanup_category_unknown"
@@ -350,6 +352,14 @@ class DataMigrationTxn:
     备份目录在构造时创建且名字唯一（时间戳 + 随机后缀），绝不覆盖既有备份；
     ``replace_file()`` 先保存旧字节，再原子替换；``commit()`` 写出 ``state.json``，
     只有带 ``state.json`` 的备份目录才会被回滚采用。
+
+    未提交事务在任一步失败时必须把已经替换过的目标恢复原状，否则会出现“目标已是
+    新字节、备份却没有 ``state.json``”的不一致状态：``replace_file()``/``commit()``
+    失败会立即恢复，``with`` 语句另外兜住两步之间的意外异常。恢复只作用于本事务
+    真正写过的目标（失败的原子替换没有改动字节，因此不算），按逆序写回旧字节或删除
+    本事务新建的文件，并遵守同一条 data root 边界、链接拒绝与原子写语义。恢复本身
+    失败时抛 ``portable_data_recovery_failed``，携带备份目录与未恢复目标供人工恢复，
+    绝不静默声称成功。
     """
 
     def __init__(
@@ -367,12 +377,22 @@ class DataMigrationTxn:
         self._app_version = app_version
         self._clock = clock
         self._entries: dict[str, _BackupEntry] = {}
+        self._applied: dict[str, _BackupEntry] = {}
         self._committed = False
+        self._recovery_done = False
         self.backup_dir = self._create_backup_directory()
 
     @property
     def committed(self) -> bool:
         return self._committed
+
+    def __enter__(self) -> DataMigrationTxn:
+        return self
+
+    def __exit__(self, exc_type: object, exc: BaseException | None, traceback: object) -> Literal[False]:
+        if exc is not None:
+            self._recover_uncommitted(exc)
+        return False
 
     def _create_backup_directory(self) -> Path:
         root = backup_root(self._layout)
@@ -408,7 +428,13 @@ class DataMigrationTxn:
                 label=label,
                 existed_before=existed_before,
             )
-        _write_atomic(resolved, new_bytes)
+        try:
+            _write_atomic(resolved, new_bytes)
+        except (PortableDataError, OSError) as exc:
+            # 这一次替换没有改动字节，恢复只处理此前真正写成功的同类目标。
+            self._recover_uncommitted(exc)
+            raise
+        self._applied[relative] = self._entries[relative]
         return resolved
 
     def commit(self) -> None:
@@ -431,11 +457,70 @@ class DataMigrationTxn:
                 for entry in self._entries.values()
             ],
         }
-        _write_atomic(
-            self.backup_dir / BACKUP_STATE_NAME,
-            json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n",
-        )
+        try:
+            _write_atomic(
+                self.backup_dir / BACKUP_STATE_NAME,
+                json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n",
+            )
+        except (PortableDataError, OSError) as exc:
+            # 没有 state.json 的备份不会被 rollback 采用，因此必须在此刻恢复已替换目标。
+            self._recover_uncommitted(exc)
+            raise
         self._committed = True
+
+    def _restore_entry(self, entry: _BackupEntry) -> None:
+        """恢复单个已替换目标：旧文件写回旧字节，原先不存在则删除新文件。"""
+
+        target = _guard_in_data_root(
+            self._layout,
+            self._layout.data_root / entry.relative,
+            label="恢复目标",
+        )
+        if _is_link(target):
+            raise PortableDataError(f"拒绝通过链接恢复数据文件：{target}", code=CODE_TARGET_IS_LINK)
+        if entry.existed_before:
+            source = self.backup_dir / BACKUP_FILES_NAME / entry.relative
+            if not source.is_file() or _is_link(source):
+                raise PortableDataError(
+                    f"备份缺少 {entry.relative} 的旧字节，无法自动恢复",
+                    code=CODE_BACKUP_INCOMPLETE,
+                )
+            try:
+                payload = source.read_bytes()
+            except OSError as exc:
+                raise PortableDataError(
+                    f"读取备份失败，无法自动恢复 {entry.relative}：{exc}",
+                    code=CODE_BACKUP_INCOMPLETE,
+                ) from exc
+            _write_atomic(target, payload)
+            return
+        if target.exists():
+            _remove_entry(target)
+
+    def _recover_uncommitted(self, cause: BaseException) -> None:
+        """把未提交事务写过的目标恢复原状；恢复不完整则升级为人工恢复错误。"""
+
+        if self._committed or self._recovery_done:
+            return
+        self._recovery_done = True
+        failures: list[str] = []
+        for entry in reversed(tuple(self._applied.values())):
+            try:
+                self._restore_entry(entry)
+            except (PortableDataError, OSError, paths.PathStrategyError) as exc:
+                failures.append(f"{entry.relative}（{exc}）")
+        if failures:
+            raise PortableDataError(
+                "便携数据迁移未提交且自动恢复不完整，data 处于不一致状态，需要人工恢复："
+                f"备份目录={self.backup_dir}；未恢复目标={'; '.join(failures)}；原始错误={cause}",
+                code=CODE_RECOVERY_FAILED,
+            ) from cause
+        if self._applied:
+            _append_migration_log(
+                self._layout,
+                f"{_timestamp(self._clock)} portable-data-recovery-completed "
+                f"restored={len(self._applied)} backup={self.backup_dir.name}",
+            )
 
 
 def _read_backup_state(directory: Path) -> _BackupState:
@@ -619,25 +704,25 @@ def prepare_portable_data(
         applied = (LEDGER_ADOPT,)
     else:
         applied = (*previous.applied_migrations, f"schema-v{from_version}-to-v{SCHEMA_VERSION}")
-    txn = DataMigrationTxn(
+    with DataMigrationTxn(
         layout,
         from_version=from_version,
         to_version=SCHEMA_VERSION,
         app_version=app_version,
         clock=clock,
-    )
-    txn.replace_file(
-        manifest_path(layout),
-        _manifest_payload(
-            schema_version=SCHEMA_VERSION,
-            app_version=app_version,
-            created_at=now if previous is None else previous.created_at,
-            updated_at=now,
-            applied=applied,
-        ),
-        label="数据格式清单",
-    )
-    txn.commit()
+    ) as txn:
+        txn.replace_file(
+            manifest_path(layout),
+            _manifest_payload(
+                schema_version=SCHEMA_VERSION,
+                app_version=app_version,
+                created_at=now if previous is None else previous.created_at,
+                updated_at=now,
+                applied=applied,
+            ),
+            label="数据格式清单",
+        )
+        txn.commit()
     event = "portable-data-adopted" if adopted else "portable-data-migrated"
     _append_migration_log(
         layout,

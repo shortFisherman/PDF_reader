@@ -308,6 +308,105 @@ class TestMigrationTransaction:
         assert not external.exists()
 
 
+class TestUncommittedMigrationRecovery:
+    """state.json 写失败时不得留下“目标已换新字节、备份却没有账本”的不一致状态。"""
+
+    def _fail_state_write(self, monkeypatch, *, fail_restore: bool = False) -> None:
+        """manifest 正常原子替换、state.json 的 os.replace 失败；可选让后续恢复也失败。"""
+
+        original_replace = portable_data.os.replace
+        manifest_name = portable_data.MANIFEST_NAME
+        manifest_replaces = 0
+
+        def failing_replace(source, destination) -> None:  # noqa: ANN001 - 模拟原子替换失败
+            nonlocal manifest_replaces
+            name = Path(destination).name
+            if name == portable_data.BACKUP_STATE_NAME:
+                raise OSError("simulated state.json write failure")
+            if name == manifest_name:
+                manifest_replaces += 1
+                if fail_restore and manifest_replaces > 1:
+                    raise OSError("simulated automatic restore failure")
+            original_replace(source, destination)
+
+        monkeypatch.setattr(portable_data.os, "replace", failing_replace)
+
+    def test_state_write_failure_restores_the_previous_manifest(self, tmp_path, monkeypatch):
+        layout = make_layout(tmp_path)
+        path = write_raw_manifest(
+            layout,
+            json.dumps(manifest_payload(schema_version=0, applied_migrations=[])),
+        )
+        previous_bytes = path.read_bytes()
+        self._fail_state_write(monkeypatch)
+
+        with pytest.raises(portable_data.PortableDataError) as excinfo:
+            portable_data.prepare_portable_data(layout, app_version="1.0.0", clock=fixed_clock)
+
+        assert excinfo.value.code == "portable_data_write_failed"
+        assert path.read_bytes() == previous_bytes
+        assert portable_data.detect_schema(layout).state == "outdated"
+        assert temp_leftovers(layout.data_root) == []
+        # 未提交的备份没有 state.json，因此 rollback 不会采用它：这正是必须自动恢复的原因。
+        with pytest.raises(portable_data.PortableDataError) as backup_excinfo:
+            portable_data.rollback_last_migration(layout)
+        assert backup_excinfo.value.code == "portable_data_backup_missing"
+
+    def test_state_write_failure_during_first_adoption_removes_the_new_manifest(self, tmp_path, monkeypatch):
+        layout = make_layout(tmp_path)
+        translated = write_file(layout.data_root / "documents" / "abc" / "right.pdf", b"%PDF-1.4 translated")
+        self._fail_state_write(monkeypatch)
+
+        with pytest.raises(portable_data.PortableDataError) as excinfo:
+            portable_data.prepare_portable_data(layout, app_version="1.0.0", clock=fixed_clock)
+
+        assert excinfo.value.code == "portable_data_write_failed"
+        assert not portable_data.manifest_path(layout).exists()
+        assert portable_data.detect_schema(layout).state == "absent"
+        assert translated.read_bytes() == b"%PDF-1.4 translated"
+        assert temp_leftovers(layout.data_root) == []
+
+    def test_incomplete_recovery_reports_inconsistency_and_keeps_the_backup(self, tmp_path, monkeypatch):
+        layout = make_layout(tmp_path)
+        path = write_raw_manifest(
+            layout,
+            json.dumps(manifest_payload(schema_version=0, applied_migrations=[])),
+        )
+        previous_bytes = path.read_bytes()
+        self._fail_state_write(monkeypatch, fail_restore=True)
+
+        with pytest.raises(portable_data.PortableDataError) as excinfo:
+            portable_data.prepare_portable_data(layout, app_version="1.0.0", clock=fixed_clock)
+
+        assert excinfo.value.code == "portable_data_recovery_failed"
+        message = str(excinfo.value)
+        assert "需要人工恢复" in message
+        assert str(portable_data.backup_root(layout)) in message
+        assert portable_data.MANIFEST_NAME in message
+        assert excinfo.value.__cause__ is not None
+        # 不静默声称成功：磁盘上是新字节，备份里保留可人工恢复的旧字节。
+        assert json.loads(path.read_text(encoding="utf-8"))["schema_version"] == portable_data.SCHEMA_VERSION
+        backups = backup_directories(layout)
+        assert len(backups) == 1
+        assert (backups[0] / "files" / portable_data.MANIFEST_NAME).read_bytes() == previous_bytes
+
+    def test_uncommitted_transaction_restores_targets_when_the_caller_fails(self, tmp_path):
+        layout = make_layout(tmp_path)
+        existing = write_file(layout.data_root / "config" / "config.toml", b"old")
+        created = layout.data_root / "documents" / "hash1" / "progress.json"
+
+        with pytest.raises(RuntimeError, match="boom"):
+            with portable_data.DataMigrationTxn(layout, from_version=0, to_version=1, app_version="1.0.0") as txn:
+                txn.replace_file(existing, b"new", label="配置")
+                txn.replace_file(created, b"new", label="进度")
+                raise RuntimeError("boom")
+
+        assert not txn.committed
+        assert existing.read_bytes() == b"old"
+        assert not created.exists()
+        assert temp_leftovers(layout.data_root) == []
+
+
 class TestCleanupCategories:
     def _populate(self, layout: paths.RuntimeLayout) -> dict[str, Path]:
         return {

@@ -65,7 +65,7 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | `src/pdf_reader/portable_launcher.py` | 顶层 `PDF Reader.exe` 的纯启动器逻辑：保持真实用户环境、从自身位置建立便携布局、以内核单实例锁判定所有权（第二次启动只验证并激活既有实例，绝不启动第二个服务，也不结束他人进程）、只启动 `app/PDF Reader Service.exe`、以 data 内原子就绪描述符和令牌化 loopback 健康检查等待服务、由父进程打开默认浏览器；就绪后固定提供三按钮控制窗口（打开阅读器/打开日志/退出程序），默认窗口不可用时稳定失败并协作关闭服务，只有显式 `--no-ui` 才允许无窗口诊断；退出时先请求服务协作关闭（停止接受新任务 → 取消/等待当前任务 → 关闭 AppState），只有超时才兜底结束本启动器自己启动的进程，启动失败/中断时同样有界 terminate→kill 回收 |
 | `src/pdf_reader/portable_instance.py` | 纯标准库单实例协调层（顶层启动器在导入任何应用代码前使用）：Windows 命名互斥体 / POSIX `flock` 是“实例正在运行”的唯一权威，进程死亡即由内核释放，崩溃或强制结束都不会留下陈旧锁；`DATA_ROOT/runtime/instance.json` 只是二次启动激活用的建议性记录（PID、启动器控制端点与令牌、服务端点、健康令牌、服务控制令牌），写入前经 data 物理边界与逐字段严格校验，读取方只有在令牌认证健康探测通过后才信任它，正常退出即删除 |
 | `src/pdf_reader/portable_service.py` | `PDF Reader Service.exe` 的延迟导入引导入口：先验证受控子进程环境与冻结私有运行时、准备并安装便携布局，再动态导入 `pdf_reader.app`；引导模块本身不导入 Flask、pdf2zh-next 或 BabelDOC |
-| `src/pdf_reader/portable_data.py` | P1-03 便携数据治理（只依赖标准库、`paths` 与 `portable_runtime`，因此启动器可在导入应用/上游代码前调用）：以 `DATA_ROOT/portable-data.json` 为数据格式版本唯一事实（缺字段/未知字段/类型错误一律 fail closed），`prepare_portable_data()` 在取得单实例锁后、启动服务前完成检测与迁移；迁移先备份旧字节到 `data/backups/<时间戳>/files/`，再写同目录 `*.tmp`，最后 `os.replace` 原子提交并追加 `data/backups/migrations.log`，失败保留旧字节且可 `rollback_last_migration()`/`restore_backup_directory()` 显式回滚；`category_stats()`/`run_cleanup()` 按文档缓存、模型与上游缓存、字体、日志、临时文件分类统计与清理（存在 `data/runtime/instance.json` 时拒绝清理，分类根是 link/junction 时整体拒绝，子项是链接只删链接本身，绝不递归删除 data 之外的用户 PDF）；`import_portable_data()` 只从显式给出且与目标 data 根互不包含的非链接旧 data 根复制非易变数据，`config/`、`logs/`、`temp/`、`runtime/`、`pycache/`、`home/`、迁移备份与清单永不导入 |
+| `src/pdf_reader/portable_data.py` | P1-03 便携数据治理（只依赖标准库、`paths` 与 `portable_runtime`，因此启动器可在导入应用/上游代码前调用）：以 `DATA_ROOT/portable-data.json` 为数据格式版本唯一事实（缺字段/未知字段/类型错误一律 fail closed），`prepare_portable_data()` 在取得单实例锁后、启动服务前完成检测与迁移；迁移先备份旧字节到 `data/backups/<时间戳>/files/`，再写同目录 `*.tmp`，最后 `os.replace` 原子提交并追加 `data/backups/migrations.log`；未提交失败会逆序恢复已替换目标（恢复不完整抛 `portable_data_recovery_failed` 并给出手工恢复信息），已提交迁移可 `rollback_last_migration()`/`restore_backup_directory()` 显式回滚；`category_stats()`/`run_cleanup()` 按文档缓存、模型与上游缓存、字体、日志、临时文件分类统计与清理（存在 `data/runtime/instance.json` 时拒绝清理，分类根是 link/junction 时整体拒绝，子项是链接只删链接本身，绝不递归删除 data 之外的用户 PDF）；`import_portable_data()` 只从显式给出且与目标 data 根互不包含的非链接旧 data 根复制非易变数据，`config/`、`logs/`、`temp/`、`runtime/`、`pycache/`、`home/`、迁移备份与清单永不导入 |
 | `src/pdf_reader/portable_runtime.py` | 启动器/服务共享的纯标准库进程边界：构造不修改父进程的 child env，清除宿主 Python 覆盖，把虚拟 Home/Temp/缓存映射到 data，并验证冻结私有运行时；每次启动创建并清理带标记的服务 Temp；安全创建、验证和原子写入就绪描述符；提供不依赖 PID 的每次启动内核存活对象（Windows 随机命名 owned mutex + abandoned wait，POSIX 随机文件 `flock`）、服务 watchdog 与陈旧 POSIX 名称清理 |
 | `packaging/windows/runtime-requirements.lock` | P0-04 的 Python 3.12 仅运行时依赖闭包：由 `pyproject.toml` 解析并受总 `requirements.lock` 约束，136 个版本必须逐项一致；排除 pytest/coverage/mypy/pip-tools 与 pip/setuptools/wheel，`ruff` 因固定 Gradio/Xsdata 依赖图的运行时要求保留并在发行说明中显式解释 |
 | `packaging/windows/runtime_policy.py` | 纯标准库发行策略门：静态扫描生产源码，拒绝导入 pip/ensurepip/venv/setuptools/wheel、拒绝未批准的进程启动和系统 Python/pip 启动；P2 构建后扫描最终 onedir，拒绝系统解释器、安装工具及纯开发包，并校验 `app/runtime-manifest.json` 的 commit、Python 3.12 patch、私有服务哈希、锁文件哈希以及完整包版本/wheel SHA-256 与运行时锁一致 |
@@ -486,10 +486,15 @@ job/document identity 下复用同一
   `--import-data PATH`），它们同样只在取得锁之后执行，且不启动服务进程。
 - 迁移由 `DataMigrationTxn` 完成：先把旧清单原字节写入
   `data/backups/<UTC 时间戳>/files/` 并写 `state.json` 账本，再在同目录写 `*.tmp`，最后
-  `os.replace` 原子提交，提交后追加 `data/backups/migrations.log`。任何一步失败都保留旧
-  数据文件、丢弃未提交的临时文件，因此旧版本仍可启动；`rollback_last_migration()` 按
-  账本逆序恢复最近一次已提交迁移并删除清单，`restore_backup_directory()` 支持指定备份，
-  命令行入口 `scripts/portable_data.py rollback --yes`。
+  `os.replace` 原子提交，提交后追加 `data/backups/migrations.log`。未提交事务在任一步
+  失败时不允许把“新字节 + 没有 `state.json` 的备份”留在磁盘上：`replace_file()`/`commit()`
+  失败会立即逆序恢复本事务真正写过的目标（旧文件写回旧字节，本事务新建的文件删除），
+  `with` 语句另外兜住两步之间的意外异常，恢复沿用同一条 data root 边界、链接拒绝与原子
+  写语义；恢复本身失败时抛 `portable_data_recovery_failed`，消息携带备份目录、未恢复目标
+  与原始错误供人工恢复，绝不静默声称成功（恢复成功则追加
+  `portable-data-recovery-completed`，未提交的备份目录保留但不被回滚采用）。已提交迁移由
+  `rollback_last_migration()` 按账本逆序恢复并删除清单，`restore_backup_directory()` 支持
+  指定备份，命令行入口 `scripts/portable_data.py rollback --yes`。
 - 分类清理只作用于规范化 data root 的**直接子项**，分类固定为 `documents`（文档缓存，
   不可重建）、`models`（`models/` + `upstream-cache/`）、`fonts`、`logs`、`temp`；每类
   都携带稳定 `consequence` 文案供命令/界面显示大小与后果。存在
@@ -506,10 +511,12 @@ job/document identity 下复用同一
   内容、用户配置、模型权重与文档缓存，用户发行说明必须明确“删除整个便携目录会删除配置
   和缓存”并给出旧 `data` 的复制/受控导入方式；原地覆盖升级只替换 `app/` 与启动器，
   `data/` 从不进入发行包。
-- 核验日期：2026-09-11（P1-03）；上述行为由 `tests/release/test_portable_data.py`、
+- 核验日期：2026-09-11（P1-03，含当日未提交事务自动恢复修复）；上述行为由
+  `tests/release/test_portable_data.py`（事务恢复由 `TestUncommittedMigrationRecovery`
+  覆盖 `state.json` 写失败、首次采纳失败与恢复不完整三条路径）、
   `tests/release/test_portable_data_cli.py`、`tests/release/test_data_policy.py` 与
-  `tests/release/test_portable_launcher.py` 的定向回归覆盖。真实 ZIP、干净机升级与最终
-  发行物审计仍属于 P2-01/P2-02。
+  `tests/release/test_portable_launcher.py` 的定向回归覆盖（99 passed）。真实 ZIP、干净机
+  升级与最终发行物审计仍属于 P2-01/P2-02。
 
 1. `python -m pdf_reader` 进入 `app.main(argv=None)`：模块导入不解析 CLI、不修改 `config.DEBUG`；CLI 解析只发生在该启动边界内，`__main__.py` 的 `main()` 调用受 `if __name__ == "__main__"` 守卫保护，`import pdf_reader.__main__` 同样无副作用。`--debug` 与 `--no-debug` 互斥。
 2. `config.resolve_server_config(cli_debug=...)` 按优先级 CLI `--debug`/`--no-debug` > 环境变量 `PDF_READER_DEBUG` > `[server].debug` > 默认 `false` 解析一次，返回 frozen `ServerConfig(host, port, debug)`；`use_reloader` 恒为 `False`——`debug` 只表示“详细诊断日志模式”（日志 DEBUG + debug_trace），不再控制 Flask debugger/reloader。

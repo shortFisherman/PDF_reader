@@ -135,8 +135,16 @@ activates the existing instance and never migrates concurrently.  A migration ba
 up the old manifest bytes under `data/backups/<timestamp>/files/`, writes a sibling
 `*.tmp` file and commits with an atomic replace (`DataMigrationTxn.commit`); a
 failure keeps the old bytes and the failed temporary file is discarded, so the old
-version still starts.  Stable codes are `portable_data_manifest_invalid`,
-`portable_data_schema_newer` and `portable_data_write_failed`; a newer schema is
+version still starts.  A failure *before* `commit()` must never leave new bytes
+behind with no ledger: `replace_file()`/`commit()` restore every target this
+transaction really replaced (old bytes written back, files created by this
+transaction deleted) in reverse order, and the `with` statement covers unexpected
+exceptions between the two steps, so an uncommitted migration rolls itself back.
+If that automatic restore fails, the run stops with
+`portable_data_recovery_failed`, naming the backup directory and the unrestored
+targets for manual recovery, instead of reporting success.  Stable codes are
+`portable_data_manifest_invalid`, `portable_data_schema_newer`,
+`portable_data_write_failed` and `portable_data_recovery_failed`; a newer schema is
 refused instead of downgraded.  `python scripts/portable_data.py rollback --yes`
 (optionally `--backup DIR`) reverses the recorded file operations of the last
 committed migration so the previous version can start again.
