@@ -62,7 +62,8 @@ P1-01 起，候选术语提取与正文翻译解耦：正文严格路径固定�
 | 路径 | 职责 |
 |---|---|
 | `src/pdf_reader/app.py` | 开发/服务共享的启动边界 `main(argv)`、`create_app(settings)` 装配 Flask 与全局 `AppState`、启动服务；开发入口继续对无效配置快速失败，便携服务则以安全默认 loopback 进入受限首次配置模式；便携服务通过进程私有随机令牌提供 `/api/health` 就绪验证；`src/pdf_reader/__main__.py` 提供 `python -m pdf_reader` 开发入口（导入无副作用，仅 `python -m` 时调用 `main`） |
-| `src/pdf_reader/portable_launcher.py` | 顶层 `PDF Reader.exe` 的纯启动器逻辑：保持真实用户环境、从自身位置建立便携布局、以内核单实例锁判定所有权（第二次启动只验证并激活既有实例，绝不启动第二个服务，也不结束他人进程）、只启动 `app/PDF Reader Service.exe`、以 data 内原子就绪描述符和令牌化 loopback 健康检查等待服务、由父进程打开默认浏览器；就绪后固定提供三按钮控制窗口（打开阅读器/打开日志/退出程序），默认窗口不可用时稳定失败并协作关闭服务，只有显式 `--no-ui` 才允许无窗口诊断；退出时先请求服务协作关闭（停止接受新任务 → 取消/等待当前任务 → 关闭 AppState），只有超时才兜底结束本启动器自己启动的进程，启动失败/中断时同样有界 terminate→kill 回收 |
+| `src/pdf_reader/portable_launcher.py` | 顶层 `PDF Reader.exe` 的纯启动器逻辑：保持真实用户环境、从自身位置建立便携布局、以内核单实例锁判定所有权（第二次启动只验证并激活既有实例，绝不启动第二个服务，也不结束他人进程）、只启动 `app/PDF Reader Service.exe`、以 data 内原子就绪描述符和令牌化 loopback 健康检查等待服务、由父进程打开默认浏览器；就绪后固定提供三按钮控制窗口（打开阅读器/打开日志/退出程序），默认窗口不可用时稳定失败并协作关闭服务，只有显式 `--no-ui` 才允许无窗口诊断；退出时先请求服务协作关闭（停止接受新任务 → 取消/等待当前任务 → 关闭 AppState），只有超时才兜底结束本启动器自己启动的进程，启动失败/中断时同样有界 terminate→kill 回收；双击路径的每个启动失败都会经 `portable_errors.FailureReporter` 记录稳定码，并在默认 UI 模式下显示错误窗口（可恢复错误提供对应入口，用户选择重试时重跑整条启动流程） |
+| `src/pdf_reader/portable_errors.py` | P1-04 发行态错误展示与安全诊断（只依赖标准库，可在导入应用/上游代码前导入）：`ERROR_CATALOG`/`describe_error()` 是稳定错误码到用户可读标题/说明/建议与恢复入口的唯一目录（未知码安全兜底），`REQUIRED_ERROR_CLASSES` 固定不可写目录、配置错误、端口冲突、资源缺失、模型下载失败与服务异常退出六类；`format_failure_message()` 是 `ERROR [code]: detail` 稳定行的唯一构造点；`sanitize_diagnostic_text()`/`build_diagnostics()` 生成只含版本、平台、错误码、相对日志位置与脱敏细节的可复制诊断；Tk 错误窗口固定提供复制诊断/打开日志/退出，可恢复错误另有打开配置目录、打开程序目录或重试启动 |
 | `src/pdf_reader/portable_instance.py` | 纯标准库单实例协调层（顶层启动器在导入任何应用代码前使用）：Windows 命名互斥体 / POSIX `flock` 是“实例正在运行”的唯一权威，进程死亡即由内核释放，崩溃或强制结束都不会留下陈旧锁；`DATA_ROOT/runtime/instance.json` 只是二次启动激活用的建议性记录（PID、启动器控制端点与令牌、服务端点、健康令牌、服务控制令牌），写入前经 data 物理边界与逐字段严格校验，读取方只有在令牌认证健康探测通过后才信任它，正常退出即删除 |
 | `src/pdf_reader/portable_service.py` | `PDF Reader Service.exe` 的延迟导入引导入口：先验证受控子进程环境与冻结私有运行时、准备并安装便携布局，再动态导入 `pdf_reader.app`；引导模块本身不导入 Flask、pdf2zh-next 或 BabelDOC |
 | `src/pdf_reader/portable_data.py` | P1-03 便携数据治理（只依赖标准库、`paths` 与 `portable_runtime`，因此启动器可在导入应用/上游代码前调用）：以 `DATA_ROOT/portable-data.json` 为数据格式版本唯一事实（缺字段/未知字段/类型错误一律 fail closed），`prepare_portable_data()` 在取得单实例锁后、启动服务前完成检测与迁移；迁移先备份旧字节到 `data/backups/<时间戳>/files/`，再写同目录 `*.tmp`，最后 `os.replace` 原子提交并追加 `data/backups/migrations.log`；未提交失败会逆序恢复已替换目标（恢复不完整抛 `portable_data_recovery_failed` 并给出手工恢复信息），已提交迁移可 `rollback_last_migration()`/`restore_backup_directory()` 显式回滚；`category_stats()`/`run_cleanup()` 按文档缓存、模型与上游缓存、字体、日志、临时文件分类统计与清理（存在 `data/runtime/instance.json` 时拒绝清理，分类根是 link/junction 时整体拒绝，子项是链接只删链接本身，绝不递归删除 data 之外的用户 PDF）；`import_portable_data()` 只从显式给出且与目标 data 根互不包含的非链接旧 data 根复制非易变数据，`config/`、`logs/`、`temp/`、`runtime/`、`pycache/`、`home/`、迁移备份与清单永不导入 |
@@ -471,6 +472,62 @@ job/document identity 下复用同一
 - 当前源码已经固定双进程协议与 PyInstaller 入口职责；真正生成两个 EXE、证明
   私有解释器/依赖的最终二进制来源以及最终 ZIP/干净机验证仍分别属于 P2-01、
   P2-02。开发入口 `start.bat` 和 `python -m pdf_reader` 不进入此双进程路径。
+
+### 发行态错误展示与安全诊断（P1-04）
+
+- 稳定错误码到用户可读文案只有一份事实来源：`src/pdf_reader/portable_errors.py` 的
+  `ERROR_CATALOG`。目录覆盖启动器、便携数据、服务引导与关闭通道实际会产生或发布的
+  每个 `code="..."` 字面量；未知码经 `describe_error()` 落到安全兜底并保留真实码。
+  不可写目录、配置错误、端口冲突、资源缺失、模型下载失败与服务异常退出六类由
+  `REQUIRED_ERROR_CLASSES` 固定映射到代表错误码。
+- `format_failure_message()` 是 `ERROR [code]: detail` 稳定行的唯一构造点：启动器
+  stderr、`data/logs/launcher.log` 与隐藏数据命令共用它，因此发行态与
+  `python -m pdf_reader`、`start.bat` 的错误语义不漂移；启动器退出码维持
+  0/2/3/4/5/6/7/130 不变，布局阶段失败也保留底层稳定码（例如
+  `portable_data_not_writable`），不再笼统折叠为 `portable_layout_unavailable`。
+- 双击路径（`main()` 未传 `--no-ui`）在启动失败后显示 Tk 错误窗口：显示标题、
+  可读说明与建议，并固定提供“复制诊断信息 / 打开日志目录 /（可恢复入口）/ 退出”。
+  可恢复入口由文案目录给出：打开配置目录（`config_invalid`）、打开程序目录（目录与
+  缺失资源类错误）或重试启动（端口冲突、就绪超时、服务异常退出与激活类错误）；
+  选择“重试启动”会重新执行整条启动流程。`--no-ui` 诊断模式只写 stderr 与日志，
+  不创建窗口，也不改变退出码。
+- 错误窗口不可用（没有图形会话或 Tk/Tcl 缺失）时只追加稳定码
+  `launcher_error_window_unavailable` 并保持原退出码；窗口构造或运行异常同样只退化
+  到日志。
+- 诊断文本由 `build_diagnostics()` 构造，只包含应用版本、生成时间、平台标签、错误码、
+  文案、退出码、相对日志位置（`data/logs/launcher.log`）与脱敏后的原始细节。
+  `sanitize_diagnostic_text()` 在生成前移除 API Key、Bearer token、
+  `X-PDF-Reader-*` 令牌头、命名密钥/令牌键值、Prompt/正文键值与不透明长令牌，并把
+  便携根、用户目录与系统临时目录替换为占位符，同时剥离控制字符并限长；因此诊断不含
+  控制/健康令牌、用户名绝对路径或文档正文。错误窗口只展示目录文案，原始异常文本仅
+  经脱敏后进入可复制诊断，不直接显示。
+- 三个失败阶段由三个不同界面呈现，不互相冒充：**启动阶段**失败（目录不可写、端口冲突、
+  资源缺失、服务异常退出、激活失败等）由启动器错误窗口呈现；**配置问题**由便携服务的
+  受限配置页（P1-01 setup 模式）呈现；**运行期模型/字体下载失败**由浏览器翻译状态区
+  呈现。
+- 运行期下载失败有真实的稳定码来源，不是只存在于文案目录里的空码：`sse_stream` 在单页
+  与批量共享的 `format_sse_event()` 里，对上游 `error` 事件调用 `classify_upstream_error()`
+  做保守判定——原始错误文本必须同时命中“下载动作或明确的下载来源”（如 `download`、
+  `huggingface`/`hf_hub`/`snapshot_download`/`modelscope`/`tiktoken`/`babeldoc`/字体/`.onnx`）
+  与“失败或连接类标志”（fail/timeout/connect/offline/SSL 等，中英文均可）才归类为
+  `model_download_failed`，并只回显固定中文消息
+  （`MODEL_DOWNLOAD_FAILED_MESSAGE`）；其余上游错误保持既有 `translation_error` +
+  “上游翻译失败”语义。`classify_upstream_error()` 只读原始文本、只返回固定文案，
+  SSE 响应、服务端日志与诊断都不携带原始异常正文：单页与批量共用的 `generate()`/
+  `generate_batch()` error 分支只记录分类后的稳定码（`code=...`）与既有安全 task metadata，
+  `evt.get("error")` 原文不再进入日志。`_upstream_error_text()` 的嵌套深度与容器条目数
+  （`MAXIMUM_UPSTREAM_ERROR_DEPTH`、`MAXIMUM_UPSTREAM_ERROR_ITEMS`）都有界，容器 `get` 或
+  对象 `__str__` 抛异常时退化为空串，因此畸形事件不会打断 SSE 流。该稳定码与
+  `portable_errors.ERROR_CATALOG` 的 `model_download_failed` 是同一个码。
+- 错误窗口的“复制诊断信息”在 `clipboard_clear()`/`clipboard_append()` 之后调用一次
+  `update()`（无该方法时退化为 `update_idletasks()`）：Windows 上 Tk 只有处理过一次事件
+  循环才真正接管剪贴板所有权，否则窗口关闭后剪贴板内容会丢失。
+- 首版不实现诊断包（ZIP 打包）：唯一诊断导出是用户显式触发的“复制诊断信息”，其
+  收集范围就是上述安全文本，不读取 PDF、Prompt、配置密钥或任何 data 之外的用户文件。
+- 核验日期：2026-09-11（P1-04）；上述行为由 `tests/release/test_portable_errors.py`、
+  `tests/release/test_portable_launcher.py` 与 `tests/test_sse_stream.py` 的定向回归覆盖
+  （文案目录漂移、诊断脱敏、窗口按钮与恢复入口、剪贴板事件循环、启动器记录与重试流程、
+  单页/批量下载失败分类与不泄露）。
 
 ### 便携数据版本、迁移、导入与清理（P1-03）
 

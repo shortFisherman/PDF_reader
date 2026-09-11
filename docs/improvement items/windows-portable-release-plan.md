@@ -4,7 +4,7 @@
 >
 > 建立日期：2026-09-04  
 > 审计基线：`35dfc97`  
-> 当前状态：P1-03 已完成：发行包数据契约门（`packaging/windows/data_policy.py`）、数据格式版本检测、备份式原子迁移与显式回滚、受控导入与五分类安全清理（`src/pdf_reader/portable_data.py`、`scripts/portable_data.py`）已落地；P1-02 已完成：内核生命周期单实例锁、带超时的令牌健康探测就绪、真实用户环境自动开页、固定三按钮控制窗口与协作式退出已落地；P1-01 已完成：便携首次配置受限模式、原子保存/损坏恢复与安全重启提示已落地；P0-04 的最终 ZIP/干净机验收仍待 P2-01/P2-02 产生真实发行物后完成。
+> 当前状态：P1-04 已完成：发行态错误展示与安全诊断（`src/pdf_reader/portable_errors.py`）已落地——稳定错误码文案目录、固定错误窗口（复制诊断/打开日志/退出 + 可恢复入口）、脱敏诊断文本与重试流程，且 `ERROR [code]: detail` 稳定行与退出码语义保持不变；P1-03 已完成：发行包数据契约门（`packaging/windows/data_policy.py`）、数据格式版本检测、备份式原子迁移与显式回滚、受控导入与五分类安全清理（`src/pdf_reader/portable_data.py`、`scripts/portable_data.py`）已落地；P1-02 已完成：内核生命周期单实例锁、带超时的令牌健康探测就绪、真实用户环境自动开页、固定三按钮控制窗口与协作式退出已落地；P1-01 已完成：便携首次配置受限模式、原子保存/损坏恢复与安全重启提示已落地；P0-04 的最终 ZIP/干净机验收仍待 P2-01/P2-02 产生真实发行物后完成。
 > 首个目标产物：`PDF-Reader-<version>-windows-x64-portable.zip`（PyInstaller `onedir`，不是单文件 EXE，也不是系统安装器）。
 
 ## 1. 如何使用这份清单
@@ -197,7 +197,7 @@ Windows 和用户主动使用的默认浏览器仍可能在便携目录之外产
 | P1-01 | P1 | 建立首次启动配置模式 | `已完成` | P0-01、P0-02 |
 | P1-02 | P1 | 完成单实例、就绪探测、自动开页与可靠退出 | `已完成` | P0-02、P1-01 |
 | P1-03 | P1 | 明确便携数据升级、备份、清理与故障恢复 | `已完成` | P0-01、P0-03 |
-| P1-04 | P1 | 建立发行态错误展示与诊断入口 | `待处理` | P0-02、P1-02 |
+| P1-04 | P1 | 建立发行态错误展示与诊断入口 | `已完成` | P0-02、P1-02 |
 | P2-01 | P2 | 建立 PyInstaller onedir 构建与资源收集 | `待处理` | P0 全部、P1-01/P1-02 |
 | P2-02 | P2 | 建立最终 ZIP 冒烟测试与目录外写入审计 | `待处理` | P2-01 |
 | P2-03 | P2 | 建立 Windows CI 发行流水线与可追溯产物 | `待处理` | P2-01、P2-02 |
@@ -447,20 +447,28 @@ BabelDOC 与 pdf2zh-next 当前版本存在导入或初始化时按 `Path.home()
 
 ### P1-04 建立发行态错误展示与诊断入口
 
-- 状态：`待处理`
-- 完成日期：—
-- 完成提交：—
-- 验证证据：—
-- 剩余问题：待实施
+- 状态：`已完成`
+- 完成日期：2026-09-11
+- 完成提交：`—`（本轮按指令不执行 git commit，等待主模型提交）
+- 验证证据：新增 `src/pdf_reader/portable_errors.py`（稳定错误码文案目录、安全诊断脱敏、Tk 错误窗口与 Windows 剪贴板事件循环、`FailureReporter`）与 `tests/release/test_portable_errors.py`（122 项），并改造 `src/pdf_reader/portable_launcher.py` 的失败路径与 `main()` 重试流程；`src/pdf_reader/sse_stream.py` 在单页/批量共享的 `format_sse_event()` 中新增 `classify_upstream_error()`，把上游 `error` 事件保守分类为固定 `model_download_failed`（固定中文消息）或既有 `translation_error`；`generate()`/`generate_batch()` 的 error 分支只记录分类后的稳定码，`evt.get("error")` 原文不进 SSE、日志或诊断，分类器对畸形输入深度/条目有界且不抛异常，并补 `tests/test_sse_stream.py` 分类、不泄露与鲁棒性回归（断言 secret/path sentinel 不在 caplog）；`./venv/bin/python -m pytest tests/release -q` → 329 passed；`tests/release/test_portable_launcher.py tests/release/test_portable_errors.py -q` → 173 passed；`tests/test_sse_stream.py tests/test_upstream_contract.py -q` → 94 passed；`ruff check src tests` 与 `ruff format --check src tests` 通过；`mypy src` → `Success: no issues found in 43 source files`；`scripts/secret_scan.py` → `Secret scan OK: scanned 214 tracked files`；`tests/test_documentation_governance.py -q` → 14 passed；`npm test` → 退出码 0（translation-ui 120、translator 48、zoom 31、alignment 20、config-panel 86、glossary-panel 31，全部 0 failed）；`coverage run --branch -m pytest`（`COVERAGE_FILE` 重定向到 /tmp，不改写本机既有 `.coverage`）→ `Coverage policy OK: global line=90.7% branch=84.8%`；全量 `pytest -q` → 1855 passed、19 skipped、5 failed，5 项失败均为本机既有环境（git-ignored 的仓库根 `.coverage` 与 `.codegraph` 本机状态），与 P1-04 无关。全部证据取自 Linux/WSL 源码态。
+- 剩余问题：真实发行 EXE 的双击错误窗口、最终 ZIP 与干净机证据随 P2-01/P2-02 产生真实产物后复验；诊断包（ZIP 打包）首版明确不实现，唯一导出是用户显式触发的“复制诊断信息”；完整 `scripts/verify.py` 未在本机运行（本机为 Linux/WSL，无 PowerShell；真实便携 EXE 行为需 P2-02）；本机全量 `pytest -q` 的 5 项失败均为既有环境问题（git-ignored 的仓库根 `.coverage` 与 `.codegraph` 本机状态），P1-04 未触碰这些路径。
 
 #### 目标与验收
 
-- [ ] 双击启动失败不会只表现为窗口一闪而过。
-- [ ] 不可写目录、配置错误、端口冲突、资源缺失、模型下载失败和服务异常退出都有用户可读消息。
-- [ ] 错误界面至少提供复制安全诊断信息、打开日志目录和退出操作；可恢复错误提供对应入口。
-- [ ] 日志在 `data/logs`，延续现有密钥、Bearer token、Prompt 和正文安全边界。
-- [ ] 诊断包若实现，只收集允许的日志与版本信息，必须由用户显式触发并在生成前展示内容边界。
-- [ ] 发行态错误码和 CLI/开发模式错误语义不互相漂移。
+- [x] 双击启动失败不会只表现为窗口一闪而过。
+- [x] 不可写目录、配置错误、端口冲突、资源缺失、模型下载失败和服务异常退出都有用户可读消息。
+- [x] 错误界面至少提供复制安全诊断信息、打开日志目录和退出操作；可恢复错误提供对应入口。
+- [x] 日志在 `data/logs`，延续现有密钥、Bearer token、Prompt 和正文安全边界。
+- [x] 上游 `error` 事件只记录分类后的稳定码（`translation_error` 或 `model_download_failed`）；原始异常正文不进 SSE、日志或诊断。
+- [x] 诊断包若实现，只收集允许的日志与版本信息，必须由用户显式触发并在生成前展示内容边界。
+- [x] 发行态错误码和 CLI/开发模式错误语义不互相漂移。
+
+> 阶段归属（诚实说明，避免“都弹启动器窗口”的误解）：
+>
+> - **启动阶段失败**（便携目录不可写、端口冲突、发行包资源缺失、服务异常退出/激活失败等）：启动器错误窗口，含“复制诊断信息 / 打开日志目录 /（可恢复入口）/ 退出”。
+> - **配置错误**（缺 API Key、字段非法、TOML 损坏等）：不是错误窗口，而是便携服务的受限配置页（P1-01 setup 模式），用户保存后重启。
+> - **运行期模型/字体下载失败**：不是错误窗口也不是配置页，而是浏览器翻译状态区显示固定安全消息（SSE 稳定码 `model_download_failed`）；普通上游错误仍为 `translation_error`/“上游翻译失败”。两者都只使用固定文案：原始异常正文既不进 SSE 响应，也不写日志或诊断，服务端日志只记录分类后的稳定码与既有安全 task metadata。
+> - “错误界面提供复制/打开日志/退出与恢复入口”只针对启动阶段错误窗口；配置页与翻译状态区各自有对应的可用操作（配置页保存、状态区重试）。
 
 ---
 
@@ -627,3 +635,4 @@ BabelDOC 与 pdf2zh-next 当前版本存在导入或初始化时按 `Path.home()
 | 2026-09-05 | P1-01 | 已完成 | `fc70b12` | 便携服务在配置缺失、无效、非 loopback 或 TOML 损坏时以安全 loopback 启动首次配置页；setup guard 只开放根页面、静态资源、配置、状态与私有健康接口，其他 API 返回 503；现有 45 字段配置中心自动打开，密钥不回显，完整表单严格校验并原子保存到 data/config/config.toml，可按 revision 修复语法/结构损坏，保存后明确要求安全重启；开发入口的严格失败语义保持不变，完整验证通过。 |
 | 2026-09-10 | P1-02 | 已完成 | `7c5d73f` | 单实例改为每次启动专属的内核生命周期所有权（Windows 每次启动随机命名 owned mutex + abandoned wait，POSIX data 内随机 `flock`，进程死亡即释放），存活判定不再依据 PID；`data/runtime/instance.json` 只作二次启动激活用的建议性记录，必须依次通过记录解析、令牌健康探测与控制通道 `open_reader` 才承认既有实例，绝不为此终止任何进程；就绪不再依赖固定 sleep，改为 data 内原子就绪描述符 + 带令牌的 `/api/health` 探测，超时/提前退出/端口占用都有稳定错误码与 `data/logs/launcher.log` 记录；控制入口固定为 Tk 三按钮窗口（打开阅读器/打开日志/退出程序），关闭窗口＝退出程序、关闭浏览器标签页≠服务退出，默认窗口不可用时协作退出并返回稳定错误码 7（仅显式 `--no-ui` 允许无窗口诊断）；退出走认证后的 `POST /api/shutdown` 协作路径（停止接受新任务 → `TranslationCoordinator.shutdown` → `AppState.close()` → 服务结束），只有超时才由启动器兜底结束自己启动的子进程，服务侧同时以启动器存活监督兜底；端口占用绝不终止占用者、不自动换端口；`tests/release/` 142 passed、定向回归 264 passed、1 skipped，完整 `scripts/verify.py` 通过。 |
 | 2026-09-11 | P1-03 | 已完成 | `6df2294`（`feat: govern portable data upgrade, cleanup and recovery`；基线 `c2e5fdd`）+ 事务恢复修复提交 `fix: auto-restore uncommitted portable data migrations` | 数据格式版本只由 `data/portable-data.json` 决定（缺字段/未知字段/类型错误 fail closed，更高版本以 `portable_data_schema_newer` 拒绝降级）；`portable_launcher` 在取得内核单实例锁之后、启动 `app/PDF Reader Service.exe` 之前调用 `prepare_portable_data()`，第二次启动只走激活路径、不重复迁移；迁移先备份旧清单字节到 `data/backups/<时间戳>/files/`、再写同目录 `*.tmp`、最后 `os.replace` 原子提交并追加 `migrations.log`，失败保留旧字节并丢弃临时文件，`rollback_last_migration()`/`scripts/portable_data.py rollback --yes` 显式回滚；清理按文档缓存/模型与上游缓存/字体/日志/临时文件五类显示大小、文件数与删除后果，存在 `data/runtime/instance.json` 时拒绝清理，分类根是链接时整体拒绝、子项是链接只删链接、所有目标经 data 物理边界守卫，绝不递归删除 data 之外的用户 PDF；受控导入只从显式给出且与目标 data 根互不包含的非链接旧 data 根复制非易变数据，`config/`、`logs/`、`temp/`、`runtime/`、`pycache/`、`home/`、迁移备份与清单永不导入，模型与文档缓存无需重下；新增 `packaging/windows/data_policy.py` 构建契约门，拒绝发行树中的真实 `data/` 内容、用户 `config.toml`、清单/日志打点文件与模型权重，并审计 README 发行说明；README 明确“删除整个便携目录会删除配置和缓存”并文档化覆盖升级、复制/受控导入与清理命令；定向 99 passed、`tests/release` 203 passed；完整验证（Linux/WSL）除本机 CodeGraph 治理用例的环境失败外全部通过（1 failed、1711 passed、19 skipped），真实 ZIP/干净机复验留给 P2-01/P2-02。 |
+| 2026-09-11 | P1-04 | 已完成 | 待提交（本轮按指令不执行 git commit） | 发行态错误展示与安全诊断落地：新增 `src/pdf_reader/portable_errors.py`（`ERROR_CATALOG`/`describe_error` 稳定错误码文案目录与六类必需失败映射、`format_failure_message()` 稳定行、`sanitize_diagnostic_text()`/`build_diagnostics()` 脱敏诊断、Tk 错误窗口含 Windows 剪贴板 `update()`、`FailureReporter`），`portable_launcher` 失败路径统一记录并在默认 UI 显示窗口、用户选择“重试启动”重跑流程，布局阶段保留底层稳定码，退出码 0/2/3/4/5/6/7/130 不变；`sse_stream` 在单页/批量共享的 `format_sse_event()` 中新增 `classify_upstream_error()`，上游 `error` 事件只在同时命中“下载动作/来源”与“失败/连接标志”时映射为固定 `model_download_failed`（固定中文消息），其余保持 `translation_error`；`generate()`/`generate_batch()` 的 error 分支改为只记录分类后的稳定码，原始异常正文不进 SSE、日志或诊断，分类器深度/条目有界且对畸形 `__str__`/`get` 不抛异常。README 与验收说明按阶段诚实区分（启动阶段→启动器错误窗口，配置问题→受限配置页，运行期下载失败→浏览器翻译状态区固定安全消息）。验证：`tests/release` 329 passed、`test_portable_launcher+test_portable_errors` 173 passed、`test_sse_stream+test_upstream_contract` 94 passed、`npm test` 退出码 0（120/48/31/20/86/31 全 0 failed）、ruff check/format 通过、mypy 43 source files、secret scan 214 files、文档治理 14 passed、coverage policy `global line=90.7% branch=84.8%`、全量 `pytest -q` 1855 passed/19 skipped（5 项本机既有环境失败）。 |

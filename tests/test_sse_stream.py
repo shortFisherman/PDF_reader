@@ -8,11 +8,17 @@ from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pdf_reader import cache_ops
 from pdf_reader.glossary_service import merge_after_translate
 from pdf_reader.sse_stream import (
+    MAXIMUM_UPSTREAM_ERROR_ITEMS,
+    MODEL_DOWNLOAD_FAILED_CODE,
+    MODEL_DOWNLOAD_FAILED_MESSAGE,
     GenerateBatchContext,
     GenerateContext,
+    classify_upstream_error,
     format_batch_info,
     format_sse_event,
     generate,
@@ -977,7 +983,9 @@ def test_generate_upstream_error_event_not_leaked(tmp_path, caplog):
     assert "UPSTREAM-RAW" not in joined
     assert "sk-secret-999" not in joined
     assert "onerror" not in joined
-    assert sentinel in caplog.text
+    # P1-04：原始上游错误正文既不进 SSE，也不进日志；只记录分类后的稳定码。
+    assert sentinel not in caplog.text
+    assert "code=translation_error" in caplog.text
 
 
 def test_generate_generic_exception_not_leaked(tmp_path, caplog):
@@ -1038,7 +1046,9 @@ def test_generate_batch_error_event_not_leaked(tmp_path, caplog):
     joined = "".join(result)
     assert "BATCH-RAW" not in joined
     assert "sk-secret-888" not in joined
-    assert sentinel in caplog.text
+    # P1-04：原始上游错误正文既不进 SSE，也不进日志；只记录分类后的稳定码。
+    assert sentinel not in caplog.text
+    assert "code=translation_error" in caplog.text
 
 
 def test_generate_batch_translation_error_not_leaked(tmp_path, caplog):
@@ -1269,3 +1279,164 @@ def test_generate_logs_temp_rmtree_failure_with_path_and_exception(tmp_path, cap
     assert str(workspace) in caplog.text
     assert "locked" in caplog.text
     assert "cleanup deferred" in caplog.text
+
+
+# --- P1-04: 上游 error 事件的保守下载失败分类 ---
+
+
+def _sse_payload(text: str) -> dict:
+    assert text.startswith("data: ")
+    return json.loads(text[len("data: ") :])
+
+
+@pytest.mark.parametrize(
+    "raw_error",
+    [
+        "Failed to download model: huggingface.co returned 503",
+        "hf_hub_download: connection refused while fetching file",
+        "snapshot_download(model) timed out",
+        "ModelScope download failed: no such host",
+        "Could not download font file SourceHanSans.ttf: SSL certificate verify failed",
+        "下载模型失败：网络连接超时",
+        "字体下载失败",
+    ],
+)
+def test_download_failure_event_maps_to_the_fixed_safe_code(raw_error):
+    result = format_sse_event({"type": "error", "error": raw_error})
+
+    payload = _sse_payload(result)
+    assert payload == {
+        "type": "error",
+        "code": MODEL_DOWNLOAD_FAILED_CODE,
+        "error": MODEL_DOWNLOAD_FAILED_MESSAGE,
+    }
+    assert raw_error not in result
+
+
+@pytest.mark.parametrize(
+    "raw_error",
+    [
+        "raw upstream error",
+        "thread crashed",
+        "UPSTREAM-RAW sk-secret-999 C:\\Users\\priv\\file <img src=x onerror=alert(1)>",
+        "Connection refused",
+        "translation model returned an error",
+        "rate limit exceeded",
+        "the font is too small for this page",
+        "",
+    ],
+)
+def test_ordinary_error_event_keeps_the_existing_translation_error_semantics(raw_error):
+    result = format_sse_event({"type": "error", "error": raw_error})
+
+    payload = _sse_payload(result)
+    assert payload == {"type": "error", "code": "translation_error", "error": "上游翻译失败"}
+
+
+def test_download_failure_detection_accepts_nested_error_shapes():
+    nested = format_sse_event({"type": "error", "error": {"message": "huggingface download error"}})
+    listed = format_sse_event({"type": "error", "error": ["download", "failed"]})
+
+    assert _sse_payload(nested)["code"] == MODEL_DOWNLOAD_FAILED_CODE
+    assert _sse_payload(listed)["code"] == MODEL_DOWNLOAD_FAILED_CODE
+
+
+def test_download_failure_code_is_shared_with_the_portable_error_catalog():
+    from pdf_reader import portable_errors
+
+    presentation = portable_errors.describe_error(MODEL_DOWNLOAD_FAILED_CODE)
+    assert presentation.code == MODEL_DOWNLOAD_FAILED_CODE
+    assert MODEL_DOWNLOAD_FAILED_CODE in portable_errors.ERROR_CATALOG
+
+
+def test_generate_download_failure_not_leaked_to_client(tmp_path, caplog):
+    sentinel = "DOWNLOAD-FAIL sk-secret-424 C:\\Users\\priv\\model <img src=x onerror=alert(1)> huggingface"
+    events = [{"type": "error", "error": sentinel}]
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_ctx(cache_dir=cache_dir)
+
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
+            with caplog.at_level("WARNING", logger="pdf_reader.translate"):
+                result = list(generate(ctx))
+
+    assert result[-1] == (
+        "data: "
+        + json.dumps({"type": "error", "code": MODEL_DOWNLOAD_FAILED_CODE, "error": MODEL_DOWNLOAD_FAILED_MESSAGE})
+        + "\n\n"
+    )
+    joined = "".join(result)
+    assert "DOWNLOAD-FAIL" not in joined
+    assert "sk-secret-424" not in joined
+    assert "onerror" not in joined
+    assert "huggingface" not in joined
+    # 原始正文既不进 SSE，也不进日志；日志只记录分类后的稳定码。
+    assert sentinel not in caplog.text
+    assert f"code={MODEL_DOWNLOAD_FAILED_CODE}" in caplog.text
+
+
+def test_generate_batch_download_failure_not_leaked_to_client(tmp_path, caplog):
+    sentinel = "BATCH-DL sk-secret-313 /home/priv/model huggingface download error"
+    events = [{"type": "error", "error": sentinel}]
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ctx = _make_batch_ctx(cache_dir=cache_dir)
+
+    with patch("pdf_reader.sse_stream.run_translation", return_value=iter(events)):
+        with patch("pdf_reader.sse_stream.debug_trace"):
+            with caplog.at_level("WARNING", logger="pdf_reader.translate"):
+                result = list(generate_batch(ctx))
+
+    assert result[-1] == (
+        "data: "
+        + json.dumps({"type": "error", "code": MODEL_DOWNLOAD_FAILED_CODE, "error": MODEL_DOWNLOAD_FAILED_MESSAGE})
+        + "\n\n"
+    )
+    joined = "".join(result)
+    assert "BATCH-DL" not in joined
+    assert "sk-secret-313" not in joined
+    assert "/home/priv" not in joined
+    # 原始正文既不进 SSE，也不进日志；日志只记录分类后的稳定码。
+    assert sentinel not in caplog.text
+    assert f"code={MODEL_DOWNLOAD_FAILED_CODE}" in caplog.text
+
+
+# --- P1-04: 分类器的鲁棒性（畸形输入不能打断 SSE 流） ---
+
+
+class ExplodingStr:
+    def __str__(self) -> str:
+        raise RuntimeError("__str__ exploded")
+
+
+class ExplodingGetMapping(dict):
+    def get(self, key, default=None):
+        raise RuntimeError("get exploded")
+
+
+def test_upstream_error_text_tolerates_hostile_objects():
+    """任意对象的 __str__/get 抛异常时必须退化为普通错误，绝不打断 SSE。"""
+
+    hostile = ExplodingStr()
+
+    assert format_sse_event({"type": "error", "error": hostile}) == EXPECTED_ERROR_SSE
+    assert classify_upstream_error({"error": hostile}) == ("translation_error", "上游翻译失败")
+    assert format_sse_event({"type": "error", "error": ExplodingGetMapping()}) == EXPECTED_ERROR_SSE
+
+
+def test_upstream_error_text_bounds_container_traversal():
+    """容器遍历有界：超出上限的条目既不参与判定，也不放大工作量。"""
+
+    padding = ["neutral"] * (MAXIMUM_UPSTREAM_ERROR_ITEMS + 5)
+
+    assert classify_upstream_error({"error": ["download failed", *padding]})[0] == MODEL_DOWNLOAD_FAILED_CODE
+    assert classify_upstream_error({"error": [*padding, "download failed"]})[0] == "translation_error"
+
+
+def test_upstream_error_text_bounds_nesting_depth():
+    nested: object = "download failed"
+    for _ in range(20):
+        nested = [nested]
+
+    assert classify_upstream_error({"error": nested})[0] == "translation_error"

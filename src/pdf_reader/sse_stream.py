@@ -2,7 +2,7 @@ import json
 import logging
 import shutil
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,6 +61,75 @@ GLOSSARY_COMPLIANCE_FAILED_CODE = "glossary_compliance_failed"
 GLOSSARY_VERIFICATION_UNAVAILABLE_CODE = "glossary_verification_unavailable"
 GLOSSARY_RETRY_STAGE = "glossary_retry"
 GLOSSARY_RETRY_PROGRESS = 95
+
+# P1-04：运行期资源下载失败的稳定码与固定用户消息。
+#
+# 上游 error 事件里可能带原始异常正文（含 URL、令牌、用户名路径等）。这里只做保守的
+# 白名单判定：命中“下载动作或明确的下载来源”加“失败/连接类标志”才归类为下载失败，
+# 且只回显固定中文消息——绝不把原始正文发给客户端，也不新增任何带原始正文的日志。
+# 普通错误一律保持既有 `translation_error` 语义。
+UPSTREAM_TRANSLATION_ERROR_CODE = "translation_error"
+UPSTREAM_TRANSLATION_ERROR_MESSAGE = "上游翻译失败"
+MODEL_DOWNLOAD_FAILED_CODE = "model_download_failed"
+MODEL_DOWNLOAD_FAILED_MESSAGE = "模型或字体下载失败，请检查网络或代理设置后重试"
+MAXIMUM_UPSTREAM_ERROR_TEXT_CHARS = 4096
+MAXIMUM_UPSTREAM_ERROR_DEPTH = 3
+# 单次遍历最多检查的容器条目数：恶意/畸形事件不能让我们做无界工作。
+MAXIMUM_UPSTREAM_ERROR_ITEMS = 32
+
+_DOWNLOAD_ACTION_MARKERS = ("download", "下载")
+_DOWNLOAD_SOURCE_MARKERS = (
+    "huggingface",
+    "hf_hub",
+    "hf-hub",
+    "hf-mirror",
+    "snapshot_download",
+    "modelscope",
+    "tiktoken",
+    "babeldoc",
+    "doclayout",
+    "rapidocr",
+    "onnx",
+    ".ttf",
+    ".otf",
+    "cmap",
+    "font",
+    "weights",
+    "checkpoint",
+    "repository",
+    "模型下载",
+    "字体下载",
+)
+_DOWNLOAD_FAILURE_MARKERS = (
+    "fail",
+    "error",
+    "timeout",
+    "timed out",
+    "refused",
+    "unreachable",
+    "connect",
+    "ssl",
+    "cert",
+    "offline",
+    "denied",
+    "unavailable",
+    "resolve",
+    "getaddrinfo",
+    "no such host",
+    "reset by peer",
+    "maxretry",
+    "interrupt",
+    "abort",
+    "corrupt",
+    "incomplete",
+    "失败",
+    "错误",
+    "超时",
+    "中断",
+    "离线",
+    "拒绝",
+)
+_UPSTREAM_ERROR_TEXT_KEYS = ("error", "message", "detail", "reason", "name", "type")
 # 有活跃术语时按 attempt 分配明确进度窗口：attempt1 0..95（finish=95）、
 # attempt2 95..99（finish=99）、最终提交 100；无活跃术语保持旧事件字节。
 ATTEMPT_1_MAX_PROGRESS = 95
@@ -239,13 +308,70 @@ def format_sse_event(
             + "\n\n"
         )
     elif evt_type == "error":
-        return format_sse_error("translation_error", "上游翻译失败")
+        # 上游 error 事件在这里统一映射（单页与批量共用同一入口）：只有保守命中资源下载
+        # 失败白名单时才给出固定 `model_download_failed`，否则保持既有 `translation_error`。
+        code, message = classify_upstream_error(evt)
+        return format_sse_error(code, message)
     else:
         return None
 
 
 def format_sse_error(code: str, message: str) -> str:
     return "data: " + json.dumps({"type": "error", "code": code, "error": message}) + "\n\n"
+
+
+def _upstream_error_text(value: object, *, depth: int = 0) -> str:
+    """把上游 error 事件的错误字段收敛为一段可判定的纯文本；不做任何日志或回显。
+
+    这个函数必须对任意输入都安全：深度与条目数都有界，容器的 ``get``、元素的
+    ``__str__`` 等畸形实现抛异常时退化为空串，绝不让一次诊断判定打断 SSE 流。
+    """
+
+    if isinstance(value, str):
+        return value[:MAXIMUM_UPSTREAM_ERROR_TEXT_CHARS]
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).decode("utf-8", errors="ignore")[:MAXIMUM_UPSTREAM_ERROR_TEXT_CHARS]
+    if depth >= MAXIMUM_UPSTREAM_ERROR_DEPTH:
+        return ""
+    if isinstance(value, Mapping):
+        try:
+            parts = [_upstream_error_text(value.get(key), depth=depth + 1) for key in _UPSTREAM_ERROR_TEXT_KEYS]
+        except Exception:  # noqa: BLE001 - 畸形映射按“无文本”处理
+            return ""
+        return " ".join(part for part in parts if part)
+    if isinstance(value, (list, tuple)):
+        # 只检查前 MAXIMUM_UPSTREAM_ERROR_ITEMS 项：容器大小不决定工作量。
+        return " ".join(_upstream_error_text(item, depth=depth + 1) for item in value[:MAXIMUM_UPSTREAM_ERROR_ITEMS])
+    if value is None:
+        return ""
+    try:
+        return str(value)[:MAXIMUM_UPSTREAM_ERROR_TEXT_CHARS]
+    except Exception:  # noqa: BLE001 - __str__ 抛异常不能让分类失败
+        return ""
+
+
+def classify_upstream_error(evt: Mapping[str, object]) -> tuple[str, str]:
+    """把上游 error 事件保守映射为固定的 (稳定码, 用户消息)。
+
+    判定依据只有原始错误文本本身：必须同时出现“下载动作或明确的下载来源”与
+    “失败/连接类标志”才认定为模型或字体下载失败。返回值永远是固定文案，因此原始
+    异常正文不会进入 SSE 响应，也不会被新增到日志。
+    """
+
+    try:
+        raw = evt.get("error") if isinstance(evt, Mapping) else None
+    except Exception:  # noqa: BLE001 - 畸形事件按普通错误处理
+        raw = None
+    text = _upstream_error_text(raw)[:MAXIMUM_UPSTREAM_ERROR_TEXT_CHARS].lower()
+    if not text:
+        return UPSTREAM_TRANSLATION_ERROR_CODE, UPSTREAM_TRANSLATION_ERROR_MESSAGE
+    if not any(marker in text for marker in _DOWNLOAD_FAILURE_MARKERS):
+        return UPSTREAM_TRANSLATION_ERROR_CODE, UPSTREAM_TRANSLATION_ERROR_MESSAGE
+    has_action = any(marker in text for marker in _DOWNLOAD_ACTION_MARKERS)
+    has_source = any(marker in text for marker in _DOWNLOAD_SOURCE_MARKERS)
+    if has_action or has_source:
+        return MODEL_DOWNLOAD_FAILED_CODE, MODEL_DOWNLOAD_FAILED_MESSAGE
+    return UPSTREAM_TRANSLATION_ERROR_CODE, UPSTREAM_TRANSLATION_ERROR_MESSAGE
 
 
 def _release_job(ctx: GenerateContext | GenerateBatchContext, outcome: str) -> None:
@@ -598,8 +724,9 @@ def generate(ctx: GenerateContext) -> Iterator[str]:
                             task_log(
                                 logger,
                                 logging.WARNING,
-                                "upstream translation error event: %s",
-                                evt.get("error"),
+                                # 只记录分类后的稳定码：原始上游错误正文不进日志/诊断/SSE。
+                                "upstream translation error event: code=%s",
+                                classify_upstream_error(evt)[0],
                                 task=with_status(ctx.task_ctx, STATUS_FAILED),
                             )
                             return
@@ -916,8 +1043,9 @@ def generate_batch(ctx: GenerateBatchContext) -> Iterator[str]:
                             task_log(
                                 logger,
                                 logging.WARNING,
-                                "upstream translation error event: %s",
-                                evt.get("error"),
+                                # 只记录分类后的稳定码：原始上游错误正文不进日志/诊断/SSE。
+                                "upstream translation error event: code=%s",
+                                classify_upstream_error(evt)[0],
                                 task=with_status(ctx.task_ctx, STATUS_FAILED),
                             )
                             return

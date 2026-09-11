@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from pdf_reader import paths, portable_data, portable_instance, portable_launcher, portable_runtime
+from pdf_reader import paths, portable_data, portable_errors, portable_instance, portable_launcher, portable_runtime
 from tests.release import portable_harness as h
 
 
@@ -1173,3 +1173,119 @@ class TestPortableDataGovernance:
         assert (layout.data_root / "models" / "layout.onnx").read_bytes() == b"model-bytes"
         assert not (layout.data_root / "config" / "config.toml").exists()
         assert "config/config.toml" in capsys.readouterr().out
+
+
+class FakeErrorWindow:
+    """假错误窗口：记录展示参数并按配置返回动作。"""
+
+    def __init__(self, *, action: str = portable_errors.ACTION_QUIT, **kwargs: Any) -> None:
+        self.kwargs = kwargs
+        self.action = action
+        self.closed = False
+
+    def run(self) -> str:
+        return self.action
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def capturing_window_factory(action: str, created: list[FakeErrorWindow]) -> Any:
+    def factory(**kwargs: Any) -> FakeErrorWindow:
+        window = FakeErrorWindow(action=action, **kwargs)
+        created.append(window)
+        return window
+
+    return factory
+
+
+class TestErrorDisplayIntegration:
+    def test_unwritable_directory_keeps_its_specific_stable_code(self, monkeypatch, tmp_path, capsys):
+        """P1-04：不可写目录必须报出具体码，而不是笼统的 portable_layout_unavailable。"""
+
+        layout = h.make_portable_layout(tmp_path)
+
+        def failing_prepare(_layout: Any) -> Any:
+            raise paths.PathStrategyError("PDF Reader 便携目录不可写", code="portable_data_not_writable")
+
+        monkeypatch.setattr(paths, "prepare_runtime_layout", failing_prepare)
+
+        result = portable_launcher.run_portable_launcher(h.launcher_executable(layout), no_ui=True, no_browser=True)
+
+        assert result == portable_launcher.EXIT_LAUNCHER_ERROR
+        assert "ERROR [portable_data_not_writable]" in capsys.readouterr().err
+
+    def test_failed_launch_records_a_readable_failure_for_the_error_window(self, monkeypatch, tmp_path):
+        layout = h.make_portable_layout(tmp_path)
+        h.create_service_executable(layout)
+        service = h.FakePortableService(layout, publish="none")
+        monkeypatch.setattr(portable_launcher.subprocess, "Popen", service)
+        messages: list[str] = []
+        reporter = portable_errors.FailureReporter(
+            show_ui=True,
+            report=messages.append,
+            app_version="9.9.9",
+            launcher_executable=h.launcher_executable(layout),
+        )
+        try:
+            result = portable_launcher.run_portable_launcher(
+                h.launcher_executable(layout),
+                startup_timeout=0.2,
+                force_timeout=1.0,
+                no_browser=True,
+                no_ui=True,
+                error_reporter=reporter,
+            )
+        finally:
+            service.cleanup()
+
+        assert result == portable_launcher.EXIT_SERVICE_START_FAILED
+        assert reporter.failure is not None
+        assert reporter.failure.code == "service_start_timeout"
+        assert messages and messages[0].startswith("ERROR [service_start_timeout]")
+
+        created: list[FakeErrorWindow] = []
+        action = reporter.present(
+            window_factory=capturing_window_factory(portable_errors.ACTION_QUIT, created),
+            platform_label="TestOS-1.0",
+        )
+
+        assert action == portable_errors.ACTION_QUIT
+        assert len(created) == 1
+        window = created[0]
+        assert window.kwargs["presentation"].code == "service_start_timeout"
+        assert "data/logs/launcher.log" in window.kwargs["diagnostics"]
+        assert window.closed is True
+        diagnostics = window.kwargs["diagnostics"]
+        assert service.child_env[portable_runtime.HEALTH_TOKEN_ENV] not in diagnostics
+        assert service.child_env[portable_runtime.CONTROL_TOKEN_ENV] not in diagnostics
+
+    def test_main_retries_the_whole_launch_when_the_user_chooses_retry(self, monkeypatch):
+        calls: list[Any] = []
+        actions = iter([portable_errors.ACTION_RETRY, portable_errors.ACTION_QUIT])
+
+        def fake_run(executable: Any, **_kwargs: Any) -> int:
+            calls.append(executable)
+            return portable_launcher.EXIT_PORT_IN_USE
+
+        monkeypatch.setattr(portable_launcher, "run_portable_launcher", fake_run)
+        monkeypatch.setattr(portable_errors.FailureReporter, "present", lambda self, **_kwargs: next(actions))
+
+        result = portable_launcher.main([])
+
+        assert result == portable_launcher.EXIT_PORT_IN_USE
+        assert len(calls) == 2
+
+    def test_main_no_ui_never_presents_an_error_window(self, monkeypatch):
+        presented: list[int] = []
+        monkeypatch.setattr(
+            portable_launcher,
+            "run_portable_launcher",
+            lambda *_args, **_kwargs: portable_launcher.EXIT_SERVICE_START_FAILED,
+        )
+        monkeypatch.setattr(portable_errors.FailureReporter, "present", lambda self, **_kwargs: presented.append(1))
+
+        result = portable_launcher.main(["--no-ui"])
+
+        assert result == portable_launcher.EXIT_SERVICE_START_FAILED
+        assert presented == []

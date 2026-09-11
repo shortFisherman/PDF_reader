@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from pdf_reader import __version__ as APP_VERSION
-from pdf_reader import paths, portable_data
+from pdf_reader import paths, portable_data, portable_errors
 from pdf_reader.portable_instance import (
     InstanceLock,
     InstanceRecord,
@@ -207,21 +207,8 @@ def _install_launcher_logging(layout: paths.RuntimeLayout) -> Path | None:
     return log_path
 
 
-def open_log_directory(path: Path) -> bool:
-    """用系统文件管理器打开日志目录；不可用时退化到默认浏览器的 file:// 视图。"""
-
-    startfile = getattr(os, "startfile", None)
-    if startfile is not None:
-        try:
-            startfile(str(path))
-            return True
-        except OSError as exc:
-            logger.warning("无法用文件管理器打开日志目录：%s", exc)
-    try:
-        return bool(webbrowser.open(path.as_uri()))
-    except Exception:  # noqa: BLE001 - 打开日志失败不影响服务本身
-        logger.exception("打开日志目录失败")
-        return False
+# 打开目录的唯一实现放在 portable_errors；保留历史名称以免启动器内部调用点漂移。
+open_log_directory = portable_errors.open_directory
 
 
 def _open_target(target: str, *, opener: Callable[[str], Any] | None) -> bool:
@@ -813,6 +800,7 @@ def _activate_existing_instance(
     interval: float = DEFAULT_ACTIVATION_INTERVAL,
     health_probe: InstanceHealthProbe = probe_service_health,
     acquire_ownership: Callable[[], bool] | None = None,
+    report_failure: Callable[[str, str], None] | None = None,
 ) -> int | None:
     """验证并激活已运行实例：绝不启动第二个服务，也绝不终止任何进程。
 
@@ -854,7 +842,10 @@ def _activate_existing_instance(
         time.sleep(max(0.01, interval))
     if code not in ACTIVATION_FAILURE_CODES:
         code = "instance_record_invalid"
-    _report_error(f"ERROR [{code}]: {detail}")
+    if report_failure is None:
+        _report_error(portable_errors.format_failure_message(code, detail))
+    else:
+        report_failure(code, detail)
     return EXIT_INSTANCE_UNAVAILABLE
 
 
@@ -865,6 +856,7 @@ def _acquire_or_activate(
     activation_timeout: float = DEFAULT_ACTIVATION_TIMEOUT,
     activation_interval: float = DEFAULT_ACTIVATION_INTERVAL,
     health_probe: InstanceHealthProbe = probe_service_health,
+    report_failure: Callable[[str, str], None] | None = None,
 ) -> int | None:
     """取得单实例所有权，或验证并激活已运行实例。
 
@@ -881,6 +873,7 @@ def _acquire_or_activate(
         interval=activation_interval,
         health_probe=health_probe,
         acquire_ownership=lock.acquire,
+        report_failure=report_failure,
     )
 
 
@@ -925,6 +918,7 @@ def run_portable_launcher(
     no_ui: bool = False,
     no_browser: bool = False,
     data_command: DataCommand | None = None,
+    error_reporter: portable_errors.FailureReporter | None = None,
 ) -> int:
     """便携启动器主流程：单实例 → 启动服务 → 真实健康探测 → 打开阅读器 → 协作退出。
 
@@ -940,6 +934,14 @@ def run_portable_launcher(
       AppState），只有超时才由启动器兜底结束自己启动的进程。
     """
 
+    def fail(code: str, detail: str, *, exit_code: int | None = None) -> None:
+        """报告稳定失败码；注入 reporter 时统一交给它，保证错误窗口与 CLI 行格式一致。"""
+
+        if error_reporter is None:
+            _report_error(portable_errors.format_failure_message(code, detail))
+        else:
+            error_reporter.record(code, detail, exit_code=exit_code)
+
     selected_lock_factory = create_instance_lock if lock_factory is None else lock_factory
     selected_health_probe = probe_loopback_health if health_probe is None else health_probe
     selected_port_probe = loopback_port_in_use if port_probe is None else port_probe
@@ -953,7 +955,8 @@ def run_portable_launcher(
         layout = paths.RuntimeLayout.portable_from_executable(launcher_executable)
         paths.prepare_runtime_layout(layout)
     except (OSError, ValueError, paths.PathStrategyError) as exc:
-        _report_error(f"ERROR [portable_layout_unavailable]: {exc}")
+        # 保留底层稳定码（例如 portable_data_not_writable），用户提示与诊断才有具体原因。
+        fail(getattr(exc, "code", None) or "portable_layout_unavailable", str(exc), exit_code=EXIT_LAUNCHER_ERROR)
         return EXIT_LAUNCHER_ERROR
     _install_launcher_logging(layout)
     logger.info("便携启动器启动：launcher=%s", launcher_executable)
@@ -983,7 +986,7 @@ def run_portable_launcher(
         try:
             lock = selected_lock_factory(layout)
         except (OSError, paths.PathStrategyError) as exc:
-            _report_error(f"ERROR [instance_lock_unavailable]: 无法创建单实例锁：{exc}")
+            fail("instance_lock_unavailable", f"无法创建单实例锁：{exc}", exit_code=EXIT_LAUNCHER_ERROR)
             return EXIT_LAUNCHER_ERROR
         try:
             ownership = _acquire_or_activate(
@@ -992,10 +995,11 @@ def run_portable_launcher(
                 activation_timeout=activation_timeout,
                 activation_interval=activation_interval,
                 health_probe=instance_health_probe,
+                report_failure=lambda code, detail: fail(code, detail, exit_code=EXIT_INSTANCE_UNAVAILABLE),
             )
         except (OSError, PortableEnvironmentError, paths.PathStrategyError) as exc:
             # 内核锁不可用时必须是稳定错误码：绝不在异常里继续启动第二个服务。
-            _report_error(f"ERROR [instance_lock_unavailable]: 无法使用单实例锁：{exc}")
+            fail("instance_lock_unavailable", f"无法使用单实例锁：{exc}", exit_code=EXIT_LAUNCHER_ERROR)
             return EXIT_LAUNCHER_ERROR
         if ownership is not None:
             return ownership
@@ -1007,10 +1011,10 @@ def run_portable_launcher(
             migration = portable_data.prepare_portable_data(layout, app_version=APP_VERSION)
         except portable_data.PortableDataError as exc:
             # 版本过新/清单损坏必须是稳定错误码：绝不在未知数据格式上继续启动。
-            _report_error(f"ERROR [{exc.code}]: {exc}")
+            fail(exc.code, str(exc), exit_code=EXIT_LAUNCHER_ERROR)
             return EXIT_LAUNCHER_ERROR
         except (OSError, ValueError, paths.PathStrategyError) as exc:
-            _report_error(f"ERROR [portable_data_unavailable]: 便携数据治理不可用：{exc}")
+            fail("portable_data_unavailable", f"便携数据治理不可用：{exc}", exit_code=EXIT_LAUNCHER_ERROR)
             return EXIT_LAUNCHER_ERROR
         if migration.performed:
             logger.info(
@@ -1024,7 +1028,11 @@ def run_portable_launcher(
 
         service_exe = _service_executable(layout)
         if not service_exe.is_file():
-            _report_error("ERROR [service_executable_missing]: 缺少 app/PDF Reader Service.exe，无法启动便携服务")
+            fail(
+                "service_executable_missing",
+                "缺少 app/PDF Reader Service.exe，无法启动便携服务",
+                exit_code=EXIT_LAUNCHER_ERROR,
+            )
             return EXIT_LAUNCHER_ERROR
 
         health_token = new_health_token()
@@ -1038,7 +1046,7 @@ def run_portable_launcher(
                 launcher_liveness=liveness_owner.descriptor,
             )
         except (OSError, ValueError, paths.PathStrategyError, PortableEnvironmentError) as exc:
-            _report_error(f"ERROR [launcher_liveness_unavailable]: 无法建立启动器存活监督：{exc}")
+            fail("launcher_liveness_unavailable", f"无法建立启动器存活监督：{exc}", exit_code=EXIT_LAUNCHER_ERROR)
             return EXIT_LAUNCHER_ERROR
         child_environment[READY_FILE_ENV] = str(readiness_file)
         child_environment[HEALTH_TOKEN_ENV] = health_token
@@ -1048,7 +1056,7 @@ def run_portable_launcher(
         try:
             process = subprocess.Popen(command, cwd=str(layout.portable_root), env=child_environment)
         except OSError as exc:
-            _report_error(f"ERROR [service_spawn_failed]: 无法启动便携服务：{exc}")
+            fail("service_spawn_failed", f"无法启动便携服务：{exc}", exit_code=EXIT_SERVICE_START_FAILED)
             return EXIT_SERVICE_START_FAILED
 
         try:
@@ -1059,9 +1067,10 @@ def run_portable_launcher(
                 probe=selected_health_probe,
             )
         except PortableLaunchError as exc:
-            _report_error(f"ERROR [{exc.code}]: {exc}")
+            exit_code = EXIT_PORT_IN_USE if exc.code == PORT_IN_USE_CODE else EXIT_SERVICE_START_FAILED
+            fail(exc.code, str(exc), exit_code=exit_code)
             ensure_service_stopped()
-            return EXIT_PORT_IN_USE if exc.code == PORT_IN_USE_CODE else EXIT_SERVICE_START_FAILED
+            return exit_code
         logger.info("服务已经通过令牌健康探测：%s", service_url)
 
         watcher = _ServiceProcessWatcher(process)
@@ -1090,7 +1099,7 @@ def run_portable_launcher(
             )
             write_instance_record(layout, record)
         except (OSError, ValueError, paths.PathStrategyError, PortableLaunchError) as exc:
-            _report_error(f"ERROR [instance_record_unwritable]: 无法发布实例状态：{exc}")
+            fail("instance_record_unwritable", f"无法发布实例状态：{exc}", exit_code=EXIT_LAUNCHER_ERROR)
             ensure_service_stopped()
             return EXIT_LAUNCHER_ERROR
         record_written = True
@@ -1125,21 +1134,29 @@ def run_portable_launcher(
             )
         except PortableLaunchError as exc:
             if watcher.finished:
-                _report_error("ERROR [service_exited_while_running]: 服务在控制窗口建立期间自行退出")
+                fail(
+                    "service_exited_while_running",
+                    "服务在控制窗口建立期间自行退出",
+                    exit_code=EXIT_SERVICE_EXITED,
+                )
                 return EXIT_SERVICE_EXITED
-            _report_error(f"ERROR [{exc.code}]: {exc}")
+            fail(exc.code, str(exc), exit_code=EXIT_UI_UNAVAILABLE)
             request_cooperative_stop()
             return EXIT_UI_UNAVAILABLE
 
         if watcher.finished and not quit_requested:
             service_code = _service_exit_code(process, watcher)
-            _report_error(f"ERROR [service_exited_while_running]: 服务在用户请求退出前结束（exit={service_code}）")
+            fail(
+                "service_exited_while_running",
+                f"服务在用户请求退出前结束（exit={service_code}）",
+                exit_code=EXIT_SERVICE_EXITED,
+            )
             return EXIT_SERVICE_EXITED
 
         request_cooperative_stop()
         return _exit_code_for(_service_exit_code(process, watcher))
     except KeyboardInterrupt:
-        _report_error("ERROR [launcher_interrupted]: 启动器被中断，正在关闭便携服务")
+        fail("launcher_interrupted", "启动器被中断，正在关闭便携服务", exit_code=EXIT_INTERRUPTED)
         ensure_service_stopped()
         return EXIT_INTERRUPTED
     finally:
@@ -1204,7 +1221,9 @@ def _run_data_command(layout: paths.RuntimeLayout, command: DataCommand) -> int:
             return 0
         if command.kind == "import":
             if command.source is None:
-                _report_error("ERROR [portable_data_command_invalid]: 导入命令缺少源目录")
+                _report_error(
+                    portable_errors.format_failure_message("portable_data_command_invalid", "导入命令缺少源目录")
+                )
                 return EXIT_LAUNCHER_ERROR
             report = portable_data.import_portable_data(
                 layout,
@@ -1217,12 +1236,14 @@ def _run_data_command(layout: paths.RuntimeLayout, command: DataCommand) -> int:
             _print_stdout(text)
             return 0
     except portable_data.PortableDataError as exc:
-        _report_error(f"ERROR [{exc.code}]: {exc}")
+        _report_error(portable_errors.format_failure_message(exc.code, str(exc)))
         return EXIT_LAUNCHER_ERROR
     except (OSError, ValueError, paths.PathStrategyError) as exc:
-        _report_error(f"ERROR [portable_data_command_failed]: 数据命令失败：{exc}")
+        _report_error(portable_errors.format_failure_message("portable_data_command_failed", f"数据命令失败：{exc}"))
         return EXIT_LAUNCHER_ERROR
-    _report_error(f"ERROR [portable_data_command_invalid]: 未知数据命令：{command.kind}")
+    _report_error(
+        portable_errors.format_failure_message("portable_data_command_invalid", f"未知数据命令：{command.kind}")
+    )
     return EXIT_LAUNCHER_ERROR
 
 
@@ -1263,22 +1284,44 @@ def _data_command_from_args(args: argparse.Namespace) -> DataCommand | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """冻结入口：以自身 EXE 为便携根启动；启动器从不改写自身环境。"""
+    """冻结入口：以自身 EXE 为便携根启动；启动器从不改写自身环境。
+
+    双击路径（默认带 UI）在启动失败时显示用户可读错误窗口，并在用户选择“重试启动”
+    时重新执行整条启动流程；``--no-ui`` 诊断模式只写 stderr 与日志，不弹窗。
+    """
 
     args = _build_parser().parse_args(argv)
     launcher_executable = args.launcher_executable or sys.executable
     try:
         data_command = _data_command_from_args(args)
     except ValueError as exc:
-        _report_error(f"ERROR [portable_data_command_conflict]: {exc}")
+        _report_error(portable_errors.format_failure_message("portable_data_command_conflict", str(exc)))
         return EXIT_LAUNCHER_ERROR
-    return run_portable_launcher(
-        launcher_executable,
-        startup_timeout=args.startup_timeout,
-        no_browser=args.no_browser,
-        no_ui=args.no_ui,
-        data_command=data_command,
+    reporter = (
+        None
+        if args.no_ui
+        else portable_errors.FailureReporter(
+            show_ui=True,
+            report=_report_error,
+            app_version=APP_VERSION,
+            launcher_executable=launcher_executable,
+        )
     )
+    while True:
+        code = run_portable_launcher(
+            launcher_executable,
+            startup_timeout=args.startup_timeout,
+            no_browser=args.no_browser,
+            no_ui=args.no_ui,
+            data_command=data_command,
+            error_reporter=reporter,
+        )
+        if reporter is None:
+            return code
+        if reporter.present() == portable_errors.ACTION_RETRY:
+            reporter.clear()
+            continue
+        return code
 
 
 if __name__ == "__main__":
