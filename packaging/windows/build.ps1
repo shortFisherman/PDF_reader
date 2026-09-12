@@ -47,8 +47,8 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$PackagingRoot = (Resolve-Path -LiteralPath $PSScriptRoot).Path
+$RepoRoot = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).ProviderPath)
+$PackagingRoot = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $PSScriptRoot).ProviderPath)
 
 # 发行输出边界：下面三个变量是脚本内唯一的路径推导；其余路径全部来自构建计划。
 $BuildRoot = Join-Path $RepoRoot 'build\release-windows'
