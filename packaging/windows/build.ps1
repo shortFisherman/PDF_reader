@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
 .SYNOPSIS
     构建 Windows x64 便携发行物（PyInstaller onedir）。
