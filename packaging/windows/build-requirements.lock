@@ -1,0 +1,30 @@
+#
+# Windows 便携发行构建工具锁。
+#
+# 安装目标只有 build/release-windows/venv（专用、可删除）；这些包不会进入发行物，也不
+# 安装到仓库根 venv/。发行物内的运行时依赖由 runtime-requirements.lock 决定。
+#
+# 每个条目都带 SHA-256，build.ps1 用 PEP 503 的 `--require-hashes` 安装，因此构建工具
+# 同样不能以浮动 URL 或未校验的包进入构建：pip 会在下载后校验摘要，不匹配即失败。
+#
+# 更新方式（Windows 构建机，Python 3.12）：
+#   py -3.12 -m pip download --no-deps --only-binary=:all: --platform win_amd64 `
+#       --python-version 3.12 --implementation cp --abi cp312 -d .cache pyinstaller==<版本>
+#   py -3.12 -m pip hash .cache/*.whl
+# 把版本与摘要写回本文件。PyInstaller 及其 hooks 包的版本升级必须与 runtime_policy 的
+# Python 3.12 基线保持一致；发行物内的依赖清单仍以 runtime-requirements.lock 为唯一来源。
+#
+altgraph==0.17.4 \
+    --hash=sha256:642743b4750de17e655e6711601b077bc6598dbfa3ba5fa2b2a35ce12b508dff
+packaging==24.2 \
+    --hash=sha256:09abb1bccd265c01f4a3aa3f7a7db064b36514d2cba19a2f694fe6150451a759
+pefile==2023.2.7 ; sys_platform == "win32" \
+    --hash=sha256:da185cd2af68c08a6cd4481f7325ed600a88f6a813bad9dea07ab3ef73d8d8d6
+pyinstaller==6.16.0 \
+    --hash=sha256:bc10eb1a787f99fea613509f55b902fbd2d8b73ff5f51ff245ea29a481d97d41
+pyinstaller-hooks-contrib==2025.9 \
+    --hash=sha256:ccbfaa49399ef6b18486a165810155e5a8d4c59b41f20dc5da81af7482aaf038
+pywin32-ctypes==0.2.3 ; sys_platform == "win32" \
+    --hash=sha256:8a1513379d709975552d202d942d9837758905c8d01eb82b8bcc30918929e7b8
+setuptools==80.9.0 \
+    --hash=sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922

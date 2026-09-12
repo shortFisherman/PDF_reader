@@ -104,12 +104,6 @@ clean machine and the final ZIP still belong to P2-01/P2-02.
 
 ## P1-03 portable data contract (source level)
 
-All mutable state stays inside the extracted directory, and the extracted directory
-is the unit of uninstall: **deleting the whole portable directory deletes
-configuration and caches**.  `README.md` states this for users, and the P1-03 build
-gate fails the build if that statement (or the documented copy/import path for an
-old `data/`) disappears from the release notes.
-
 **Release package.**  The artifact must ship no real `data/` content.  The P1-03
 gate rejects any file under `data/` (config, models, document cache, logs, temp), any
 leaked top-level development directory (an empty `data/` scaffold is allowed), a
@@ -174,3 +168,125 @@ commands), `tests/release/test_portable_launcher.py` (preparation happens after 
 lock and before the service spawn) and `tests/release/test_data_policy.py`
 (artifact and release-notes gate).  A real Windows ZIP, a real clean-machine upgrade
 and the final artifact audit still belong to P2-01/P2-02.
+
+## P2-01 onedir build
+
+`build.ps1` is the only supported local build entry point.  It resolves a Python 3.12
+launcher, creates `build/release-windows/venv`, installs the locked dependencies, drives
+PyInstaller, and delegates every non-trivial decision to `buildtool` (standard-library
+only, see `buildtool/__init__.py`).  PowerShell never reimplements build logic, so the
+same decisions are unit-testable without Windows.
+
+```powershell
+# 完整构建（首次需要网络下载锁定依赖）
+powershell -ExecutionPolicy Bypass -File packaging/windows/build.ps1
+# 从零重建（只删除两个已验证的发行输出目录）
+powershell -ExecutionPolicy Bypass -File packaging/windows/build.ps1 -Clean
+# 复用已有构建环境重新打包
+powershell -ExecutionPolicy Bypass -File packaging/windows/build.ps1 -SkipVenvInstall
+```
+
+**Inputs.** `pyproject.toml` (version), `requirements.lock`,
+`runtime-requirements.lock` (runtime closure), `build-requirements.lock` (PyInstaller and
+its Windows dependencies, installed with `--require-hashes`), `src/pdf_reader/`,
+`static/`, `templates/`, `config.example.toml`, `LICENSE`, both `*.spec` files,
+`hooks/` and `manifests/`.
+
+**Outputs.** Everything lands under `dist/release-windows/`:
+
+```text
+PDF Reader/                         # 解压后的便携目录（ZIP 内的唯一根目录）
+├─ PDF Reader.exe                   # 唯一面向用户的入口（含私有 _internal/）
+├─ app/                             # 私有服务与只读资源（便携模式下的 RESOURCE_ROOT）
+│  ├─ PDF Reader Service.exe        # 承载 PyMuPDF/pdf2zh-next/BabelDOC/ONNX Runtime
+│  ├─ _internal/                    # 服务自己的私有运行时
+│  ├─ static/  templates/  config.example.toml
+│  ├─ licenses/{LICENSE,DEPENDENCIES.txt}
+│  ├─ runtime-manifest.json         # runtime_policy schema 1（含每个 wheel 的 SHA-256）
+│  └─ release-manifest.json         # 版本、commit、依赖锁哈希与逐文件清单
+├─ data/                            # 空目录：所有可变数据在首次启动时创建
+└─ PDF-Reader-<version>-windows-x64-portable.zip
+```
+
+`dist/release-windows/` also receives `<artifact>.files.sha256` (the release filelist in
+`sha256sum` format) and `<zip>.sha256` (the ZIP checksum).
+
+**Plan as the path source of truth.**  `build.ps1` writes only three literals of its own --
+the repository root, `build/release-windows`, `dist/release-windows` -- plus the build venv
+and plan-file names inside them; every other build and artifact path comes from the JSON
+that `buildtool plan` emits, and `Read-BuildPlan` verifies each one before use.  `plan`
+writes absolute paths, `layout-check --expect-build-root/--expect-dist-root` proves the
+plan's two roots are exactly the caller's canonical roots, and a plan that claims another
+repository, widens a root, or points an artifact at the build root is rejected.
+
+**Boundaries.** The build only writes `build/release-windows/` and
+`dist/release-windows/`.  Every externally supplied path is validated by its read/write
+semantics: `--output` for plans, snapshots, snapshots-diff inputs, wheel caches and
+reports must resolve inside the build root, while the release tree (`manifest`,
+`verify-tree`, `assemble`, `dependencies`, `finalize`, `package`) and the staging bundles
+must resolve inside the dist/build root respectively.  Containment is compared
+component-wise, so a sibling such as `release-windows-typo` is never mistaken for the
+root, and any symbolic link or junction on the path is rejected.
+
+Read-only audits are the one deliberate exception: `verify-tree`, `verify-bundles` and
+`check-wheels` accept a target that resolves outside the repository (an unpacked ZIP or a
+CI workspace), but reject any path that resolves back into the checkout, so a
+mis-specified audit can never silently inspect a development tree.
+
+`clean` resolves its two targets and proves each one equals `build/release-windows` or
+`dist/release-windows` exactly -- a name prefix, the repository root or a link target is
+refused.  `build.ps1 -Clean` reuses that same check: it prefers the build venv, falls back
+to a base Python 3.12 (so cleaning works before any venv exists), and only if no
+interpreter is available does it fall back to an equivalent PowerShell check.  Developer
+state (`venv/`, `config.toml`, `cache/`, `logs/`) is snapshotted with content hashes before
+the build and compared afterwards; any difference fails the build.
+
+**Release gates.** After assembly the build runs `runtime_policy.py --artifact` and
+`data_policy.py --artifact`, so a manifest that drifts from the lock, a bundled installer
+or development distribution, real `data/` content, model weights or a leaked user
+`config.toml` stops the build before the ZIP exists.
+
+**Verification without Windows.** `python -m buildtool self-check` (from
+`packaging/windows`, with `PYTHONPATH` pointing at it) assembles a synthetic release tree
+in a temporary directory outside the repository and exercises the same code paths:
+bundle verification, assembly, dependency inventory, runtime manifest, both policy gates,
+tree verification and ZIP writing.  The PowerShell contract itself is covered by
+`tests/release/test_packaging_isolation_contract.py` and the spec/artifact contract by
+`tests/release/test_packaging_build_contract.py`.
+
+**PyInstaller specifics.** The service spec declares the upstream dynamic imports
+(`pdf2zh-next` translation backends through `importlib`, tiktoken's `tiktoken_ext` plugin
+namespace), the native runtime (`onnxruntime`, `cv2`, `hyperscan`, `rtree`, `uharfbuzz`),
+and the package data that `import` scanning cannot see (BabelDOC CMap/`DocumentIL` files,
+PyMuPDF's MuPDF library).  `gradio`, `onnx` and `ruff` are excluded: the GUI stack is
+unused by the service and the `onnx` wheel ships the `.onnx` model files that the data
+policy forbids shipping.  Both bundles are onedir (`exclude_binaries=True` plus
+`COLLECT`), so the shipped runtime is a private interpreter directory, never a system
+Python.
+
+**Known gaps for P2-01.** `runtime-requirements.lock` pins exact versions but carries no
+wheel hashes yet, so the runtime install trusts PyPI to serve the pinned version; the
+recorded wheel SHA-256 in `app/runtime-manifest.json` is what makes the shipped bytes
+auditable afterwards (hash-carrying runtime pins belong to the P2-03 CI pipeline).  The
+`build-requirements.lock` (PyInstaller toolchain) already installs with
+`--require-hashes`.  The Windows executable build itself must run on Windows: PyInstaller
+cannot cross-compile, so this repository's Linux/WSL side covers the contract, the policy
+gates and the packaging path (through `self-check`) but never produces the real EXE.
+
+**Troubleshooting.**
+
+- `icon_stale`: run `python -m buildtool icon --write` inside `packaging/windows` and
+  commit `manifests/pdf_reader.ico`.
+- `pyinstaller_bundle_invalid`: read the reported missing runtime/module; a missing
+  upstream package usually means the build venv was installed from a different lock than
+  `runtime-requirements.lock`.
+- `runtime_manifest_invalid` / `artifact_tree_invalid`: the message names the offending
+  file or distribution; fix the collection instead of relaxing the policy gates.
+- A build that must be re-run from scratch: `build.ps1 -Clean` (never delete
+  `build`/`dist` by hand while a build is running).
+
+All mutable state stays inside the extracted directory, and the extracted directory
+is the unit of uninstall: **deleting the whole portable directory deletes
+configuration and caches**.  `README.md` states this for users, and the P1-03 build
+gate fails the build if that statement (or the documented copy/import path for an
+old `data/`) disappears from the release notes.
