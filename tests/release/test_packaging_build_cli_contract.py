@@ -18,9 +18,11 @@ P2-02/P3-01；本文件不把它们伪装成已执行。助手缺失或改名时
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import re
 import shutil
+import stat
 import zipfile
 from pathlib import Path
 
@@ -173,9 +175,13 @@ def test_clean_removes_only_the_two_release_directories(release_repo: Path) -> N
     build_root = release_repo / pkg.BUILD_DIRECTORY
     dist_root = release_repo / pkg.DIST_DIRECTORY
     (build_root / "venv").mkdir(parents=True)
-    (build_root / "venv" / "marker.txt").write_text("build", encoding="utf-8")
+    build_marker = build_root / "venv" / "marker.txt"
+    build_marker.write_text("build", encoding="utf-8")
+    build_marker.chmod(stat.S_IREAD)
     dist_root.mkdir(parents=True)
-    (dist_root / "marker.txt").write_text("dist", encoding="utf-8")
+    dist_marker = dist_root / "marker.txt"
+    dist_marker.write_text("dist", encoding="utf-8")
+    dist_marker.chmod(stat.S_IREAD)
 
     dry_run = _run(["clean", "--include-dist", "--dry-run"], repo_root=release_repo)
     assert dry_run.returncode == 0, dry_run.stderr
@@ -190,6 +196,73 @@ def test_clean_removes_only_the_two_release_directories(release_repo: Path) -> N
     for name in developer_paths:
         assert (release_repo / name / "keep.txt").is_file(), f"清理不得触碰开发路径 {name}/"
     assert (release_repo / "config.toml").is_file(), "清理不得触碰开发配置"
+
+
+def test_remove_tree_retries_access_denied_after_making_entry_writable(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.syspath_prepend(str(pkg.RELEASE_LAYER))
+    filesystem = importlib.import_module(f"{pkg.build_helper_module_name()}.filesystem")
+    tree = tmp_path / "release-tree"
+    tree.mkdir()
+    protected = tree / "python.exe"
+    protected.write_bytes(b"stub")
+    retried: list[Path] = []
+    chmod_modes: list[int] = []
+    real_chmod = filesystem.os.chmod
+
+    def retry_unlink(path: str) -> None:
+        retried.append(Path(path))
+        Path(path).unlink()
+
+    def fake_chmod(path: str, mode: int) -> None:
+        chmod_modes.append(mode)
+        real_chmod(path, mode)
+
+    def fake_rmtree(path: Path, *, onexc) -> None:
+        denied = PermissionError(13, "access denied", str(protected))
+        onexc(retry_unlink, str(protected), denied)
+        Path(path).rmdir()
+
+    monkeypatch.setattr(filesystem.os, "chmod", fake_chmod)
+    monkeypatch.setattr(filesystem.shutil, "rmtree", fake_rmtree)
+
+    filesystem.remove_tree(tree)
+
+    assert retried == [protected]
+    assert chmod_modes and chmod_modes[0] & stat.S_IWUSR
+    assert not tree.exists()
+
+
+def test_remove_tree_does_not_retry_unrelated_io_errors(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.syspath_prepend(str(pkg.RELEASE_LAYER))
+    filesystem = importlib.import_module(f"{pkg.build_helper_module_name()}.filesystem")
+    tree = tmp_path / "release-tree"
+    tree.mkdir()
+    protected = tree / "python.exe"
+    protected.write_bytes(b"stub")
+
+    def fake_rmtree(_path: Path, *, onexc) -> None:
+        onexc(lambda _entry: None, str(protected), OSError(22, "unrelated failure"))
+
+    monkeypatch.setattr(filesystem.shutil, "rmtree", fake_rmtree)
+
+    with pytest.raises(OSError, match="unrelated failure"):
+        filesystem.remove_tree(tree)
+    assert protected.is_file()
+
+
+def test_clean_rejects_linked_release_root_without_touching_its_target(release_repo: Path) -> None:
+    outside = release_repo.parent / "outside-clean-target"
+    outside.mkdir()
+    sentinel = outside / "keep.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    build_root = release_repo / pkg.BUILD_DIRECTORY
+    build_root.parent.mkdir(parents=True)
+    build_root.symlink_to(outside, target_is_directory=True)
+
+    cleaned = _run(["clean"], repo_root=release_repo)
+
+    assert cleaned.returncode != 0, "链接形式的 build/release-windows 必须在删除前被拒绝"
+    assert sentinel.read_text(encoding="utf-8") == "keep"
 
 
 # --------------------------------------------------------------------------- 开发路径快照
@@ -279,6 +352,15 @@ def test_assemble_builds_a_single_entry_onedir_tree_with_empty_data_scaffold(rel
     assert (artifact / "data").is_dir() and not list((artifact / "data").iterdir()), (
         "data/ 只允许空骨架，真实数据由首次启动创建"
     )
+
+    stale = artifact / "readonly-stale.txt"
+    stale.write_text("stale", encoding="utf-8")
+    stale.chmod(stat.S_IREAD)
+    rebuilt = _run(
+        ["assemble", "--staging-root", str(staging), "--release-tree", str(artifact)], repo_root=release_repo
+    )
+    assert rebuilt.returncode == 0, rebuilt.stderr
+    assert not stale.exists(), "重复组装必须能清理只读的旧发行文件"
 
     escaped = _run(
         ["assemble", "--staging-root", str(staging), "--release-tree", str(release_repo)], repo_root=release_repo

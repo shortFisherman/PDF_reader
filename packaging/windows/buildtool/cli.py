@@ -16,7 +16,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import artifacts, deps, layout, lock, manifest, modules, snapshot, wheels, winver
+from . import artifacts, deps, filesystem, layout, lock, manifest, modules, snapshot, wheels, winver
 from . import assemble as assemble_module
 
 
@@ -283,7 +283,7 @@ def command_wheel_hashes(args: argparse.Namespace) -> int:
     )
     report_path = wheel_root / "pip-report.json"
     if wheel_root.exists() and args.refresh:
-        shutil.rmtree(wheel_root)
+        filesystem.remove_tree(wheel_root)
     wheel_root.mkdir(parents=True, exist_ok=True)
     if args.refresh or not list(wheel_root.glob("*.whl")):
         result = _pip(
@@ -507,7 +507,7 @@ def command_clean(args: argparse.Namespace) -> int:
         if args.dry_run:
             removed.append(f"{target.as_posix()}(dry-run)")
             continue
-        shutil.rmtree(target)
+        filesystem.remove_tree(target)
         removed.append(target.as_posix())
     print(f"clean: ok removed={','.join(removed) if removed else 'nothing-to-remove'}")
     return 0

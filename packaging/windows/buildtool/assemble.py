@@ -22,6 +22,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from . import filesystem
 from .layout import (
     APP_DIRECTORY,
     INTERNAL_DIRECTORY,
@@ -77,7 +78,7 @@ def assemble(staging_root: Path, artifact_root: Path, repo_root: Path) -> list[s
     _require_bundle_executable(service_bundle, SERVICE_EXECUTABLE)
 
     if artifact.exists():
-        shutil.rmtree(artifact)
+        filesystem.remove_tree(artifact)
     artifact.mkdir(parents=True)
     app = artifact / APP_DIRECTORY
     app.mkdir(parents=True)
@@ -127,7 +128,7 @@ def _relocate_resource(
     if bundled.is_dir():
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():
-            shutil.rmtree(destination)
+            filesystem.remove_tree(destination)
         shutil.move(str(bundled), str(destination))
         return f"resource: {relative}/"
     if bundled.is_file():
