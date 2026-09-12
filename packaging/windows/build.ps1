@@ -168,7 +168,7 @@ function Resolve-ExactReleaseRoot {
             [string]::Equals($allowed, $normalized, [StringComparison]::OrdinalIgnoreCase)
         })
     if ($matched.Count -ne 1) {
-        throw "refusing to operate on $full: $Label must be exactly build\release-windows or dist\release-windows of this repository"
+        throw "refusing to operate on ${full}: $Label must be exactly build\release-windows or dist\release-windows of this repository"
     }
     Assert-NoLinkComponents -Target $full -Stop $RepoRoot -Label $Label
     return $matched[0]
