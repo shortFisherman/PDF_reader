@@ -171,6 +171,14 @@ and the final artifact audit still belong to P2-01/P2-02.
 
 ## P2-01 onedir build
 
+Run the real executable build from a Windows-local NTFS checkout (for example
+`C:\work\PDF_reader-p2-01`).  Do not use a `\\wsl.localhost\...` checkout as the
+PyInstaller working tree: Windows Python can read it, but UNC-to-WSL permission and
+metadata translation is not a supported release-build filesystem and has caused stale
+distribution metadata and access-denied cleanup in practice.  WSL remains supported for
+the source/contract tests.  The exact Windows handoff is recorded in
+`docs/reports/p2-01-windows-build-handoff.md`.
+
 `build.ps1` is the only supported local build entry point.  It resolves a Python 3.12
 launcher, creates `build/release-windows/venv`, installs the locked dependencies, drives
 PyInstaller, and delegates every non-trivial decision to `buildtool` (standard-library
