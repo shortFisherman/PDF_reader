@@ -28,7 +28,7 @@
   "type": "module",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.9.1",
+    "eslint": "^10.11.0",
     "globals": "^17.11.0",
     "jsdom": "^29.1.1"
   }
